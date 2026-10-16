@@ -31,24 +31,80 @@ export STORAGECLASS_RWX=ocs-external-storagecluster-cephfs
 export OPENSHIFT_APPS_DOMAIN=$(oc get ingresses.config.openshift.io cluster -o jsonpath='{.spec.domain}')
 ```
 
+## Gitea installation
+
+To prevent unwanted changes and/or commits to existing source code, the original repos will be cloned into a GitLab instance that will be running on OpenShift.
+
+- **Gitea Helmchart**: To install the Gitea Helmchart run
+    ```bash
+    oc new-project gitea
+    helm repo add gitea-charts https://dl.gitea.com/charts/
+    helm repo update
+    cat gitea/values.yaml | envsubst | helm install -f - gitea gitea-charts/gitea
+    cat gitea/create-db.sh | oc exec statefulset/gitea-postgresql -n gitea -i -t -- bash -il
+    oc wait --for=jsonpath='{.status.readyReplicas}'=1 deployment gitea -n gitea --timeout=600s
+    ```
+For any actions later we will need an access token
+
+```bash
+export GITEA_ADMIN_TOKEN=$(curl -H "Content-Type: application/json" -d '{"name":"admin_token","scopes":["all"]}' -u 'gitea-admin:gitea' "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/users/gitea-admin/tokens" | jq -r '.sha1')
+```
+Now we will clone the [JBoss EAP Quickstarts](https://github.com/jboss-developer/jboss-eap-quickstarts) repository into Gitea using the REST-API:
+
+```bash
+curl -s -X POST "https://gitea.${OPENSHIFT_APPS_DOMAIN}/api/v1/orgs" \
+  -H "Authorization: token ${GITEA_ADMIN_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"username": "jboss", "visibility": "public"}'
+
+curl -X POST "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/repos/migrate" \
+  -H "Authorization: token ${GITEA_ADMIN_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "clone_addr": "https://github.com/jboss-developer/jboss-eap-quickstarts",
+    "repo_name": "jboss-quickstarts",
+    "repo_owner": "jboss"
+  }'
+
+curl -s -X POST "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/admin/users" \
+  -H "Authorization: token ${GITEA_ADMIN_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "jboss-dev",
+    "email": "jboss-dev@example.com",
+    "password": "jboss-dev",
+    "must_change_password": false
+  }'
+export GITEA_OWNERS_TEAM_ID=$(curl -s "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/orgs/jboss/teams"   -H "Authorization: token ${GITEA_ADMIN_TOKEN}" | jq '.[].id'
+curl -s -X PUT "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/teams/${GITEA_OWNERS_TEAM_ID}/members/jboss-dev"   -H "Authorization: token ${GITEA_ADMIN_TOKEN}"
+```
+
+## Agent Sandbox Installation
+For Agentic Migrations via MTA we need to have the **Agent Sandbox Operator** installed as the agents will be running in sandboxes:
+
+    ```bash
+    oc apply -f agent-sandbox/agent-sandbox-operator.yaml
+    oc wait --for=jsonpath='{status.readyReplicas}'=1 deployment agent-sandbox-controller -n agent-sandbox-system
+    ```
+
 ## Migration Toolkit for Applications (MTA) 8.3 Installation
 MTA 8.3 provides automated analysis, assessment, and refactoring tooling for application modernization:
 - **Prerequisites**: OpenShift Container Platform installed with cluster-admin privileges, along with persistent storage requirements including 1 RWO PV (10Gi) for the Hub database, 2 RWX PVs (100Gi each) for Maven cache and Hub bucket storage (if `rwx_supported` is enabled), and 1 RWO PV (5Gi) for the Developer Lightspeed database. You will also need access to a Large Language Model.
 - **Deploy the Migration Toolkit for Applications Operator**:  Via the CLI by creating the target namespace, OperatorGroup, and Subscription resources:
 
     ```bash
-    oc apply -f mta-operator.yaml
+    oc apply -f mta-ui/mta-operator.yaml
     oc wait --for=jsonpath='{.status.phase}'=Succeeded csv mta-operator.v8.3.2 -n openshift-mta --timeout=600s
     oc wait --for=jsonpath='{.status.readyReplicas}'=1 deployment mta-operator -n openshift-mta --timeout=600s
     ```
 - **Create the Model Secret**: Create a Kubernetes Secret containing the API key and Base URL required for the self-hosted model LLM provider. This is needed for the Solution Server that is a core component deployed into the cluster that acts as an MCP server, maintaining persistent memory of refactoring resolutions and interfacing with Large Language Models (LLMs) via Retrieval-Augmented Generation (RAG):
     ```bash
-    cat mta-ls-llm-provider-secret.yaml | envsubst | oc apply -f -
+    cat mta-ui/mta-ls-llm-provider-secret.yaml | envsubst | oc apply -f -
     ```
 - **Configure the Tackle Instance**: Create a Tackle instance specifying the amount of storage needed, enabling Developer Lightspeed and configuring the Large Language Model (LLM):
 
     ```bash
-    cat tackle.yaml | envsubst | oc apply -f -
+    cat mta-ui/tackle.yaml | envsubst | oc apply -f -
     oc wait --for=jsonpath='{.status.readyReplicas}'=1 deployment mta-hub       -n openshift-mta --timeout=600s
     oc wait --for=jsonpath='{.status.readyReplicas}'=1 deployment mta-ui       -n openshift-mta --timeout=600s
     oc wait --for=jsonpath='{.status.readyReplicas}'=1 deployment kai-db       -n openshift-mta --timeout=600s
@@ -100,53 +156,6 @@ MTA 8.3 provides automated analysis, assessment, and refactoring tooling for app
   }"
   ```
 
-## Gitea installation
-
-To prevent unwanted changes and/or commits to existing source code, the original repos will be cloned into a GitLab instance that will be running on OpenShift.
-
-- **Gitea Helmchart**: To install the Gitea Helmchart run
-    ```bash
-    helm repo add gitea-charts https://dl.gitea.com/charts/
-    helm repo update
-    cat values.yaml | envsubst | helm install -f - gitea gitea-charts/gitea
-    cat create-db.sh | oc exec statefulset/gitea-postgresql -n gitea -i -t -- bash -il
-    oc wait --for=jsonpath='{.status.readyReplicas}'=1 deployment gitea -n gitea --timeout=600s
-    ```
-For any actions later we will need an access token
-
-```bash
-export GITEA_ADMIN_TOKEN=$(curl -H "Content-Type: application/json" -d '{"name":"admin_token","scopes":["all"]}' -u 'gitea-admin:gitea' "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/users/gitea-admin/tokens" | jq -r '.sha1')
-```
-Now we will clone the [JBoss EAP Quickstarts](https://github.com/jboss-developer/jboss-eap-quickstarts) repository into Gitea using the REST-API:
-
-```bash
-curl -s -X POST "https://gitea.${OPENSHIFT_APPS_DOMAIN}/api/v1/orgs" \
-  -H "Authorization: token ${GITEA_ADMIN_TOKEN}" \
-  -H "Content-Type: application/json" \
-  -d '{"username": "jboss", "visibility": "public"}'
-
-curl -X POST "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/repos/migrate" \
-  -H "Authorization: token ${GITEA_ADMIN_TOKEN}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "clone_addr": "https://github.com/jboss-developer/jboss-eap-quickstarts",
-    "repo_name": "jboss-quickstarts",
-    "repo_owner": "jboss"
-  }'
-
-curl -s -X POST "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/admin/users" \
-  -H "Authorization: token ${GITEA_ADMIN_TOKEN}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "username": "jboss-dev",
-    "email": "jboss-dev@example.com",
-    "password": "jboss-dev",
-    "must_change_password": false
-  }'
-export GITEA_OWNERS_TEAM_ID=$(curl -s "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/orgs/jboss/teams"   -H "Authorization: token ${GITEA_ADMIN_TOKEN}" | jq '.[].id'
-curl -s -X PUT "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/teams/${GITEA_OWNERS_TEAM_ID}/members/jboss-dev"   -H "Authorization: token ${GITEA_ADMIN_TOKEN}"
-```
-
 ## OpenShift Dev Spaces Installation
 
 **OpenShift Dev Spaces** provides Kubernetes-based cloud development environments and is installed on the OpenShift Container Platform using the OpenShift Dev Spaces Operator via OperatorHub:
@@ -155,6 +164,5 @@ curl -s -X PUT "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/teams/${GITEA_OWNERS
 - **Dev Spaces Operator Installation**: Deploy the OpenShift Dev Spaces Operator via the CLI by creating the target namespace, OperatorGroup, and Subscription resources:
 
 ```bash
-oc apply -f openshift-devspaces-operator.yaml
+oc apply -f devspaces/openshift-devspaces-operator.yaml
 ```
-
