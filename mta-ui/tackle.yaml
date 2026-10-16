@@ -1,0 +1,25 @@
+apiVersion: tackle.konveyor.io/v1alpha1
+kind: Tackle
+metadata:
+  name: mta
+  namespace: openshift-mta
+spec:
+  feature_auth_required: true
+  idp_primary: true
+  hub_oidc_token_lifespan: 300
+  hub_oidc_refresh_token_lifespan: 172800
+  hub_apikey_lifespan: 87600
+  hub_auth_cache_lifespan: 5
+  hub_ldap_auth_lifespan: 5
+  hub_oidc_key_rotation: 90
+  rwx_supported: true
+  cache_storage_class: "${STORAGECLASS_RWX}"
+  hub_bucket_volume_size: "100Gi"
+  hub_database_volume_size: "10Gi"
+  feature_lightspeed: true
+  lightspeed_llm_secret: "mta-ls-llm-provider-secret"
+  kai_solution_server_enabled: true
+  kai_llm_provider: "openai"
+  kai_llm_model: "${OPENAI_MODEL_NAME}"
+  agentic_enabled: true
+  agentic_steer_enabled: true

@@ -1,0 +1,15 @@
+apiVersion: konveyor.io/v1alpha1
+kind: Gateway
+metadata:
+  name: openai
+  namespace: openshift-mta
+spec:
+  provider: openai
+  endpoint: "https://${OPENAI_HOST}"
+  credentialRef:
+    secretName: mta-ls-llm-provider-secret
+    key: api-key
+  model:
+    name: ${OPENAI_MODEL_NAME}
+    contextWindow: 128000
+    tier: premium

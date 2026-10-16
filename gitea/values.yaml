@@ -1,0 +1,22 @@
+gitea:
+  admin:
+    username: gitea-admin
+    password: gitea
+    email: "gitea@example.com"
+    passwordMode: keepUpdated
+postgresql:
+  enabled: true
+postgresql-ha:
+  enabled: false
+valkey:
+  enabled: true
+  architecture: standalone
+valkey-cluster:
+  enabled: false
+openshift:
+  enabled: true
+route:
+  enabled: true
+  host: git.${OPENSHIFT_APPS_DOMAIN}
+  tls:
+    termination: edge

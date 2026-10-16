@@ -1,0 +1,17 @@
+apiVersion: org.eclipse.che/v2
+kind: CheCluster
+metadata:
+  name: devspaces
+  namespace: openshift-devspaces
+spec:
+  components:
+    cheServer:
+      debug: false
+      logLevel: INFO
+    database:
+      externalDb: false
+      pvc:
+        storageClass: ""
+        volumeName: ""
+  devWorkspace:
+    storageStrategy: per-user
