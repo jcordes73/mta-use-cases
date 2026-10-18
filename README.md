@@ -121,7 +121,11 @@ MTA 8.3 provides automated analysis, assessment, and refactoring tooling for app
 
     Login with `admin/admin`.
 
-- **Automation via REST API**: Using the Konveyor Tackle2-Hub API you can automate the configuration of the MTA.
+- **Automation via REST API**: Using the Konveyor [Tackle2-Hub API](https://github.com/konveyor/tackle2-hub/blob/main/docs/swagger.yaml) you can automate the configuration of the MTA.
+
+    > ⚠️ WARNING
+    >
+    > The Tackle2-Hub API is an internal implementation detail that is not a supported product feature.
 
     For this we first need to get the endpoint:
     ```bash
