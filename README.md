@@ -23,7 +23,7 @@ Below you can find the requirements for getting started with this PoC:
 - **Define environment variables**: To ease the deployment of the Kubernetes resources later define these environment variables
 
 ```bash
-export OPENAI_HOST=<Your LLM endoint host>
+export OPENAI_HOST=<Your LLM endpoint host>
 export OPENAI_BASE_URL=https://${OPENAI_HOST}/v1
 export OPENAI_API_KEY="<Your API Key>"
 export OPENAI_MODEL_NAME="<Your Model name>"
@@ -33,7 +33,7 @@ export OPENSHIFT_APPS_DOMAIN=$(oc get ingresses.config.openshift.io cluster -o j
 
 ## Gitea installation
 
-To prevent unwanted changes and/or commits to existing source code, the original repos will be cloned into a GitLab instance that will be running on OpenShift.
+To prevent unwanted changes and/or commits to existing source code, the original repos will be cloned into a Gitea instance that will be running on OpenShift.
 
 - **Gitea Helmchart**: To install the Gitea Helmchart run
     ```bash
@@ -52,7 +52,7 @@ export GITEA_ADMIN_TOKEN=$(curl -H "Content-Type: application/json" -d '{"name":
 Now we will clone the [JBoss EAP Quickstarts](https://github.com/jboss-developer/jboss-eap-quickstarts) repository into Gitea using the REST-API:
 
 ```bash
-curl -s -X POST "https://gitea.${OPENSHIFT_APPS_DOMAIN}/api/v1/orgs" \
+curl -s -X POST "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/orgs" \
   -H "Authorization: token ${GITEA_ADMIN_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{"username": "jboss", "visibility": "public"}'
@@ -75,7 +75,9 @@ curl -s -X POST "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/admin/users" \
     "password": "jboss-dev",
     "must_change_password": false
   }'
-export GITEA_OWNERS_TEAM_ID=$(curl -s "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/orgs/jboss/teams"   -H "Authorization: token ${GITEA_ADMIN_TOKEN}" | jq '.[].id'
+
+export GITEA_OWNERS_TEAM_ID=$(curl -s "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/orgs/jboss/teams"   -H "Authorization: token ${GITEA_ADMIN_TOKEN}" | jq '.[].id')
+
 curl -s -X PUT "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/teams/${GITEA_OWNERS_TEAM_ID}/members/jboss-dev"   -H "Authorization: token ${GITEA_ADMIN_TOKEN}"
 ```
 
@@ -84,7 +86,7 @@ For Agentic Migrations via MTA we need to have the **Agent Sandbox Operator** in
 
     ```bash
     oc apply -f agent-sandbox/agent-sandbox-operator.yaml
-    oc wait --for=jsonpath='{status.readyReplicas}'=1 deployment agent-sandbox-controller -n agent-sandbox-system
+    oc wait --for=jsonpath='{.status.readyReplicas}'=1 deployment agent-sandbox-controller -n agent-sandbox-system --timeout=600s
     ```
 
 ## Migration Toolkit for Applications (MTA) 8.3 Installation
@@ -137,28 +139,28 @@ MTA 8.3 provides automated analysis, assessment, and refactoring tooling for app
     "name": "John Doe",
     "email": "john@example.com",
     "jobFunction": {"id": 1, "name": "IT"}
-  }' | jq '.id')
+    }' | jq '.id')
     
     curl -s -X POST "${MTA_URL}/hub/stakeholdergroups" \
-  -u admin:admin \
-  -H "Content-Type: application/json" \
-  -d "{
-    \"name\": \"JBoss EAP Quickstarts\",
-    \"description\": \"Stakeholders owning migrated JBoss EAP Quickstarts applications\",
-    \"stakeholders\": [
-      {\"id\": ${MTA_USER_ID}, \"name\": \"John Doe\"}
-    ]
-  }"
+    -u admin:admin \
+    -H "Content-Type: application/json" \
+    -d "{
+        \"name\": \"JBoss EAP Quickstarts\",
+        \"description\": \"Stakeholders owning migrated JBoss EAP Quickstarts applications\",
+        \"stakeholders\": [
+        {\"id\": ${MTA_USER_ID}, \"name\": \"John Doe\"}
+        ]
+    }"
 
-  curl -s -X POST "${MTA_URL}/hub/businessservices" \
-  -u admin:admin \
-  -H "Content-Type: application/json" \
-  -d "{
-    \"name\": \"JBoss Onboarding\",
-    \"description\": \"Onboarding Developers onto JBoss\",
-    \"owner\": {\"id\": ${MTA_USER_ID}, \"name\": \"John Doe\"}
-  }"
-  ```
+    curl -s -X POST "${MTA_URL}/hub/businessservices" \
+    -u admin:admin \
+    -H "Content-Type: application/json" \
+    -d "{
+        \"name\": \"JBoss Onboarding\",
+        \"description\": \"Onboarding Developers onto JBoss\",
+        \"owner\": {\"id\": ${MTA_USER_ID}, \"name\": \"John Doe\"}
+    }"
+    ```
 
 ## OpenShift Dev Spaces Installation
 
