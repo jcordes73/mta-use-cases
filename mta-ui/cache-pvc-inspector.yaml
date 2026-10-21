@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cache-pvc-inspector
+  namespace: openshift-mta
+  labels:
+    app: cache-pvc-inspector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cache-pvc-inspector
+  template:
+    metadata:
+      labels:
+        app: cache-pvc-inspector
+    spec:
+      containers:
+        - name: inspector
+          image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+          command: ["/bin/sh", "-c", "while true; do sleep 30; done"]
+          volumeMounts:
+            - name: cache
+              mountPath: /cache
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            runAsNonRoot: true
+      volumes:
+        - name: cache
+          persistentVolumeClaim:
+            claimName: mta-cache-volume-claim

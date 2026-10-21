@@ -23,3 +23,4 @@ spec:
   kai_llm_model: "${OPENAI_MODEL_NAME}"
   agentic_enabled: true
   agentic_steer_enabled: true
+  task_pod_quota: 10
