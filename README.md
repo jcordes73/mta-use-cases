@@ -152,6 +152,12 @@ MTA 8.3 provides automated analysis, assessment, and refactoring tooling for app
     ```bash
     cat mta-ui/llm-gateway.yaml | envsubst | oc apply -f -
     ```
+    To verify the gateway instantiation execute
+    ```bash
+    oc wait --for create gateways.konveyor.io openai -n openshift-mta --timeout=600s
+    oc wait --for=jsonpath='{.status.connectionVerified}'="true" gateways.konveyor.io openai -n openshift-mta --timeout=600s
+    ```
+    All these commands should return `condition met`.
 - **Configure the Tackle Instance**: Create a Tackle instance specifying the amount of storage needed, enabling Developer Lightspeed and configuring the Large Language Model (LLM):
 
     ```bash
