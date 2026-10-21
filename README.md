@@ -158,6 +158,13 @@ MTA 8.3 provides automated analysis, assessment, and refactoring tooling for app
     oc wait --for=jsonpath='{.status.connectionVerified}'="true" gateways.konveyor.io openai -n openshift-mta --timeout=600s
     ```
     All these commands should return `condition met`.
+
+
+    If you want to change the model you have two options:
+    - Change the current `Konveyor Gateway` resource
+    - Create another `Konveyor Gateway` resource in addition
+
+    If you later you want to run an `Agentic Migration` you will be prompted which Konveyor Gateway to use.
 - **Configure the Tackle Instance**: Create a Tackle instance specifying the amount of storage needed, enabling Developer Lightspeed and configuring the Large Language Model (LLM):
 
     ```bash
