@@ -377,6 +377,23 @@ For Agentic Migrations, MTA composes agent workloads from **Skills** (SKILL.md f
     podman tag quay.io/telco-coe-emea/mta-jboss-eap-7-to-8-skills:8.3.1 quay.io/telco-coe-emea/mta-jboss-eap-7-to-8-skills:latest
     podman push quay.io/telco-coe-emea/mta-jboss-eap-7-to-8-skills:8.3.1 quay.io/telco-coe-emea/mta-jboss-eap-7-to-8-skills:8.3.1    
     ```
+    To verify the content run these two commands
+
+    ```bash
+    podman run -d -ti --replace --name skillcard --entrypoint='["/bin/bash","-c","while true; do sleep 30; done"]' quay.io/telco-coe-emea/mta-jboss-eap-7-to-8-skills:latest
+    podman exec skillcard ls /skill
+    ```
+
+    This should return
+    ```bash
+    SKILL.md
+    modules
+    references
+    ```
+    Terminate container like this
+    ```bash
+    podman kill skillcard
+    ```
 
 - **Create a SkillCard**: A `SkillCard` represents exactly one skill and can point at an OCI image, a git repository, or inline content. The loader validates the image at pod initialization and assembles the selected skill at `/opt/skills/<frontmatter-name>/SKILL.md`. For an image holding several skills, select one immediate directory with `subPath` (a bundle without `subPath` is ambiguous and is rejected rather than silently becoming several skills). The `type` field is the load policy and lives on the CR, not in `SKILL.md`:
     - `type: skill` — on-demand: the runtime starts with only the name and description and reads the full content when it invokes the skill.
