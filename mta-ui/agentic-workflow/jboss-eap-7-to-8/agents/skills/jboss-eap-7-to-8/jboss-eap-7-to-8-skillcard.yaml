@@ -1,0 +1,17 @@
+apiVersion: konveyor.io/v1alpha1
+kind: SkillCard
+metadata:
+  name: jboss-eap-7-to-8
+  namespace: openshift-mta
+spec:
+   image: quay.io/telco-coe-emea/mta-jboss-eap-7-to-8-skills:8.3.1
+   displayName: JBoss EAP 7 to 8 Migration Skill
+   version: "0.0.1"
+   description: Migrates from JBoss EAP 7 to JBoss EAP 8.
+   type: skill
+   subPath: skill
+   tags:
+     - java
+     - javaee
+     - eap
+     - migration

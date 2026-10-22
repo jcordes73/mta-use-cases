@@ -258,6 +258,25 @@ curl -s -X POST "${MTA_URL}/hub/businessservices" \
     \"owner\": {\"id\": ${MTA_USER_ID}, \"name\": \"John Doe\"}
 }"
 ```
+
+#### Configure Maven settings
+
+if you need a custom Maven `settings.xml`, f.e. for connecting to [JFrog Artifactory](https://jfrog.com/artifactory/) or [Sonatype Nexus](https://www.sonatype.com/products/sonatype-nexus-repository) you can use the following command as an example, which configures the `Red Hat GA` repository for dependencies and plugins:
+
+```bash
+export MAVEN_SETTINGS=$(cat mta-ui/maven-settings.xml | sed 's/\"/\\\"/g' | tr '\n' ' ')
+curl -s -X POST "${MTA_URL}/hub/identities" \
+  -u admin:admin \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "maven-redhat-ga-settings",
+    "kind": "maven",
+    "description": "Maven settings for Red Hat GA repository",
+    "default": false,
+    "settings": "${MAVEN_SETTINGS}"
+  }'
+```
+
 #### Bulk Uploading Applications
 
 ```bash
@@ -313,6 +332,117 @@ curl -s -X POST "${MTA_URL}/hub/analysis/profiles" \
 
 No fields are strictly required (an empty profile is valid), but a useful one sets mode, scope, and rules.
 
+#### Create custom Skills and Rules
+
+For Agentic Migrations, MTA composes agent workloads from **Skills** (SKILL.md files following the [Agent Skills](https://agentskills.io) format), packaged as OCI images or defined inline, and referenced via `SkillCard`, `Agent`, and `AgentWorkflow` custom resources. A workflow runs stages sequentially — typically `plan` → `execute` → `verify` — each in a fresh Agent Sandbox, with continuity provided by committed handoff files (`docs/plan.md`, `.konveyor/handoff.md`) on the shared target branch. The [Konveyor agentic-controller](https://github.com/konveyor/agentic-controller) documentation covers the full details.
+
+> ⚠️ NOTE
+>
+> The agentic-controller operator already installs working examples (SkillCards `plan`/`execute`/`verify`, Agents `migration-plan/execute/verify-agent`, and the `java-ee-to-quarkus` AgentWorkflow), so copy those as a starting point rather than authoring from scratch.
+
+- **Author the skill**: Create a directory with a `SKILL.md` file containing YAML frontmatter `name` and `description`:
+
+    ```
+    my-skill/
+    ├── SKILL.md
+    ├── references/       optional supporting material
+    ├── scripts/          optional executable helpers
+    └── assets/           optional templates or assets
+    ```
+
+    ```markdown
+    ---
+    name: maven-migration
+    description: Migrates Maven POM files from Java EE to Jakarta EE.
+    ---
+
+    # Maven Migration
+
+    Inspect every POM, replace `javax.*` dependencies with Jakarta equivalents,
+    and run the project's build to verify the result.
+    ```
+
+    The frontmatter field set is closed — do not add `type` to `SKILL.md`. The load policy (`skill` = on-demand vs. `rule` = always-loaded in every prompt) lives on the `SkillCard` CR, not the content.
+
+
+
+- **Login into registry.redhat.io**: To build the 'SkillCard` we need to login into registry.redhat.io with a ```Service Account```. See  [Red Hat Container Registry Authentication](https://access.redhat.com/RegistryAuthentication) on how to create it.
+    ```bash
+    podman login -u <service-account-username> registry.redhat.io
+    ```
+- **Package as an OCI image**: For a single skill, put `SKILL.md` at the image root; for several skills, use one directory per skill. Discovery is filesystem-based: `SKILL.md` at the image root means one skill, otherwise each immediate subdirectory containing a `SKILL.md` is discovered as an individual skill.
+
+    ```bash
+    podman build -t quay.io/telco-coe-emea/mta-jboss-eap-7-to-8-skills:8.3.1 -f mta-ui/agentic-workflow/jboss-eap-7-to-8/agents/skills/jboss-eap-7-to-8/Containerfile mta-ui/agentic-workflow/jboss-eap-7-to-8/agents/skills/jboss-eap-7-to-8
+    podman tag quay.io/telco-coe-emea/mta-jboss-eap-7-to-8-skills:8.3.1 quay.io/telco-coe-emea/mta-jboss-eap-7-to-8-skills:latest
+    podman push quay.io/telco-coe-emea/mta-jboss-eap-7-to-8-skills:8.3.1 quay.io/telco-coe-emea/mta-jboss-eap-7-to-8-skills:8.3.1    
+    ```
+
+- **Create a SkillCard**: A `SkillCard` represents exactly one skill and can point at an OCI image, a git repository, or inline content. The loader validates the image at pod initialization and assembles the selected skill at `/opt/skills/<frontmatter-name>/SKILL.md`. For an image holding several skills, select one immediate directory with `subPath` (a bundle without `subPath` is ambiguous and is rejected rather than silently becoming several skills). The `type` field is the load policy and lives on the CR, not in `SKILL.md`:
+    - `type: skill` — on-demand: the runtime starts with only the name and description and reads the full content when it invokes the skill.
+    - `type: rule` — always-loaded: the harness includes the full content in every agent prompt (e.g. a stage's driving skill should be a rule).
+
+    An inline skill (no registry involved) uses `inline:` instead of `image:` and is materialized as a ConfigMap. Note inline skills are a single `SKILL.md` (a ConfigMap key cannot contain a path separator), so anything needing `references/` has to be an image or git source.
+
+    ```yaml
+    apiVersion: konveyor.io/v1alpha1
+    kind: SkillCard
+    metadata:
+      name: jboss-eap-7-to-8
+      namespace: openshift-mta
+    spec:
+      image: quay.io/telco-coe-emea/mta-jboss-eap-7-to-8-skills:8.3.1
+      displayName: JBoss EAP 7 to 8 Migration Skill
+      version: "0.0.1"
+      description: Migrates from JBoss EAP 7 to JBoss EAP 8.
+      type: skill
+      subPath: skill 
+      tags:
+        - java
+        - javaee
+        - eap
+        - migration
+    ```
+
+    ```bash
+    oc apply -f mta-ui/agentic-workflow/jboss-eap-7-to-8/agents/skills/jboss-eap-7-to-8/jboss-eap-7-to-8-skillcard.yaml
+    ``` 
+    The `SkillCard` can be verified like this
+
+    ```bash
+    oc wait --for create skillcard jboss-eap-7-8 -n openshift-mta --timeout=600s
+    oc wait --for jsonpath='{.status.conditions[0].status}'="True" skillcard jboss-eap-7-8 -n openshift-mta --timeout=600s
+    ```
+
+- **Create the Agent**: An Agent is a template — it declares the container image, skills, and turn limits but executes nothing. Omitting `spec.gateways` is intentional: the Gateway is then named at run time on the `AgentRun`/`AgentWorkflowRun` (this is what the [Konveyor Gateway](#create-a-konveyor-gateway) set up earlier is used for).
+
+    ```bash
+    oc apply -f mta-ui/agentic-workflow/jboss-eap-7-to-8/agents/jboss-eap-7-to-8-plan-agent.yaml
+    oc apply -f mta-ui/agentic-workflow/jboss-eap-7-to-8/agents/jboss-eap-7-to-8-execute-agent.yaml
+    oc apply -f mta-ui/agentic-workflow/jboss-eap-7-to-8/agents/jboss-eap-7-to-8-verify-agent.yaml
+    ```
+    Several Agents sharing skills can reference a `SkillCollection` grouping multiple `SkillCard`s instead.
+    
+    To check if defining the agents have been successful run
+    ```bash
+    oc wait --for create agent jboss-eap-7-to-8-plan-agent -n openshift-mta --timeout=600s
+    oc wait --for create agent jboss-eap-7-to-8-execute-agent -n openshift-mta --timeout=600s
+    oc wait --for create agent jboss-eap-7-to-8-verify-agent -n openshift-mta --timeout=600s
+    oc wait --for jsonpath='{.status.conditions[0].status}'="True" agent jboss-eap-7-to-8-plan-agent -n openshift-mta --timeout=600s
+    oc wait --for jsonpath='{.status.conditions[0].status}'="True" agent jboss-eap-7-to-8-execute-agent -n openshift-mta --timeout=600s
+    oc wait --for jsonpath='{.status.conditions[0].status}'="True" agent jboss-eap-7-to-8-verify-agent -n openshift-mta --timeout=600s
+    ```
+- **Create the AgentWorkflow**: Combines an ordered sequence of stages, each referencing an Agent. Stages run sequentially, each in a fresh Sandbox. `plan.md` is not something you author — it is the output contract of the plan stage: the plan skill defines the exact `docs/plan.md` structure (Goal, Source → Target, Scope, Steps with Phase/File/Action/Depends-on/Verify, Verification, Notes) and the execute and verify stages parse it, so a custom plan skill must reproduce this output structure exactly.
+
+    ```bash
+    oc apply -f mta-ui/agentic-workflow/jboss-eap-7-to-8/jboss-eap-7-to-8-agent-workflow.yaml
+    ```
+
+    Verify the existence of the `AgentWorkflow` as follows:
+    ```bash
+    oc wait --for create agentworkflow jboss-eap-7-to-8 -n openshift-mta --timeout=600s
+    oc wait --for jsonpath='{.status.conditions[0].status}'="True" agentworkflow jboss-eap-7-to-8 -n openshift-mta --timeout=600s
+    ```
 
 ## OpenShift Dev Spaces Installation
 

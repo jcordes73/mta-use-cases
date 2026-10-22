@@ -1,0 +1,23 @@
+apiVersion: konveyor.io/v1alpha1
+kind: AgentWorkflow
+metadata:
+  name: jboss-eap-7-to-8
+  namespace: openshift-mta
+  labels:
+    app.kubernetes.io/managed-by: agentic-controller-defaults
+    konveyor.io/managed: "true"
+spec:
+  guide: "Migrate a JBoss EAP 7 application to JBoss EAP 8."
+  stages:
+    - name: plan
+      agentRef: jboss-eap-7-to-8-plan-agent
+      instructions: >-
+        Load the plan skill and follow its SKILL.md exactly.
+    - name: execute
+      agentRef: jboss-eap-7-to-8-execute-agent
+      instructions: >-
+        Load the execute skill and follow its SKILL.md exactly.
+    - name: verify
+      agentRef: jboss-eap-7-to-8-verify-agent
+      instructions: >-
+        Load the verify skill and follow its SKILL.md exactly.

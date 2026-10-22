@@ -1,0 +1,15 @@
+apiVersion: konveyor.io/v1alpha1
+kind: Agent
+metadata:
+  name: jboss-eap-7-to-8-execute-agent
+  namespace: openshift-mta
+  labels:
+    app.kubernetes.io/managed-by: agentic-controller-defaults
+    konveyor.io/managed: "true"
+spec:
+  image: registry.redhat.io/mta/mta-agent-java-rhel9:8.3.1
+  skillCards:
+    - ref: execute
+    - ref: jboss-eap-7-to-8
+  execution:
+    maxTurns: 200
