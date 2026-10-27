@@ -123,7 +123,7 @@ oc apply -f squid/squid.yaml
 oc wait --for=condition=Available deployment squid -n squid --timeout=300s
 ```
 
-The Squid configuration only permits `CONNECT` (HTTPS) requests to port 443, restricts proxy clients to the cluster networks (adjust the `cluster_networks` ACL to the Pod CIDR of the cluster), and only allows the destinations in the `allowed_domains` ACL. The pid file and coredump directory are configured as `/tmp` because OpenShift runs containers with a random UID (restricted SCC). To allow further destinations, edit the `squid.conf` in the `squid-config` ConfigMap and restart the deployment — the config file is mounted with `subPath`, so changes are not picked up automatically:
+The Squid configuration only permits `CONNECT` (HTTPS) requests to port 443, restricts proxy clients to the cluster networks (adjust the `cluster_networks` ACL to the Pod CIDR of the cluster), and only allows the destinations in the `allowed_domains` ACL. The pid file and coredump directory are configured as `/tmp` because OpenShift runs containers with a random UID (restricted SCC). The allowlist covers `.github.com` and `.open-vsx.org` — note that **`.githubusercontent.com` is a different parent domain** and must be allowlisted separately: the Dev Spaces factory devfile fetch pulls the devfile content from `raw.githubusercontent.com`, so without it the workspace creation fails with "failed to fetch devfile" and falls back to the empty default stack (no devfile extensions installed). To allow further destinations, edit the `squid.conf` in the `squid-config` ConfigMap and restart the deployment — the config file is mounted with `subPath`, so changes are not picked up automatically:
 
 ```bash
 oc edit configmap squid-config -n squid
@@ -999,6 +999,21 @@ While the [MTA UI](#automated-migration-using-the-mta-ui) covers the automated, 
     ```
     Log in with your OpenShift credentials.
 
+#### Extension marketplace configuration
+
+The editor's extension gallery (the `Extensions` view used to install the MTA plugin) is served from an **Open VSX registry** — by default the **embedded instance** in the `plugin-registry` pod, which contains only a curated subset of the extensions published on the public `open-vsx.org` registry (chosen to support air-gapped and proxy-restricted environments). Note that the Microsoft VS Code Marketplace is not supported in Dev Spaces due to Microsoft's Terms of Use — Open VSX is the supported gallery.
+
+The deployed configuration switches the gallery to the **public Open VSX registry** via the `pluginRegistry.openVSXURL` field of the CheCluster custom resource (see `devspaces/che-cluster.yaml`) — the pod restarts and serves extensions from `open-vsx.org` instead of the curated subset:
+
+```yaml
+spec:
+  components:
+    pluginRegistry:
+      openVSXURL: https://open-vsx.org
+```
+
+Set `openVSXURL: ''` to switch back to the embedded curated registry. The editor queries exactly **one** Open VSX endpoint at a time, so this is either/or — the embedded registry stays deployed but is no longer the gallery. In the disconnected environment the `open-vsx.org` traffic goes through the Squid proxy, which already allowlists it. Two caveats: the gallery's extension installs are fetched by the **workspaces** (whose proxy environment variables must cover `open-vsx.org` — the [Squid allowlist](#squid-proxy-deployment-disconnected-environments) does), and the [factory devfile fetch](#squid-proxy-deployment-disconnected-environments) additionally needs `raw.githubusercontent.com`. If full control over the catalog is required instead (strictly air-gapped), a standalone Open VSX registry can be deployed in-cluster via `spec.components.openVSXRegistry.enable: true` and extensions published manually from `.vsix` files.
+
 #### Proxy configuration
 
 On an OpenShift cluster, the Dev Spaces Operator automatically uses the OpenShift cluster-wide proxy configuration. However, the proxy settings can be overridden by configuring them in the `CheCluster` custom resource. This is useful in restricted environments, where workspaces need to reach e.g. GitHub and the Open VSX registry through a proxy.
@@ -1059,7 +1074,21 @@ oc get pod -n <workspace-namespace> -o yaml | grep -iE 'proxy'
 The MTA plugin is the [Migration Toolkit for Applications (MTA) Visual Studio Code extension](https://marketplace.visualstudio.com/items?itemName=redhat.mta-vscode-extension). It provides the ability to analyze, assess, and migrate source code (using MTA) from within the IDE. The [Visual Studio Code extension guide](https://docs.redhat.com/en/documentation/migration_toolkit_for_applications/8.3/html/configuring_and_using_the_visual_studio_code_extension_for_mta) covers the full details.
 
 - **Install the plugin in a workspace**: Start a workspace in Dev Spaces, open the `Extensions` view, search for `mta` and install the **Migration Toolkit for Applications (MTA)** extension from the Open VSX registry.
-- **Pre-install the plugin for all users**: To make the extension available in every workspace, add the extension ID `redhat.mta-vscode-extension` to the `customizations.vscode.extensions` list of the container component in the devfile.
+- **Pre-install the plugin for all users**: devfiles no longer support IDE-specific customization — since devfile v2 (schema 2.2.0), the `customizations.vscode.extensions` field of container components is rejected by schema validation ("instance.components[0].container is not allowed to have the additional property customizations"). Instead, define the extensions via the `.vscode/extensions.json` attribute in the devfile, which the editor auto-installs at workspace startup from the Open VSX registry:
+
+    ```yaml
+    schemaVersion: 2.2.0
+    attributes:
+      .vscode/extensions.json: |
+        {
+          "recommendations": [
+            "redhat.mta-vscode-extension",
+            "sst-dev.opencode"
+          ]
+        }
+    ```
+
+    Alternatively, add a `.vscode/extensions.json` file with the same content to the repository root — the recommendation mechanism is identical. The extension IDs must be available on the Open VSX registry the gallery is served from (see [Extension marketplace configuration](#extension-marketplace-configuration)) — the embedded curated subset contains only a small selection, which is why the public Open VSX registry is used here.
 - **Create the LLM credentials Secret**: The devfile expects the `OPENAI_*` variables from the [Prerequisites](#prerequisites) as environment variables in the workspace container. A ready-to-use Secret template is available in this repository at `devspaces/llm-credentials-secret.yaml`. Create the Secret in the user's workspace namespace, where it gets mounted as environment variables into the workspace containers via the `controller.devfile.io/mount-to-devworkspace` label and the `controller.devfile.io/mount-as: env` annotation:
 
     ```bash
@@ -1068,26 +1097,26 @@ The MTA plugin is the [Migration Toolkit for Applications (MTA) Visual Studio Co
     ```
 
     The Secret must be created in the namespace the workspaces run in (e.g. `<username>-devspaces`, which is created on the user's first workspace start). With `controller.devfile.io/watch-secret: 'true'` changes to the Secret are picked up when the workspace is restarted.
-- **Create a workspace with the MTA plugin enabled**: A ready-to-use `devfile.yaml` with the extension pre-installed is available in this repository at `devspaces/devfile.yaml`:
+- **Create a workspace with the MTA plugin enabled**: A ready-to-use `devfile.yaml` with the extensions defined via the `.vscode/extensions.json` attribute is available in this repository at `devspaces/devfile.yaml`:
 
     ```yaml
     schemaVersion: 2.2.0
     metadata:
       name: mta-migration-workspace
+    attributes:
+      .vscode/extensions.json: |
+        {
+          "recommendations": [
+            "redhat.mta-vscode-extension",
+            "sst-dev.opencode"
+          ]
+        }
     components:
       - name: tools
         container:
           image: registry.access.redhat.com/ubi9/openjdk-21:latest
           memoryLimit: 4Gi
           mountSources: true
-          customizations:
-            vscode:
-              extensions:
-                - redhat.mta-vscode-extension
-                - sst-dev.opencode
-              settings:
-                mta-core.genai.enabled: true
-                mta-core.genai.agentMode: true
     commands:
       - id: install-opencode
         exec:
@@ -1143,9 +1172,19 @@ The MTA plugin is the [Migration Toolkit for Applications (MTA) Visual Studio Co
     - relies on the `OPENAI_*` variables provided by the mounted [llm-credentials Secret](#create-the-llm-credentials-secret),
     - installs the OpenCode CLI via a `postStart` event command,
     - configures `~/.config/opencode/opencode.json` with a custom OpenAI-compatible provider pointing at the same LLM endpoint used by the [MTA UI](#automated-migration-using-the-mta-ui) part, via a second `postStart` event command, and
-    - pre-configures the MTA extension settings via the `customizations.vscode.settings` of the devfile, which are written to the workspace's `settings.json`.
+    - recommends both extensions via the `.vscode/extensions.json` attribute, which the editor auto-installs at workspace startup.
+
+    The MTA extension settings (see below) are IDE-specific configuration and belong in the workspace's `settings.json` — define them via a `.vscode/settings.json` file in the repository cloned into the workspace (the repository content becomes the project source, so the file is applied on clone):
 
     The MTA settings pre-configure the AI-assisted remediation of the plugin (the setting IDs were verified against the `redhat.mta-core` 8.3.1 extension, which the `redhat.mta-vscode-extension` extension pack installs):
+
+    ```json
+    {
+      "mta-core.genai.enabled": true,
+      "mta-core.genai.agentMode": true
+    }
+    ```
+
     - `mta-core.genai.enabled` enables the GenAI functionality (Solution Server) of the extension.
     - `mta-core.genai.agentMode` enables the experimental agentic flow for solutions, which requires automatic analysis (`mta-core.analysis.analyzeOnSave`, enabled by default).
 

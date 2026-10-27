@@ -8,6 +8,10 @@ spec:
     cheServer:
       debug: false
       logLevel: INFO
+    # Serve the extension gallery from the public Open VSX registry instead of the
+    # embedded curated subset (set to '' to switch back to the embedded registry)
+    pluginRegistry:
+      openVSXURL: https://open-vsx.org
     database:
       externalDb: false
       pvc:

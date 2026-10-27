@@ -4,20 +4,23 @@ metadata:
 # The OPENAI_* environment variables used by the configure-opencode command are
 # provided by the llm-credentials Secret mounted into the workspace
 # (see devspaces/llm-credentials-secret.yaml).
+# IDE-specific customization is no longer allowed on container components (devfile v2
+# removed it) - extensions are defined via the .vscode/extensions.json attribute,
+# which the editor auto-installs at workspace startup from the Open VSX registry.
+attributes:
+  .vscode/extensions.json: |
+    {
+      "recommendations": [
+        "redhat.mta-vscode-extension",
+        "sst-dev.opencode"
+      ]
+    }
 components:
   - name: tools
     container:
       image: registry.access.redhat.com/ubi9/openjdk-21:latest
       memoryLimit: 4Gi
       mountSources: true
-      customizations:
-        vscode:
-          extensions:
-            - redhat.mta-vscode-extension
-            - sst-dev.opencode
-          settings:
-            mta-core.genai.enabled: true
-            mta-core.genai.agentMode: true
 commands:
   - id: install-opencode
     exec:

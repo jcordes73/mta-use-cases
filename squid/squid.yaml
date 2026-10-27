@@ -22,7 +22,9 @@ data:
     acl cluster_networks src 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
 
     # Allowed destinations: extend as needed (e.g. .quay.io, .redhat.com)
-    acl allowed_domains dstdomain .github.com .open-vsx.org
+    # .githubusercontent.com is required for the Dev Spaces factory devfile fetch
+    # (raw.githubusercontent.com) - note it is a different parent domain than .github.com
+    acl allowed_domains dstdomain .github.com .open-vsx.org .githubusercontent.com
 
     http_access deny !Safe_ports
     http_access deny CONNECT !SSL_ports
