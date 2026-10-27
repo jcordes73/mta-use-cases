@@ -1114,7 +1114,10 @@ The MTA plugin is the [Migration Toolkit for Applications (MTA) Visual Studio Co
     components:
       - name: tools
         container:
-          image: registry.access.redhat.com/ubi9/openjdk-21:latest
+          # A dev image with a shell entry point is required - the ubi9/openjdk-21 runtime
+          # image's entry point runs run-java.sh, which expects a JAR in /deployments and
+          # crashes the workspace container. The UDI ships OpenJDK, Maven, and the CLI tools.
+          image: registry.redhat.io/devspaces/udi-rhel9:latest
           memoryLimit: 4Gi
           mountSources: true
     commands:
