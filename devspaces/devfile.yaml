@@ -4,17 +4,11 @@ metadata:
 # The OPENAI_* environment variables used by the configure-opencode command are
 # provided by the llm-credentials Secret mounted into the workspace
 # (see devspaces/llm-credentials-secret.yaml).
-# IDE-specific customization is no longer allowed on container components (devfile v2
-# removed it) - extensions are defined via the .vscode/extensions.json attribute,
-# which the editor auto-installs at workspace startup from the Open VSX registry.
-attributes:
-  .vscode/extensions.json: |
-    {
-      "recommendations": [
-        "redhat.mta-vscode-extension",
-        "sst-dev.opencode"
-      ]
-    }
+# IDE-specific customization is not allowed on container components (devfile v2 removed it),
+# and a .vscode/extensions.json devfile attribute is not honored by che-code. Extensions are
+# installed deterministically via the install-extensions postStart command using the
+# che-code CLI (a .vscode/extensions.json file in the cloned project repo only produces
+# a recommendation prompt, scanned at editor startup).
 components:
   - name: tools
     container:
@@ -25,6 +19,22 @@ components:
       memoryLimit: 4Gi
       mountSources: true
 commands:
+  - id: install-extensions
+    exec:
+      component: tools
+      # Deterministic extension install via the che-code CLI. The .vscode/extensions.json
+      # recommendation file is not honored at postStart time (recommendations are scanned
+      # at editor startup) and VS Code only prompts for workspace recommendations.
+      # Extensions install into /checode/remote/extensions on the per-user PVC (persisted);
+      # the CLI needs the bundled Node libs when run outside the editor entrypoint.
+      commandLine: |
+        export LD_LIBRARY_PATH=/checode/checode-linux-libc/ubi9/ld_libs/openssl:/checode/checode-linux-libc/ubi9/ld_libs/core:/usr/lib64
+        /checode/checode-linux-libc/ubi9/bin/che-code \
+          --user-data-dir /checode/remote/data --extensions-dir /checode/remote/extensions \
+          --install-extension redhat.mta-vscode-extension
+        /checode/checode-linux-libc/ubi9/bin/che-code \
+          --user-data-dir /checode/remote/data --extensions-dir /checode/remote/extensions \
+          --install-extension sst-dev.opencode
   - id: install-opencode
     exec:
       component: tools
@@ -55,7 +65,28 @@ commands:
           }
         }
         EOF
+  - id: configure-mta-settings
+    exec:
+      component: tools
+      # Writes the MTA plugin settings into the che-code machine-level settings file
+      # (/checode/remote/data/Machine/settings.json), which is persisted on the per-user
+      # PVC and applies to all workspace folders. The existing settings (e.g.
+      # git.defaultCloneDirectory, set by Dev Spaces) are merged, not overwritten.
+      commandLine: |
+        mkdir -p /checode/remote/data/Machine
+        [ -f /checode/remote/data/Machine/settings.json ] || echo '{}' > /checode/remote/data/Machine/settings.json
+        cat <<'EOF' > /tmp/mta-settings.json
+        {
+          "mta-core.genai.enabled": true,
+          "mta-core.genai.agentMode": true
+        }
+        EOF
+        jq -s '.[0] * .[1]' /checode/remote/data/Machine/settings.json /tmp/mta-settings.json > /tmp/mta-settings-merged.json \
+          && mv /tmp/mta-settings-merged.json /checode/remote/data/Machine/settings.json
+        rm -f /tmp/mta-settings.json
 events:
   postStart:
+    - install-extensions
     - install-opencode
     - configure-opencode
+    - configure-mta-settings

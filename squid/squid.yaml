@@ -24,7 +24,10 @@ data:
     # Allowed destinations: extend as needed (e.g. .quay.io, .redhat.com)
     # .githubusercontent.com is required for the Dev Spaces factory devfile fetch
     # (raw.githubusercontent.com) - note it is a different parent domain than .github.com
-    acl allowed_domains dstdomain .github.com .open-vsx.org .githubusercontent.com
+    # .open-vsx.org serves the extension gallery queries, but the extension downloads
+    # (.vsix) are served from the CDN host openvsx.eclipsecontent.org
+    # opencode.ai serves the OpenCode CLI install script
+    acl allowed_domains dstdomain .github.com .open-vsx.org .githubusercontent.com .eclipsecontent.org .opencode.ai
 
     http_access deny !Safe_ports
     http_access deny CONNECT !SSL_ports

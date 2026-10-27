@@ -1074,21 +1074,30 @@ oc get pod -n <workspace-namespace> -o yaml | grep -iE 'proxy'
 The MTA plugin is the [Migration Toolkit for Applications (MTA) Visual Studio Code extension](https://marketplace.visualstudio.com/items?itemName=redhat.mta-vscode-extension). It provides the ability to analyze, assess, and migrate source code (using MTA) from within the IDE. The [Visual Studio Code extension guide](https://docs.redhat.com/en/documentation/migration_toolkit_for_applications/8.3/html/configuring_and_using_the_visual_studio_code_extension_for_mta) covers the full details.
 
 - **Install the plugin in a workspace**: Start a workspace in Dev Spaces, open the `Extensions` view, search for `mta` and install the **Migration Toolkit for Applications (MTA)** extension from the Open VSX registry.
-- **Pre-install the plugin for all users**: devfiles no longer support IDE-specific customization — since devfile v2 (schema 2.2.0), the `customizations.vscode.extensions` field of container components is rejected by schema validation ("instance.components[0].container is not allowed to have the additional property customizations"). Instead, define the extensions via the `.vscode/extensions.json` attribute in the devfile, which the editor auto-installs at workspace startup from the Open VSX registry:
+- **Pre-install the plugin for all users**: devfiles no longer support IDE-specific customization — since devfile v2 (schema 2.2.0), the `customizations.vscode.extensions` field of container components is rejected by schema validation ("instance.components[0].container is not allowed to have the additional property customizations"), and a `.vscode/extensions.json` devfile attribute is **not honored** by the che-code editor (it was a Che-Theia-era mechanism). The deterministic way is the `install-extensions` `postStart` command of the devfile below, which runs the **che-code CLI** shipped in the workspace (`/checode/checode-linux-libc/ubi9/bin/che-code --install-extension <ext-id>`, with the bundled Node libs on the `LD_LIBRARY_PATH`) — extensions install immediately into `/checode/remote/extensions` on the per-user PVC (persisted across restarts), with no recommendation prompt and no editor reload:
 
-    ```yaml
-    schemaVersion: 2.2.0
-    attributes:
-      .vscode/extensions.json: |
-        {
-          "recommendations": [
-            "redhat.mta-vscode-extension",
-            "sst-dev.opencode"
-          ]
-        }
+    ```bash
+    export LD_LIBRARY_PATH=/checode/checode-linux-libc/ubi9/ld_libs/openssl:/checode/checode-linux-libc/ubi9/ld_libs/core:/usr/lib64
+    /checode/checode-linux-libc/ubi9/bin/che-code \
+      --user-data-dir /checode/remote/data --extensions-dir /checode/remote/extensions \
+      --install-extension redhat.mta-vscode-extension
+    /checode/checode-linux-libc/ubi9/bin/che-code \
+      --user-data-dir /checode/remote/data --extensions-dir /checode/remote/extensions \
+      --install-extension sst-dev.opencode
     ```
 
-    Alternatively, add a `.vscode/extensions.json` file with the same content to the repository root — the recommendation mechanism is identical. The extension IDs must be available on the Open VSX registry the gallery is served from (see [Extension marketplace configuration](#extension-marketplace-configuration)) — the embedded curated subset contains only a small selection, which is why the public Open VSX registry is used here.
+    As a fallback, a `.vscode/extensions.json` file in the **repository cloned as the project source** makes the editor recommend the extensions at startup (VS Code shows an install prompt, scanned at editor startup only — a file created by a `postStart` command takes effect on the next reload):
+
+    ```json
+    {
+      "recommendations": [
+        "redhat.mta-vscode-extension",
+        "sst-dev.opencode"
+      ]
+    }
+    ```
+
+    This repository ships that file at `.vscode/extensions.json`. The extension IDs must be available on the Open VSX registry the gallery is served from (see [Extension marketplace configuration](#extension-marketplace-configuration)) — the embedded curated subset contains only a small selection, which is why the public Open VSX registry is used here. Note that the gallery *queries* go to `open-vsx.org`, but the extension **downloads** (`.vsix`) are served from the CDN host `openvsx.eclipsecontent.org` — both must be reachable (e.g. included in the [Squid allowlist](#squid-proxy-deployment-disconnected-environments) in disconnected environments), otherwise every install fails with `Server returned 403`.
 - **Create the LLM credentials Secret**: The devfile expects the `OPENAI_*` variables from the [Prerequisites](#prerequisites) as environment variables in the workspace container. A ready-to-use Secret template is available in this repository at `devspaces/llm-credentials-secret.yaml`. Create the Secret in the user's workspace namespace, where it gets mounted as environment variables into the workspace containers via the `controller.devfile.io/mount-to-devworkspace` label and the `controller.devfile.io/mount-as: env` annotation:
 
     ```bash
@@ -1097,20 +1106,12 @@ The MTA plugin is the [Migration Toolkit for Applications (MTA) Visual Studio Co
     ```
 
     The Secret must be created in the namespace the workspaces run in (e.g. `<username>-devspaces`, which is created on the user's first workspace start). With `controller.devfile.io/watch-secret: 'true'` changes to the Secret are picked up when the workspace is restarted.
-- **Create a workspace with the MTA plugin enabled**: A ready-to-use `devfile.yaml` with the extensions defined via the `.vscode/extensions.json` attribute is available in this repository at `devspaces/devfile.yaml`:
+- **Create a workspace with the MTA plugin enabled**: A ready-to-use `devfile.yaml` is available in this repository at `devspaces/devfile.yaml`. It installs both extensions via the che-code CLI, installs the OpenCode CLI, configures OpenCode, and creates the MTA plugin settings — all via `postStart` commands:
 
     ```yaml
     schemaVersion: 2.2.0
     metadata:
       name: mta-migration-workspace
-    attributes:
-      .vscode/extensions.json: |
-        {
-          "recommendations": [
-            "redhat.mta-vscode-extension",
-            "sst-dev.opencode"
-          ]
-        }
     components:
       - name: tools
         container:
@@ -1121,6 +1122,22 @@ The MTA plugin is the [Migration Toolkit for Applications (MTA) Visual Studio Co
           memoryLimit: 4Gi
           mountSources: true
     commands:
+      - id: install-extensions
+        exec:
+          component: tools
+          # Deterministic extension install via the che-code CLI. The .vscode/extensions.json
+          # recommendation file is not honored at postStart time (recommendations are scanned
+          # at editor startup) and VS Code only prompts for workspace recommendations.
+          # Extensions install into /checode/remote/extensions on the per-user PVC (persisted);
+          # the CLI needs the bundled Node libs when run outside the editor entrypoint.
+          commandLine: |
+            export LD_LIBRARY_PATH=/checode/checode-linux-libc/ubi9/ld_libs/openssl:/checode/checode-linux-libc/ubi9/ld_libs/core:/usr/lib64
+            /checode/checode-linux-libc/ubi9/bin/che-code \
+              --user-data-dir /checode/remote/data --extensions-dir /checode/remote/extensions \
+              --install-extension redhat.mta-vscode-extension
+            /checode/checode-linux-libc/ubi9/bin/che-code \
+              --user-data-dir /checode/remote/data --extensions-dir /checode/remote/extensions \
+              --install-extension sst-dev.opencode
       - id: install-opencode
         exec:
           component: tools
@@ -1151,10 +1168,31 @@ The MTA plugin is the [Migration Toolkit for Applications (MTA) Visual Studio Co
               }
             }
             EOF
+      - id: configure-mta-settings
+        exec:
+          component: tools
+          # Writes the MTA plugin settings into the che-code machine-level settings file
+          # (/checode/remote/data/Machine/settings.json), which is persisted on the per-user
+          # PVC and applies to all workspace folders. The existing settings (e.g.
+          # git.defaultCloneDirectory, set by Dev Spaces) are merged, not overwritten.
+          commandLine: |
+            mkdir -p /checode/remote/data/Machine
+            [ -f /checode/remote/data/Machine/settings.json ] || echo '{}' > /checode/remote/data/Machine/settings.json
+            cat <<'EOF' > /tmp/mta-settings.json
+            {
+              "mta-core.genai.enabled": true,
+              "mta-core.genai.agentMode": true
+            }
+            EOF
+            jq -s '.[0] * .[1]' /checode/remote/data/Machine/settings.json /tmp/mta-settings.json > /tmp/mta-settings-merged.json \
+              && mv /tmp/mta-settings-merged.json /checode/remote/data/Machine/settings.json
+            rm -f /tmp/mta-settings.json
     events:
       postStart:
+        - install-extensions
         - install-opencode
         - configure-opencode
+        - configure-mta-settings
     ```
 
     The `devfile.yaml` lives in this GitHub repository at `devspaces/devfile.yaml`, so there is no need to commit it elsewhere. Since Dev Spaces only searches the root of a repository for a `devfile.yaml` or `.devfile.yaml`, the relative path must be specified via the `devfilePath` URL parameter. Create the workspace either in the Dev Spaces dashboard via `Create Workspace` and the factory URL, or directly by opening it:
@@ -1169,15 +1207,29 @@ The MTA plugin is the [Migration Toolkit for Applications (MTA) Visual Studio Co
     echo "https://$(oc get route devspaces -n openshift-devspaces -o jsonpath='{.spec.host}')/#https://raw.githubusercontent.com/jcordes73/mta-use-cases/main/devspaces/devfile.yaml"
     ```
 
+    > ℹ️ NOTE
+    >
+    > **Devfile registry**: Dev Spaces also supports serving the devfile from a [devfile registry](https://devfile.io/docs/2.3.0/building-a-custom-devfile-registry) so it can be picked from the dashboard's `Create Workspace` catalog (and reused via `odo registry add <url>`). In Dev Spaces 3.31, the internal devfile registry is no longer deployed (`status.devfileRegistryURL` is deprecated since 3.30, this installation has no registry deployment), and the `devfileRegistry.deployment` CheCluster override is marked **deprecated** — the supported configuration is `devfileRegistry.externalDevfileRegistries[].url`, pointing at an externally hosted registry (`index.json` + per-stack folders over HTTP, CORS-enabled because the dashboard fetches the catalog from the browser). Hosting a registry requires either building a custom [devfile/registry](https://github.com/devfile/registry) image or serving the static files behind a Route, which adds moving parts for a single devfile. For this PoC the factory URL above is kept as the reuse mechanism — it needs no additional infrastructure, and the GitHub raw fetch is already covered by the [Squid proxy allowlist](#squid-proxy-deployment-disconnected-environments).
+
     When creating the workspace from this repository, the repository itself is cloned into the workspace as the project source. The application source code to be migrated (e.g. from the Gitea instance) can be cloned separately into the workspace.
 
-    When the workspace starts, the MTA extension is automatically installed from the Open VSX registry. Verify it by opening the `Extensions` view in the workspace, where the **Migration Toolkit for Applications (MTA)** extension should be listed. The `sst-dev.opencode` extension additionally provides the [OpenCode](https://opencode.ai/v2/docs/) AI coding agent in the IDE. The devfile therefore:
-    - relies on the `OPENAI_*` variables provided by the mounted [llm-credentials Secret](#create-the-llm-credentials-secret),
-    - installs the OpenCode CLI via a `postStart` event command,
-    - configures `~/.config/opencode/opencode.json` with a custom OpenAI-compatible provider pointing at the same LLM endpoint used by the [MTA UI](#automated-migration-using-the-mta-ui) part, via a second `postStart` event command, and
-    - recommends both extensions via the `.vscode/extensions.json` attribute, which the editor auto-installs at workspace startup.
+    The factory URL also supports cloning the application source **instead of** the use-case repository, via the `remotes=` URL parameter: when one of the additional remotes is named `origin`, the remote from the linked repository is **not** cloned for the workspace, and the remote named `origin` is cloned with its default branch checked out. The devfile is still located in the linked repository (via `devfilePath`):
 
-    The MTA extension settings (see below) are IDE-specific configuration and belong in the workspace's `settings.json` — define them via a `.vscode/settings.json` file in the repository cloned into the workspace (the repository content becomes the project source, so the file is applied on clone):
+    ```bash
+    echo "https://$(oc get route devspaces -n openshift-devspaces -o jsonpath='{.spec.host}')/#https://github.com/jcordes73/mta-use-cases?devfilePath=devspaces/devfile.yaml&remotes={{origin,https://$(oc get route gitea -n gitea -o jsonpath='{.spec.host}')/gitea-admin/<quickstart>.git}}"
+    ```
+
+    > ⚠️ NOTE
+    >
+    > With this variant the cloned project is the Gitea repository, which does not contain this repository's `.vscode/extensions.json`. This does not affect the extensions — they are installed by the devfile's `install-extensions` command via the che-code CLI, independently of the cloned repository (only the startup recommendation prompt is lost). Private Gitea repositories still require Git credentials in the workspace for the project clone to succeed.
+
+    When the workspace starts, the MTA extension is automatically installed from the Open VSX registry by the `install-extensions` `postStart` command. Verify it by running `Extensions: Show Installed Extensions` (or `/checode/checode-linux-libc/ubi9/bin/che-code --list-extensions` in the terminal) in the workspace, where the **Migration Toolkit for Applications (MTA)** extension should be listed. The `sst-dev.opencode` extension additionally provides the [OpenCode](https://opencode.ai/v2/docs/) AI coding agent in the IDE. The devfile therefore:
+    - relies on the `OPENAI_*` variables provided by the mounted [llm-credentials Secret](#create-the-llm-credentials-secret),
+    - installs both extensions via the che-code CLI and the OpenCode CLI, via `postStart` event commands,
+    - configures `~/.config/opencode/opencode.json` with a custom OpenAI-compatible provider pointing at the same LLM endpoint used by the [MTA UI](#automated-migration-using-the-mta-ui) part, via a second `postStart` event command, and
+    - creates the MTA plugin settings via a third `postStart` event command (see below). The `.vscode/extensions.json` file at the repository root additionally makes the editor recommend both extensions at startup.
+
+    The MTA extension settings (see below) are IDE-specific configuration. The devfile creates them via the `configure-mta-settings` `postStart` command, which writes them into the che-code **machine-level settings file** (`/checode/remote/data/Machine/settings.json`) — the file applies to all workspace folders and is persisted on the per-user PVC (it survives workspace restarts). The command merges with the existing settings (e.g. `git.defaultCloneDirectory`, set by Dev Spaces) using `jq` (available in the UDI image), so it is idempotent. Since the settings are editor-level rather than repo-level, this also works when the workspace clones a different repository than the one hosting the devfile (see the [`remotes=` factory URL variant](#mta-plugin-setup)):
 
     The MTA settings pre-configure the AI-assisted remediation of the plugin (the setting IDs were verified against the `redhat.mta-core` 8.3.1 extension, which the `redhat.mta-vscode-extension` extension pack installs):
 
@@ -1190,6 +1242,10 @@ The MTA plugin is the [Migration Toolkit for Applications (MTA) Visual Studio Co
 
     - `mta-core.genai.enabled` enables the GenAI functionality (Solution Server) of the extension.
     - `mta-core.genai.agentMode` enables the experimental agentic flow for solutions, which requires automatic analysis (`mta-core.analysis.analyzeOnSave`, enabled by default).
+
+    > ⚠️ NOTE
+    >
+    > The command runs as a `postStart` event — after the workspace (and editor) has started. VS Code applies settings-file changes live, so the MTA extension reads them in the first session; if a setting is not picked up, reload the editor window. Alternatively, define the same settings via a `.vscode/settings.json` file in the repository cloned into the workspace (workspace-level settings, applied on clone).
 
     > ⚠️ NOTE
     >
