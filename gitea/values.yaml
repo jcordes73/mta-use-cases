@@ -4,6 +4,14 @@ gitea:
     password: "giteaftw!"
     email: "gitea@example.com"
     passwordMode: keepUpdated
+  config:
+    server:
+      # The username the built-in SSH server requires for git operations.
+      # Defaults to the OS user running Gitea — on OpenShift that is the
+      # random container UID (e.g. 1000810000), so pin it to `git`.
+      BUILTIN_SSH_SERVER_USER: git
+      # The user shown in the UI's SSH clone URLs.
+      SSH_USER: git
 postgresql:
   enabled: true
 postgresql-ha:

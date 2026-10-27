@@ -1,0 +1,34 @@
+apiVersion: konveyor.io/v1alpha1
+kind: AgentWorkflow
+metadata:
+  name: ant-to-maven
+  namespace: openshift-mta
+  labels:
+    app.kubernetes.io/managed-by: agentic-controller-defaults
+    konveyor.io/managed: "true"
+spec:
+  guide: "Migrate a Apache Maven based project to Apache Maven."
+  stages:
+    - name: plan
+      agentRef: ant-to-maven-plan-agent
+      instructions: >-
+        Load the plan skill and follow its SKILL.md exactly.
+        Build the migration plan from the Kantra analysis results in .konveyor/analysis.json, reading the build manifest, layout, and source for context.
+        Use the output structure defined in the plan SKILL.md as the exact structure for docs/plan.md — reproduce every required section and field.
+        Do not invent your own document structure.
+        Load the ant-to-maven skill and and inform the plan about migration mappings needed.
+        If the MAVEN_SETTINGS_XML environment variable is set, write its value to /home/harness/.m2/settings.xml so Maven uses the custom settings for any build this stage runs.
+    - name: execute
+      agentRef: ant-to-maven-execute-agent
+      instructions: >-
+        Load the execute skill and follow its SKILL.md exactly.
+        Execute each step in docs/plan.md to migrate the project from Apache Ant to Apache Maven.
+        Create .konveyor/handoff.md and write your results as an ## Execute section in it, as defined in SKILL.md.
+        If the MAVEN_SETTINGS_XML environment variable is set, write its value to /home/harness/.m2/settings.xml so Maven uses the custom settings for any build this stage runs.
+    - name: verify
+      agentRef: ant-to-maven-verify-agent
+      instructions: >-
+        Load the verify skill and follow its SKILL.md exactly.
+        Run the build from docs/plan.md, fix build errors until it compiles, then run tests and runtime verification — grounded in .konveyor/analysis.json and the ## Execute section of .konveyor/handoff.md.
+        Append your results as a ## Verify section in .konveyor/handoff.md as defined in SKILL.md.
+        If the MAVEN_SETTINGS_XML environment variable is set, write its value to /home/harness/.m2/settings.xml so Maven uses the custom settings for any build this stage runs.

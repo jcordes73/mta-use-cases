@@ -1,0 +1,440 @@
+{
+  "name": "JBoss EAP 7 to EAP 8 Assessment",
+  "description": "Assessment questionnaire for migrating applications from JBoss EAP 7.4 to JBoss EAP 8 (Jakarta EE 10, Java SE 17). Covers the application profile, the current platform, APIs and dependencies, build and tooling, and testing and delivery.",
+  "required": false,
+  "sections": [
+    {
+      "order": 1,
+      "name": "Application profile",
+      "questions": [
+        {
+          "order": 1,
+          "text": "Is the application still actively developed and does the team understand its architecture?",
+          "explanation": "Applications under active development with knowledgeable teams are far cheaper to migrate than frozen applications whose original developers have left.",
+          "answers": [
+            {
+              "order": 1,
+              "text": "Actively developed, team fully understands it",
+              "risk": "green",
+              "rationale": "An engaged team can absorb the migration work alongside regular delivery and resolve unknowns quickly.",
+              "mitigation": "No mitigation needed."
+            },
+            {
+              "order": 2,
+              "text": "Maintenance mode, team has partial knowledge",
+              "risk": "yellow",
+              "rationale": "Migration changes must be understood and maintained by a team that no longer knows every part of the application, slowing down triage of migration issues.",
+              "mitigation": "Time-box a knowledge-capture phase before the migration; use MTA analysis reports to document the affected areas."
+            },
+            {
+              "order": 3,
+              "text": "Frozen application, original team gone",
+              "risk": "red",
+              "rationale": "Nobody can confidently certify behavioral parity after the upgrade, and any regression becomes a production incident.",
+              "mitigation": "Assign an owner and budget for reverse engineering; consider a full regression test suite before attempting the migration."
+            }
+          ]
+        },
+        {
+          "order": 2,
+          "text": "How business-critical is the application?",
+          "explanation": "Criticality determines the acceptable level of regression risk and the testing investment required.",
+          "answers": [
+            {
+              "order": 1,
+              "text": "Low business impact if it fails briefly",
+              "risk": "green",
+              "rationale": "A short outage is tolerable, so the migration can proceed with standard testing.",
+              "mitigation": "No mitigation needed."
+            },
+            {
+              "order": 2,
+              "text": "Important, moderate impact tolerable",
+              "risk": "yellow",
+              "rationale": "The upgrade needs a rollback plan and a staged rollout to keep the impact window short.",
+              "mitigation": "Migrate in a lower environment first; define acceptance criteria and a rollback procedure."
+            },
+            {
+              "order": 3,
+              "text": "Mission-critical, outages unacceptable",
+              "risk": "red",
+              "rationale": "Jakarta EE 10 changes (e.g. namespace migration) can alter runtime behavior; undetected regressions would have severe business consequences.",
+              "mitigation": "Full regression suite plus parallel-run or canary rollout; consider migrating a non-critical application first to build experience."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 2,
+      "name": "Current platform",
+      "questions": [
+        {
+          "order": 1,
+          "text": "Which JBoss EAP 7 version does the application run on today?",
+          "explanation": "EAP 7.4 shares most APIs with EAP 8 and needs the least rework; earlier 7.x releases carry larger gaps.",
+          "answers": [
+            {
+              "order": 1,
+              "text": "EAP 7.4",
+              "risk": "green",
+              "rationale": "EAP 7.4 is the direct predecessor of EAP 8; API differences are minimal and well documented.",
+              "mitigation": "No mitigation needed."
+            },
+            {
+              "order": 2,
+              "text": "EAP 7.1 - 7.3",
+              "risk": "yellow",
+              "rationale": "Several subsystems and APIs changed between 7.1 and 7.4; the application may rely on behavior removed by EAP 8.",
+              "mitigation": "Upgrade to EAP 7.4 first and stabilize before moving to EAP 8, or use the MTA EAP 8 ruleset output to size the extra work."
+            },
+            {
+              "order": 3,
+              "text": "EAP 7.0 or earlier",
+              "risk": "red",
+              "rationale": "Multiple major subsystem and API changes accumulated across 7.x; a direct jump to EAP 8 carries high risk.",
+              "mitigation": "Migrate to EAP 7.4 as an intermediate step and re-assess after stabilization."
+            }
+          ]
+        },
+        {
+          "order": 2,
+          "text": "Which Java SE version does the application currently run on?",
+          "explanation": "EAP 8 requires Java SE 17; the source level determines how much JDK migration work accompanies the EAP upgrade.",
+          "answers": [
+            {
+              "order": 1,
+              "text": "Java SE 17 or newer already",
+              "risk": "green",
+              "rationale": "The application already runs on the required Java baseline; no JDK migration is needed.",
+              "mitigation": "No mitigation needed."
+            },
+            {
+              "order": 2,
+              "text": "Java SE 11",
+              "risk": "yellow",
+              "rationale": "A JDK 11 to 17 upgrade is required; removed/deprecated JDK APIs and stricter encapsulation may surface.",
+              "mitigation": "Run the application on JDK 17 before the EAP 8 migration; use the openjdk17+ MTA ruleset to find affected code."
+            },
+            {
+              "order": 3,
+              "text": "Java SE 8",
+              "risk": "red",
+              "rationale": "The JDK 8 to 17 jump is large - removed EE modules, stronger encapsulation, and many removed/changed APIs - and compounds the EAP 8 work.",
+              "mitigation": "Upgrade the JDK to 17 as its own project phase with dedicated testing before starting the EAP 8 migration."
+            }
+          ]
+        },
+        {
+          "order": 3,
+          "text": "How is the application deployed today?",
+          "explanation": "Deployment style affects how much of the EAP configuration must be migrated alongside the application.",
+          "answers": [
+            {
+              "order": 1,
+              "text": "Bootable jar or provisioned server build",
+              "risk": "green",
+              "rationale": "The server configuration is code-defined and reproducible, which maps directly to EAP 8 tooling (e.g. the EAP Maven Plugin).",
+              "mitigation": "No mitigation needed."
+            },
+            {
+              "order": 2,
+              "text": "Traditional server with managed domain",
+              "risk": "yellow",
+              "rationale": "Domain configuration must be re-validated against EAP 8 subsystem schemas; some subsystem defaults changed.",
+              "mitigation": "Export the domain configuration, review MTA findings on removed subsystems, and re-baseline the configuration on EAP 8."
+            },
+            {
+              "order": 3,
+              "text": "Manual/legacy deployment scripts with hand-edited server config",
+              "risk": "red",
+              "rationale": "Undocumented configuration drift is the most common source of failed upgrades; differences from stock configuration are unknown.",
+              "mitigation": "Inventory all configuration deviations (CLI scripts, overlays) before migrating; rebuild the configuration declaratively on EAP 8."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 3,
+      "name": "APIs and dependencies",
+      "questions": [
+        {
+          "order": 1,
+          "text": "Does the application import classes from the javax.* EE namespace (e.g. javax.servlet, javax.ejb, javax.persistence)?",
+          "explanation": "EAP 8 implements Jakarta EE 10, where all EE APIs moved from javax.* to jakarta.*. This is the single largest code change in the migration.",
+          "answers": [
+            {
+              "order": 1,
+              "text": "No javax.* EE imports",
+              "risk": "green",
+              "rationale": "No namespace migration is required for the application's own code.",
+              "mitigation": "No mitigation needed."
+            },
+            {
+              "order": 2,
+              "text": "Some javax.* imports, mostly standard EE APIs",
+              "risk": "yellow",
+              "rationale": "The namespace migration is mechanical for standard APIs, but touches many files and all Jakarta EE dependencies must move to jakarta.* versions.",
+              "mitigation": "Use the Eclipse Transformer or the MTA jakarta-ee9+ ruleset findings; migrate dependency versions to their Jakarta counterparts."
+            },
+            {
+              "order": 3,
+              "text": "Heavy javax.* usage including reflection, XML descriptors, or bytecode manipulation referencing javax classes",
+              "risk": "red",
+              "rationale": "String-based references (reflection, descriptors, generated code) are not caught by compile-time migration and fail at runtime.",
+              "mitigation": "Inventory all descriptor and reflective references; run automated transformer tooling and add runtime smoke tests for each affected path."
+            }
+          ]
+        },
+        {
+          "order": 2,
+          "text": "Does the application use proprietary JBoss APIs (e.g. org.jboss.*, legacy EJB client, JBoss logging/wiring internals)?",
+          "explanation": "Some proprietary APIs were removed or replaced in EAP 8; usage must be mapped to supported replacements.",
+          "answers": [
+            {
+              "order": 1,
+              "text": "No proprietary JBoss APIs",
+              "risk": "green",
+              "rationale": "The application depends only on standard EE APIs and portable libraries.",
+              "mitigation": "No mitigation needed."
+            },
+            {
+              "order": 2,
+              "text": "Limited use with documented replacements available",
+              "risk": "yellow",
+              "rationale": "Each usage needs a replacement (e.g. updated EJB client, Galleon layers) but the mapping is known.",
+              "mitigation": "Follow the MTA EAP 8 ruleset findings for each proprietary API usage; use the EAP 8 BOM for supported versions."
+            },
+            {
+              "order": 3,
+              "text": "Deep integration with server internals",
+              "risk": "red",
+              "rationale": "Server-internal APIs are unsupported in EAP 8 and may have no replacement; the integration may need a redesign.",
+              "mitigation": "Engage Red Hat support to map alternatives; prototype the replacement on EAP 8 before committing to the migration timeline."
+            }
+          ]
+        },
+        {
+          "order": 3,
+          "text": "Which persistence layer does the application use?",
+          "explanation": "EAP 8 ships Hibernate 6 (Jakarta Persistence 3.x); version differences change defaults, dialects, and some API behavior.",
+          "answers": [
+            {
+              "order": 1,
+              "text": "JPA via the server-provided provider only",
+              "risk": "green",
+              "rationale": "The container-managed Hibernate upgrade is handled by the server; standard JPA usage is largely source-compatible.",
+              "mitigation": "Review Hibernate 6 migration notes for changed defaults (e.g. implicit naming, criteria API)."
+            },
+            {
+              "order": 2,
+              "text": "Hibernate with some version-specific features",
+              "risk": "yellow",
+              "rationale": "The Hibernate 5 to 6 upgrade changes types, query handling, and deprecated APIs that version-specific code may hit.",
+              "mitigation": "Use the hibernate6+ ruleset findings; upgrade to the Hibernate 6 API in a test branch and run the full persistence test suite."
+            },
+            {
+              "order": 3,
+              "text": "Native Hibernate internals, custom types, or a mix with a second ORM/DAO framework",
+              "risk": "red",
+              "rationale": "Internal Hibernate APIs changed substantially in 6.x; custom integrations may require redesign rather than migration.",
+              "mitigation": "Isolate and redesign the persistence integration on Hibernate 6; consider a persistence-layer abstraction to decouple the application."
+            }
+          ]
+        },
+        {
+          "order": 4,
+          "text": "Does the application use subsystems or features removed or deprecated in EAP 8 (e.g. legacy remote EJB protocol, PicketLink, older messaging bridges)?",
+          "explanation": "Certain EAP 7 subsystems have no EAP 8 equivalent and require architectural replacement.",
+          "answers": [
+            {
+              "order": 1,
+              "text": "None used",
+              "risk": "green",
+              "rationale": "No removed-subsystem remediation is required.",
+              "mitigation": "No mitigation needed."
+            },
+            {
+              "order": 2,
+              "text": "One or two, with known successors",
+              "risk": "yellow",
+              "rationale": "Each affected subsystem has a documented successor (e.g. messaging bridge replacements) requiring configuration and code changes.",
+              "mitigation": "Map each usage to its successor per the MTA report; test the replacement integration in a non-production environment."
+            },
+            {
+              "order": 3,
+              "text": "Multiple, or unclear whether they are used",
+              "risk": "red",
+              "rationale": "Unknown reliance on removed subsystems surfaces late, during deployment rather than development, and blocks the cutover.",
+              "mitigation": "Produce a complete subsystem inventory from the EAP 7 configuration; prototype every replacement before the migration window."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 4,
+      "name": "Build and tooling",
+      "questions": [
+        {
+          "order": 1,
+          "text": "How is the application built?",
+          "explanation": "Build tooling determines how easily the Jakarta EE 10 dependencies and EAP 8 BOMs can be introduced.",
+          "answers": [
+            {
+              "order": 1,
+              "text": "Maven with maintained dependencies",
+              "risk": "green",
+              "rationale": "Maven projects adopt the EAP 8 BOM and jakarta.* dependencies through straightforward POM changes.",
+              "mitigation": "No mitigation needed."
+            },
+            {
+              "order": 2,
+              "text": "Maven with outdated POMs or mixed Gradle",
+              "risk": "yellow",
+              "rationale": "Dependency hygiene work is needed before the migration; unmaintained transitive versions may have no Jakarta-compatible release.",
+              "mitigation": "Modernize the build (unify on one tool, align dependency versions) before the EAP 8 migration; check every dependency for a jakarta-compatible version."
+            },
+            {
+              "order": 3,
+              "text": "Ant, shell scripts, or IDE-based builds",
+              "risk": "red",
+              "rationale": "Migrating the build system itself and the EAP 8 dependency set at the same time multiplies risk and effort.",
+              "mitigation": "Convert the build to Maven (or Gradle) as a separate phase; only then introduce the EAP 8 BOM and Jakarta dependencies."
+            }
+          ]
+        },
+        {
+          "order": 2,
+          "text": "Are dependency versions managed via a BOM (bill of materials)?",
+          "explanation": "A BOM-driven build makes the EAP 8 platform upgrade largely a single-version change.",
+          "answers": [
+            {
+              "order": 1,
+              "text": "Yes, EAP BOM imported in dependencyManagement",
+              "risk": "green",
+              "rationale": "Switching the BOM import to the EAP 8 BOM updates the whole server API set consistently.",
+              "mitigation": "No mitigation needed."
+            },
+            {
+              "order": 2,
+              "text": "Partially - some versions pinned individually",
+              "risk": "yellow",
+              "rationale": "Individually pinned versions may conflict with the EAP 8 BOM; mismatches surface as NoSuchMethodError or similar runtime failures.",
+              "mitigation": "Move all EE-related versions under the EAP 8 BOM and remove individual pins; resolve conflicts before the cutover."
+            },
+            {
+              "order": 3,
+              "text": "No BOM, all versions managed ad hoc",
+              "risk": "red",
+              "rationale": "Without coordinated version management, the Jakarta namespace migration leaves mixed javax/jakarta dependencies that fail at runtime.",
+              "mitigation": "Introduce the EAP 8 BOM first on EAP 7.4, verify the build, then migrate the namespace and dependencies together."
+            }
+          ]
+        },
+        {
+          "order": 3,
+          "text": "Is the build run in CI/CD with reproducible environments?",
+          "explanation": "CI/CD makes the migration verifiable: every change is built and tested identically on the target platform.",
+          "answers": [
+            {
+              "order": 1,
+              "text": "Fully automated CI/CD with containerized builds",
+              "risk": "green",
+              "rationale": "Adding an EAP 8 build stage is low effort, and every migration commit is automatically validated.",
+              "mitigation": "No mitigation needed."
+            },
+            {
+              "order": 2,
+              "text": "CI exists but is partially manual",
+              "risk": "yellow",
+              "rationale": "Manual steps hide breakage; migration commits may not be uniformly validated.",
+              "mitigation": "Automate the remaining build/test steps before starting the migration."
+            },
+            {
+              "order": 3,
+              "text": "No CI; builds run on developer workstations",
+              "risk": "red",
+              "rationale": "Without reproducible builds, the migration cannot be verified consistently and regressions reach integration late.",
+              "mitigation": "Establish CI with a reproducible containerized build before the migration; treat this as a prerequisite."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "order": 5,
+      "name": "Testing and delivery",
+      "questions": [
+        {
+          "order": 1,
+          "text": "What test coverage does the application have?",
+          "explanation": "Test coverage is the primary safety net for detecting behavioral changes from the namespace and platform migration.",
+          "answers": [
+            {
+              "order": 1,
+              "text": "Comprehensive automated tests (unit + integration)",
+              "risk": "green",
+              "rationale": "The existing suite validates behavioral parity on EAP 8 and catches migration regressions automatically.",
+              "mitigation": "No mitigation needed."
+            },
+            {
+              "order": 2,
+              "text": "Unit tests only, little integration coverage",
+              "risk": "yellow",
+              "rationale": "Namespace and server-integration failures mostly appear at runtime, which unit tests do not exercise.",
+              "mitigation": "Add integration tests (e.g. Arquillian or Testcontainers against EAP) covering the main user journeys before the migration."
+            },
+            {
+              "order": 3,
+              "text": "Manual testing only",
+              "risk": "red",
+              "rationale": "Manual regression on every migration iteration is too slow, so problems are found late and fixes accumulate untested.",
+              "mitigation": "Automate smoke tests for critical paths before the migration; plan a dedicated manual regression cycle at cutover."
+            }
+          ]
+        },
+        {
+          "order": 2,
+          "text": "How often is the application released to production?",
+          "explanation": "Release cadence determines how quickly migration fixes and configuration corrections can reach production.",
+          "answers": [
+            {
+              "order": 1,
+              "text": "Continuous or weekly releases",
+              "risk": "green",
+              "rationale": "The delivery pipeline can ship migration increments quickly and roll back easily.",
+              "mitigation": "No mitigation needed."
+            },
+            {
+              "order": 2,
+              "text": "Monthly or quarterly releases",
+              "risk": "yellow",
+              "rationale": "Migration issues discovered after a release wait for the next window; the migration timeline must account for this.",
+              "mitigation": "Schedule the cutover with buffer before a release window; use feature toggles or parallel deployment where possible."
+            },
+            {
+              "order": 3,
+              "text": "Annual or ad-hoc releases",
+              "risk": "red",
+              "rationale": "A single migration attempt must succeed with little opportunity for iterative correction; risk concentrates in one cutover.",
+              "mitigation": "Rehearse the migration in production-like environments multiple times; define a detailed rollback plan and freeze window."
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "thresholds": {
+    "red": 2,
+    "yellow": 30,
+    "unknown": 15
+  },
+  "riskMessages": {
+    "green": "The application is well positioned for an EAP 8 migration; proceed with the standard migration plan.",
+    "yellow": "The application has several characteristics that require planning and remediation before or during the EAP 8 migration; use the analysis findings to address them.",
+    "red": "The application has critical blockers for the EAP 8 migration; remediate the identified areas first and re-assess before attempting the cutover.",
+    "unknown": "Not enough information is available to assess the EAP 8 migration readiness; answer the outstanding questions to complete the assessment."
+  }
+}

@@ -1,0 +1,17 @@
+FROM registry.redhat.io/ubi9/ubi-micro:latest
+LABEL \
+        org.opencontainers.image.title="konveyor-skills" \
+        org.opencontainers.image.description="Konveyor migration skills (AgentSkills.io format)" \
+        org.opencontainers.image.source="https://github.com/konveyor/agentic-controller" \
+        distribution-scope="public" \
+        url="https://access.redhat.com/documentation/en-us/migration_toolkit_for_applications/" \
+        name="mta/mta-agent-ant-to-maven-skills-rhel9" \
+        vendor="Red Hat, Inc." \
+        cpe="cpe:/a:redhat:migration_toolkit_applications:8.3::el9" \
+        com.redhat.component="mta-agent-skills-container" \
+        io.openshift.maintainer.project="MTA" \
+        io.openshift.maintainer.component="Analysis" \
+        version="8.3.1"
+
+RUN mkdir /skill
+COPY  /skill /skill

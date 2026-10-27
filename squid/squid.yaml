@@ -1,0 +1,92 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: squid
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: squid-config
+  namespace: squid
+data:
+  squid.conf: |
+    # Ports and methods
+    acl SSL_ports port 443
+    acl Safe_ports port 80
+    acl Safe_ports port 443
+    acl CONNECT method CONNECT
+
+    # Proxy clients: adjust to the cluster's Pod CIDR
+    acl localhost src 127.0.0.1/32
+    acl cluster_networks src 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
+
+    # Allowed destinations: extend as needed (e.g. .quay.io, .redhat.com)
+    acl allowed_domains dstdomain .github.com .open-vsx.org
+
+    http_access deny !Safe_ports
+    http_access deny CONNECT !SSL_ports
+    http_access allow localhost
+    http_access allow cluster_networks allowed_domains
+    http_access deny all
+
+    http_port 3128
+
+    # Writable locations for the random UID used by the OpenShift restricted SCC
+    pid_filename /tmp/squid.pid
+
+    # Do not cache responses
+    cache deny all
+
+    coredump_dir /tmp
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: squid
+  namespace: squid
+  labels:
+    app: squid
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: squid
+  template:
+    metadata:
+      labels:
+        app: squid
+    spec:
+      containers:
+        - name: squid
+          # Only available from registry.redhat.io (requires a Red Hat pull secret); mirror into the internal image registry in a disconnected environment
+          image: registry.redhat.io/rhel9/squid:5.5
+          ports:
+            - containerPort: 3128
+              name: http
+          livenessProbe:
+            tcpSocket:
+              port: 3128
+          volumeMounts:
+            - name: config
+              mountPath: /etc/squid/squid.conf
+              subPath: squid.conf
+      volumes:
+        - name: config
+          configMap:
+            name: squid-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: squid
+  namespace: squid
+  labels:
+    app: squid
+spec:
+  selector:
+    app: squid
+  ports:
+    - name: http
+      port: 3128
+      targetPort: 3128

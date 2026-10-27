@@ -1,0 +1,94 @@
+# TLS tunnel exposing the Gitea SSH server through an OpenShift Route.
+#
+# Routes carry HTTP(S) traffic only, so the plain-SSH server (the chart's
+# `gitea-ssh` Service, container port 2222) is wrapped in TLS by a socat
+# proxy and published through a TLS-passthrough Route on
+# ssh.${OPENSHIFT_APPS_DOMAIN}. Clients unwrap the TLS layer with an
+# openssl ProxyCommand (see the SSH Keys section of the README).
+#
+# Apply with: cat gitea/gitea-ssh-route.yaml | envsubst | oc apply -f -
+apiVersion: v1
+kind: Service
+metadata:
+  name: gitea-ssh-tls
+  namespace: gitea
+  labels:
+    app: gitea-ssh-tunnel
+spec:
+  type: ClusterIP
+  ports:
+    - name: tls
+      port: 8443
+      targetPort: 8443
+  selector:
+    app: gitea-ssh-tunnel
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitea-ssh-tunnel
+  namespace: gitea
+  labels:
+    app: gitea-ssh-tunnel
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gitea-ssh-tunnel
+  template:
+    metadata:
+      labels:
+        app: gitea-ssh-tunnel
+    spec:
+      containers:
+        - name: socat
+          image: alpine/socat:latest
+          args:
+            # TLS listener forwarding to the plain Gitea SSH server.
+            # verify=0: the backend connection is in-cluster plain TCP.
+            - "OPENSSL-LISTEN:8443,fork,reuseaddr,verify=0,cert=/etc/tls/tls.crt,key=/etc/tls/tls.key"
+            - "TCP4:gitea-ssh.gitea.svc.cluster.local:2222"
+          ports:
+            - containerPort: 8443
+              name: tls
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            - name: tls
+              mountPath: /etc/tls
+              readOnly: true
+      volumes:
+        - name: tls
+          secret:
+            # A self-signed cert issued for the Route host
+            # (git-ssh.${OPENSHIFT_APPS_DOMAIN}) — created before applying
+            # this manifest, see the SSH Keys section of the README.
+            secretName: gitea-ssh-route-cert
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: gitea-ssh
+  namespace: gitea
+  labels:
+    app: gitea-ssh-tunnel
+spec:
+  host: git-ssh.${OPENSHIFT_APPS_DOMAIN}
+  to:
+    kind: Service
+    name: gitea-ssh-tls
+    weight: 100
+  port:
+    targetPort: 8443
+  tls:
+    # Passthrough forwards the raw TLS stream to the socat proxy; the
+    # router does not terminate it. The socat proxy presents a self-signed
+    # cert issued for this Route host (see the README).
+    termination: passthrough
+    insecureEdgeTerminationPolicy: None
+  wildcardPolicy: None

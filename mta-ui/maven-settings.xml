@@ -3,6 +3,17 @@
   xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0
   http://maven.apache.org/xsd/settings-1.0.0.xsd">
 
+  <proxies>
+    <proxy>
+      <id>squid-proxy</id>
+      <active>true</active>
+      <protocol>${MAVEN_PROXY_PROTOCOL}</protocol>
+      <host>${MAVEN_PROXY_HOST}</host>
+      <port>${MAVEN_PROXY_PORT}</port>
+      <nonProxyHosts>${MAVEN_PROXY_NONPROXYHOSTS}</nonProxyHosts>
+    </proxy>
+  </proxies>
+
   <profiles>
     <profile>
       <id>redhat-ga-repository</id>

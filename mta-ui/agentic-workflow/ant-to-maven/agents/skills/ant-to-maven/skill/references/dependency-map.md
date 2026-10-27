@@ -1,0 +1,18 @@
+# Dependency Map — Apache Ant to Apache Maven
+
+Each row represents a dependency (jar on the Ant classpath, Maven artifact) whose handling changes during the migration.
+
+| old_artifact | new_artifact | version_constraint | action | notes | source_section |
+|---|---|---|---|---|---|
+| `lib/*.jar` (hand-collected classpath via `<fileset>`) | `<dependency>` entries in `pom.xml` | | replace | Each jar on every `<path>`/`<classpath>` becomes a `groupId:artifactId:version` plus scope; resolve via `mvn dependency:tree`; identify mystery jars via `pom.properties`, `MANIFEST.MF`, SHA-1 search, `jdeps` | Phase 2: Dependencies |
+| jars present only for transitive needs | removed | | remove | Maven fetches transitive dependencies automatically; do not create `<dependency>` entries for jars that only existed because another jar needed them | Phase 2: Dependencies |
+| test-only jars referenced by separate `test.classpath` | same jars with `<scope>test</scope>` | | replace | Scope replaces the split between `compile.classpath` and `test.classpath`; a jar used by both main and test code is `compile`, not `test` | Phase 2: Dependencies |
+| container jars in `lib/` (servlet-api.jar, jsp-api.jar) | `jakarta.servlet:jakarta.servlet-api` / `javax.servlet:javax.servlet-api` with `<scope>provided</scope>` | | replace | Container supplies these at runtime; `provided`-scoped deps never enter the WAR. Match namespace to container: `jakarta.*` for Jakarta EE, `javax.*` for Java EE 8 | Packaging Web Applications (WAR) |
+| internal jars fetched from a shared drive (`<copy>` from `//fileserver/...`) | file-based `local-repo/` (stepping stone) → Nexus/Artifactory | | replace | Layout `local-repo/com/acme/acme-shared/2.3.0/acme-shared-2.3.0.jar`, declared via `<repositories><repository><id>acme-local</id><url>file://${project.basedir}/local-repo</url>` | Phase 2: Dependencies |
+| `system`-scoped dependencies (`<systemPath>`) | real repository artifact | | remove | `system` scope is deprecated; it defeats transitive resolution and reproducibility | Phase 2: Dependencies |
+| custom-task jar on hand-built Ant `<path>` | `<dependencies>` block of `maven-antrun-plugin` | | replace | Without the plugin dependency, `<taskdef classname="...">` fails with `taskdef class ... cannot be found` | Phase 5: Custom Ant Tasks and the Antrun Escape Hatch |
+| `lib/schema-tools.jar` for forked `<java>` calls | declared dependency (project or `acme-build-tools` artifact) + `exec-maven-plugin` `classpathScope` | | replace | `exec:java` reads the project's resolved dependencies, not a file path | Phase 5: Custom Ant Tasks and the Antrun Escape Hatch |
+| no JUnit platform (JUnit 4 tests) | `org.junit.jupiter:junit-jupiter` + `junit-vintage-engine` (test scope) | | merge | JUnit 5 tests need Surefire >= 2.22.0; JUnit 4 tests need the vintage engine alongside junit-jupiter; plan to remove vintage once JUnit 4 is gone | Phase 4: Migrate Tests |
+| `org.jboss.arquillian.junit5:arquillian-junit5-container` (new, replaces hand-wired container-test target) | same, test scope | | addition | Plus a container adapter matching the target server (e.g. `org.jboss.arquillian.container:arquillian-tomcat-managed-10`); runs under Failsafe | Packaging Web Applications (WAR) |
+| `org.codehaus.cargo:cargo-maven3-plugin` (new, replaces Ant deploy/start/stop targets) | same | | addition | Generic and container-agnostic; prefer over native plugins (wildfly-maven-plugin, embedded-glassfish) when portability matters | Packaging Web Applications (WAR) |
+| `org.jacoco:jacoco-maven-plugin` (new, replaces JaCoCo/Cobertura Ant coverage) | same | | addition | `prepare-agent` + `report` executions; report under `target/site/jacoco` via `mvn verify` | Phase 4: Migrate Tests |

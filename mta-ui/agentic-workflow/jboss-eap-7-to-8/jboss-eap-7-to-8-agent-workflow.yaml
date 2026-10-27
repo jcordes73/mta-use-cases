@@ -4,7 +4,6 @@ metadata:
   name: jboss-eap-7-to-8
   namespace: openshift-mta
   labels:
-    app.kubernetes.io/managed-by: agentic-controller-defaults
     konveyor.io/managed: "true"
 spec:
   guide: "Migrate a JBoss EAP 7 application to JBoss EAP 8."
@@ -13,11 +12,22 @@ spec:
       agentRef: jboss-eap-7-to-8-plan-agent
       instructions: >-
         Load the plan skill and follow its SKILL.md exactly.
+        Build the migration plan from the Kantra analysis results in .konveyor/analysis.json, reading the build manifest, layout, and source for context.
+        Use the output structure defined in the plan SKILL.md as the exact structure for docs/plan.md — reproduce every required section and field.
+        Do not invent your own document structure.
+        Load the jboss-eap-7-to-8 skill and and inform the plan about migration mappings needed.
+        If the MAVEN_SETTINGS_XML environment variable is set, write its value to /home/harness/.m2/settings.xml so Maven uses the custom settings for any build this stage runs.
     - name: execute
       agentRef: jboss-eap-7-to-8-execute-agent
       instructions: >-
         Load the execute skill and follow its SKILL.md exactly.
+        Execute each step in docs/plan.md to migrate the code from JBoss EAP 7 to JBoss EAP 8.
+        Create .konveyor/handoff.md and write your results as an ## Execute section in it, as defined in SKILL.md.
+        If the MAVEN_SETTINGS_XML environment variable is set, write its value to /home/harness/.m2/settings.xml so Maven uses the custom settings for any build this stage runs.
     - name: verify
       agentRef: jboss-eap-7-to-8-verify-agent
       instructions: >-
         Load the verify skill and follow its SKILL.md exactly.
+        Run the build from docs/plan.md, fix build errors until it compiles, then run tests and runtime verification — grounded in .konveyor/analysis.json and the ## Execute section of .konveyor/handoff.md.
+        Append your results as a ## Verify section in .konveyor/handoff.md as defined in SKILL.md.
+        If the MAVEN_SETTINGS_XML environment variable is set, write its value to /home/harness/.m2/settings.xml so Maven uses the custom settings for any build this stage runs.

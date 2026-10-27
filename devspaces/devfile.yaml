@@ -1,0 +1,55 @@
+schemaVersion: 2.2.0
+metadata:
+  name: mta-migration-workspace
+# The OPENAI_* environment variables used by the configure-opencode command are
+# provided by the llm-credentials Secret mounted into the workspace
+# (see devspaces/llm-credentials-secret.yaml).
+components:
+  - name: tools
+    container:
+      image: registry.access.redhat.com/ubi9/openjdk-21:latest
+      memoryLimit: 4Gi
+      mountSources: true
+      customizations:
+        vscode:
+          extensions:
+            - redhat.mta-vscode-extension
+            - sst-dev.opencode
+          settings:
+            mta-core.genai.enabled: true
+            mta-core.genai.agentMode: true
+commands:
+  - id: install-opencode
+    exec:
+      component: tools
+      commandLine: curl -fsSL https://opencode.ai/install | bash
+  - id: configure-opencode
+    exec:
+      component: tools
+      commandLine: |
+        mkdir -p ~/.config/opencode
+        cat <<EOF > ~/.config/opencode/opencode.json
+        {
+          "\$schema": "https://opencode.ai/config.json",
+          "model": "custom-llm/${OPENAI_MODEL_NAME}",
+          "providers": {
+            "custom-llm": {
+              "name": "Custom LLM",
+              "env": ["OPENAI_API_KEY"],
+              "package": "@opencode/ai/providers/openai-compatible",
+              "settings": {
+                "baseURL": "${OPENAI_BASE_URL}"
+              },
+              "models": {
+                "${OPENAI_MODEL_NAME}": {
+                  "name": "${OPENAI_MODEL_NAME}"
+                }
+              }
+            }
+          }
+        }
+        EOF
+events:
+  postStart:
+    - install-opencode
+    - configure-opencode

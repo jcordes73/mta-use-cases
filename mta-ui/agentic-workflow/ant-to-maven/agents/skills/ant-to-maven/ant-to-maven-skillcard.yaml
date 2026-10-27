@@ -1,0 +1,17 @@
+apiVersion: konveyor.io/v1alpha1
+kind: SkillCard
+metadata:
+  name: ant-to-maven
+  namespace: openshift-mta
+spec:
+   image: image-registry.openshift-image-registry.svc:5000/openshift-mta/mta-ant-to-maven-skills:latest
+   displayName: Apache Ant to Apache Maven Migration Skill
+   version: "0.0.1"
+   description: Migrates from Apache Ant to Apache Maven.
+   type: skill
+   subPath: skill
+   tags:
+     - java
+     - ant 
+     - maven
+     - migration

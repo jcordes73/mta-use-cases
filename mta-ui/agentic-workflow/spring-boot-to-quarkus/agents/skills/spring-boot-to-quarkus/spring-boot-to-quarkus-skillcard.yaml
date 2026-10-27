@@ -1,0 +1,17 @@
+apiVersion: konveyor.io/v1alpha1
+kind: SkillCard
+metadata:
+  name: spring-boot-to-quarkus
+  namespace: openshift-mta
+spec:
+   image: image-registry.openshift-image-registry.svc:5000/openshift-mta/mta-spring-boot-to-quarkus-skills:latest
+   displayName: Spring Boot to Quarkus Migration Skill
+   version: "0.0.1"
+   description: Migrates from Spring Boot to Quarkus.
+   type: skill
+   subPath: skill
+   tags:
+     - java
+     - springboot
+     - quarkus
+     - migration

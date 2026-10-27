@@ -1,0 +1,15 @@
+apiVersion: konveyor.io/v1alpha1
+kind: Agent
+metadata:
+  name: spring-boot-to-quarkus-execute-agent
+  namespace: openshift-mta
+  labels:
+    app.kubernetes.io/managed-by: agentic-controller-defaults
+    konveyor.io/managed: "true"
+spec:
+  image: registry.redhat.io/mta/mta-agent-java-rhel9:8.3.1
+  skillCards:
+    - ref: execute
+    - ref: spring-boot-to-quarkus
+  execution:
+    maxTurns: 200

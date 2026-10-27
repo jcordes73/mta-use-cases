@@ -1,0 +1,15 @@
+apiVersion: konveyor.io/v1alpha1
+kind: Agent
+metadata:
+  name: ant-to-maven-verify-agent
+  namespace: openshift-mta
+  labels:
+    app.kubernetes.io/managed-by: agentic-controller-defaults
+    konveyor.io/managed: "true"
+spec:
+  image: registry.redhat.io/mta/mta-agent-java-rhel9:8.3.1
+  skillCards:
+    - ref: verify
+    - ref: ant-to-maven
+  execution:
+    maxTurns: 200

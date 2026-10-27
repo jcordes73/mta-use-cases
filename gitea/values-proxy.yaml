@@ -1,0 +1,8 @@
+deployment:
+  env:
+    - name: HTTP_PROXY
+      value: ${MTA_HTTP_PROXY}
+    - name: HTTPS_PROXY
+      value: ${MTA_HTTPS_PROXY}
+    - name: NO_PROXY
+      value: ${MTA_NO_PROXY}
