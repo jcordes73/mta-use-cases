@@ -55,18 +55,26 @@ commands:
   - id: configure-opencode
     exec:
       component: tools
+      # Writes the global opencode config (~/.config/opencode/opencode.json).
+      # Schema notes (opencode.ai/config.json): the provider package is `npm` (not
+      # `package`), the API endpoint is `options.baseURL` (not `settings`), and the
+      # docs' top-level key is `provider`. With the wrong field names the custom
+      # provider silently fails to load and its models never appear in OpenCode.
+      # The API key is not stored here - "env": ["OPENAI_API_KEY"] makes the
+      # opencode server read it from the OPENAI_API_KEY environment variable,
+      # injected into every workspace container from the llm-credentials Secret.
       commandLine: |
         mkdir -p ~/.config/opencode
         cat <<EOF > ~/.config/opencode/opencode.json
         {
           "\$schema": "https://opencode.ai/config.json",
           "model": "custom-llm/${OPENAI_MODEL_NAME}",
-          "providers": {
+          "provider": {
             "custom-llm": {
               "name": "Custom LLM",
               "env": ["OPENAI_API_KEY"],
-              "package": "@opencode/ai/providers/openai-compatible",
-              "settings": {
+              "npm": "@ai-sdk/openai-compatible",
+              "options": {
                 "baseURL": "${OPENAI_BASE_URL}"
               },
               "models": {

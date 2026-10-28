@@ -10,7 +10,12 @@ metadata:
   name: squid-config
   namespace: squid
 data:
-  squid.conf: |
+  # Template rendered by the render-config init container at pod start: the
+  # OpenCode LLM endpoint host is substituted from the OPENAI_HOST env var,
+  # provided by the llm-endpoint Secret in this namespace (see
+  # squid/llm-endpoint-secret.yaml). Re-creating that Secret requires a pod
+  # restart for the rendered config to pick up the new host.
+  squid.conf.template: |
     # Ports and methods
     acl SSL_ports port 443
     acl Safe_ports port 80
@@ -27,7 +32,9 @@ data:
     # .open-vsx.org serves the extension gallery queries, but the extension downloads
     # (.vsix) are served from the CDN host openvsx.eclipsecontent.org
     # opencode.ai serves the OpenCode CLI install script
-    acl allowed_domains dstdomain .github.com .open-vsx.org .githubusercontent.com .eclipsecontent.org .opencode.ai
+    # $OPENAI_HOST is the OpenCode LLM endpoint host (rendered from the
+    # llm-endpoint Secret)
+    acl allowed_domains dstdomain .github.com .open-vsx.org .githubusercontent.com .eclipsecontent.org .opencode.ai $OPENAI_HOST
 
     http_access deny !Safe_ports
     http_access deny CONNECT !SSL_ports
@@ -62,6 +69,29 @@ spec:
       labels:
         app: squid
     spec:
+      initContainers:
+        - name: render-config
+          # Renders the squid.conf template into an emptyDir, substituting the
+          # OpenCode LLM endpoint host from the OPENAI_HOST env var. The rendered
+          # file is what the squid container mounts - the ConfigMap template and
+          # the Secret are never written to.
+          image: registry.redhat.io/rhel9/squid:5.5
+          env:
+            - name: OPENAI_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: llm-endpoint
+                  key: OPENAI_HOST
+          command:
+            - /bin/sh
+            - -ec
+            - sed "s/\$OPENAI_HOST/$OPENAI_HOST/g" /template/squid.conf.template > /render/squid.conf && grep allowed_domains /render/squid.conf
+          volumeMounts:
+            - name: template
+              mountPath: /template
+              readOnly: true
+            - name: rendered
+              mountPath: /render
       containers:
         - name: squid
           # Only available from registry.redhat.io (requires a Red Hat pull secret); mirror into the internal image registry in a disconnected environment
@@ -73,13 +103,21 @@ spec:
             tcpSocket:
               port: 3128
           volumeMounts:
-            - name: config
+            # Mounts the rendered file as a single file into /etc/squid (via
+            # subPath) to preserve the image's stock mime.conf, which Squid
+            # requires to start.
+            - name: rendered
               mountPath: /etc/squid/squid.conf
               subPath: squid.conf
       volumes:
-        - name: config
+        - name: template
           configMap:
             name: squid-config
+            items:
+              - key: squid.conf.template
+                path: squid.conf.template
+        - name: rendered
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

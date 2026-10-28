@@ -116,14 +116,19 @@ The response should contain the model's completion, e.g.:
 
 In a disconnected environment, the workloads in this PoC still need controlled outbound access to external hosts: Gitea migrates the original repositories from GitHub, Dev Spaces workspaces reach GitHub and the Open VSX registry, and the MTA Hub reaches the analyzer package repositories. Deploy a Squid proxy to the cluster to provide this egress. It acts as a forward proxy — the workloads point at it via the standard `HTTP_PROXY`/`HTTPS_PROXY` environment variables, which are set from the `MTA_`-prefixed shell variables described in [Proxy configuration](#proxy-configuration) — and only allows traffic to allowlisted destinations.
 
-Deploy the proxy with the manifest in `squid/squid.yaml`. It creates the `squid` namespace, a `squid-config` ConfigMap with the `squid.conf` configuration, a Deployment running the Red Hat `rhel9/squid` image, and a Service exposing it on port 3128. The `squid.conf` is mounted as a single file into `/etc/squid` (via `subPath`) to preserve the image's stock `mime.conf`, which Squid requires to start:
+Deploy the proxy with the manifest in `squid/squid.yaml`. It creates the `squid` namespace, a `squid-config` ConfigMap with the `squid.conf.template` configuration, a Deployment running the Red Hat `rhel9/squid` image, and a Service exposing it on port 3128. The OpenCode LLM endpoint host is **not hardcoded** in the config — the template carries an `$OPENAI_HOST` placeholder, which a `render-config` init container substitutes from the `OPENAI_HOST` env var of a small `llm-endpoint` Secret in the `squid` namespace (the Squid pod cannot reference the workspace `llm-credentials` Secret — cross-namespace Secret references are not allowed). Create that Secret first with the same envsubst pattern as the Dev Spaces secrets, then apply the manifest:
 
 ```bash
+export OPENAI_HOST=${OPENAI_HOST:-$(echo "$OPENAI_BASE_URL" | sed -E 's#https?://([^/]+).*#\1#')}
+oc get secret llm-endpoint -n squid >/dev/null 2>&1 || \
+  cat squid/llm-endpoint-secret.yaml | envsubst | oc apply -f -
 oc apply -f squid/squid.yaml
 oc wait --for=condition=Available deployment squid -n squid --timeout=300s
 ```
 
-The Squid configuration only permits `CONNECT` (HTTPS) requests to port 443, restricts proxy clients to the cluster networks (adjust the `cluster_networks` ACL to the Pod CIDR of the cluster), and only allows the destinations in the `allowed_domains` ACL. The pid file and coredump directory are configured as `/tmp` because OpenShift runs containers with a random UID (restricted SCC). The allowlist covers `.github.com` and `.open-vsx.org` — note that **`.githubusercontent.com` is a different parent domain** and must be allowlisted separately: the Dev Spaces factory devfile fetch pulls the devfile content from `raw.githubusercontent.com`, so without it the workspace creation fails with "failed to fetch devfile" and falls back to the empty default stack (no devfile extensions installed). To allow further destinations, edit the `squid.conf` in the `squid-config` ConfigMap and restart the deployment — the config file is mounted with `subPath`, so changes are not picked up automatically:
+`OPENAI_BASE_URL` is the same variable exported for the [LLM credentials Secret](#create-the-llm-credentials-secret), so the allowlist follows the LLM endpoint automatically — set `OPENAI_BASE_URL` (or override `OPENAI_HOST` directly) before running the commands. The Secret is only created when it does not already exist — an `OPENAI_HOST` set earlier (e.g. from a previous run) is kept and the Secret is not recreated.
+
+The Squid configuration only permits `CONNECT` (HTTPS) requests to port 443, restricts proxy clients to the cluster networks (adjust the `cluster_networks` ACL to the Pod CIDR of the cluster), and only allows the destinations in the `allowed_domains` ACL. The pid file and coredump directory are configured as `/tmp` because OpenShift runs containers with a random UID (restricted SCC). The allowlist covers `.github.com` and `.open-vsx.org` — note that **`.githubusercontent.com` is a different parent domain** and must be allowlisted separately: the Dev Spaces factory devfile fetch pulls the devfile content from `raw.githubusercontent.com`, so without it the workspace creation fails with "failed to fetch devfile" and falls back to the empty default stack (no devfile extensions installed). The allowlist also includes the **OpenCode LLM endpoint** host (`$OPENAI_HOST`, rendered from the `llm-endpoint` Secret) — the workspace containers' `HTTPS_PROXY` routes all external HTTPS traffic through the proxy, so without it every OpenCode request fails with `Proxy refused to open a tunnel: 403 Forbidden` even though the model is configured correctly (verified live: the model appears in `opencode models`, but the request dies at the proxy). The rendered file is produced at pod start, so changing the LLM endpoint requires re-creating the `llm-endpoint` Secret **and** a pod restart. To allow further destinations, edit the `squid.conf.template` in the `squid-config` ConfigMap and restart the deployment — the rendered file is generated only by the init container, so changes are not picked up by the running pod:
 
 ```bash
 oc edit configmap squid-config -n squid
@@ -1293,18 +1298,26 @@ After the clone/pull, the command adds the repository folder to the editor's wor
       - id: configure-opencode
         exec:
           component: tools
+          # Writes the global opencode config (~/.config/opencode/opencode.json).
+          # Schema notes (opencode.ai/config.json): the provider package is `npm` (not
+          # `package`), the API endpoint is `options.baseURL` (not `settings`), and the
+          # docs' top-level key is `provider`. With the wrong field names the custom
+          # provider silently fails to load and its models never appear in OpenCode.
+          # The API key is not stored here - "env": ["OPENAI_API_KEY"] makes the
+          # opencode server read it from the OPENAI_API_KEY environment variable,
+          # injected into every workspace container from the llm-credentials Secret.
           commandLine: |
             mkdir -p ~/.config/opencode
             cat <<EOF > ~/.config/opencode/opencode.json
             {
               "\$schema": "https://opencode.ai/config.json",
               "model": "custom-llm/${OPENAI_MODEL_NAME}",
-              "providers": {
+              "provider": {
                 "custom-llm": {
                   "name": "Custom LLM",
                   "env": ["OPENAI_API_KEY"],
-                  "package": "@opencode/ai/providers/openai-compatible",
-                  "settings": {
+                  "npm": "@ai-sdk/openai-compatible",
+                  "options": {
                     "baseURL": "${OPENAI_BASE_URL}"
                   },
                   "models": {
