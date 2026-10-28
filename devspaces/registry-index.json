@@ -1,0 +1,15 @@
+[
+  {
+    "name": "mta-migration-workspace",
+    "displayName": "MTA Migration Workspace",
+    "description": "Workspace for the MTA PoC: UDI container with OpenJDK/Maven, the MTA VS Code extension, OpenCode, and the jboss-quickstarts application source cloned via the clone-git postStart command (requires the clone-config, llm-credentials, git-ssh-key, and git-ssh-proxy Secrets in the user namespace).",
+    "icon": {
+      "mediatype": "image/svg+xml",
+      "base64data": "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PHJlY3Qgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiByeD0iNiIgZmlsbD0iI2NjMDAwMCIvPjx0ZXh0IHg9IjIwIiB5PSIyNiIgZm9udC1zaXplPSIxMyIgZm9udC13ZWlnaHQ9ImJvbGQiIGZpbGw9IiNmZmZmZmYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtZmFtaWx5PSJzYW5zLXNlcmlmIj5NVEE8L3RleHQ+PC9zdmc+"
+    },
+    "tags": ["Java", "Migration", "MTA", "Empty"],
+    "links": {
+      "v2": "devfiles/mta-migration-workspace/devfile.yaml"
+    }
+  }
+]

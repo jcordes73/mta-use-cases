@@ -1,0 +1,16 @@
+# Kustomize overlay for the Dev Spaces resources in this directory.
+# The devfile-registry content ConfigMap is generated from the real files:
+# the sample devfile served by the registry IS devspaces/devfile.yaml (not a
+# copy), so there is no manual sync - editing the devfile and re-applying with
+# `oc apply -k devspaces/` rolls the registry pod out with the new content
+# (the generated ConfigMap name carries a content hash).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: openshift-devspaces
+resources:
+  - devfile-registry.yaml
+configMapGenerator:
+  - name: devfile-registry-content
+    files:
+      - registry-index.json
+      - devfile.yaml

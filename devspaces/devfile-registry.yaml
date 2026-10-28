@@ -3,134 +3,10 @@
 # (no CORS needed) and expects the sample index at <url>/devfiles/index.json
 # (it first tries <url>/index/all, which 404s here, then falls back).
 # Relative `links.v2` paths in the index are resolved against the registry base URL.
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: devfile-registry-content
-  namespace: openshift-devspaces
-data:
-  # Sample index consumed by the Dev Spaces dashboard (DevfileMetaData entries).
-  index.json: |
-    [
-      {
-        "name": "mta-migration-workspace",
-        "displayName": "MTA Migration Workspace",
-        "description": "Workspace for the MTA PoC: UDI container with OpenJDK/Maven, the MTA VS Code extension, OpenCode, and the jboss-quickstarts application source cloned via the clone-git postStart command (requires the clone-config, llm-credentials, git-ssh-key, and git-ssh-proxy Secrets in the user namespace).",
-        "icon": {
-          "mediatype": "image/svg+xml",
-          "base64data": "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PHJlY3Qgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiByeD0iNiIgZmlsbD0iI2NjMDAwMCIvPjx0ZXh0IHg9IjIwIiB5PSIyNiIgZm9udC1zaXplPSIxMyIgZm9udC13ZWlnaHQ9ImJvbGQiIGZpbGw9IiNmZmZmZmYiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtZmFtaWx5PSJzYW5zLXNlcmlmIj5NVEE8L3RleHQ+PC9zdmc+"
-        },
-        "tags": ["Java", "Migration", "MTA", "Empty"],
-        "links": {
-          "v2": "devfiles/mta-migration-workspace/devfile.yaml"
-        }
-      }
-    ]
-  # The sample devfile - a copy of devspaces/devfile.yaml. Keep it in sync when
-  # the devfile changes (the registry serves a static copy). The "Empty" tag above
-  # makes this the dashboard's default devfile; the storage-type attribute below
-  # counters the dashboard forcing perclick (ephemeral) storage for Empty-tagged
-  # samples.
-  mta-migration-workspace-devfile.yaml: |
-    schemaVersion: 2.2.0
-    metadata:
-      name: mta-migration-workspace
-    attributes:
-      controller.devfile.io/project-clone: disable
-      controller.devfile.io/storage-type: per-user
-    components:
-      - name: tools
-        container:
-          image: registry.redhat.io/devspaces/udi-rhel9:latest
-          memoryLimit: 4Gi
-          mountSources: true
-    commands:
-      - id: install-extensions
-        exec:
-          component: tools
-          commandLine: |
-            export LD_LIBRARY_PATH=/checode/checode-linux-libc/ubi9/ld_libs/openssl:/checode/checode-linux-libc/ubi9/ld_libs/core:/usr/lib64
-            /checode/checode-linux-libc/ubi9/bin/che-code \
-              --user-data-dir /checode/remote/data --extensions-dir /checode/remote/extensions \
-              --install-extension redhat.mta-vscode-extension
-            /checode/checode-linux-libc/ubi9/bin/che-code \
-              --user-data-dir /checode/remote/data --extensions-dir /checode/remote/extensions \
-              --install-extension sst-dev.opencode
-      - id: install-opencode
-        exec:
-          component: tools
-          commandLine: curl -fsSL https://opencode.ai/install | bash
-      - id: configure-opencode
-        exec:
-          component: tools
-          commandLine: |
-            mkdir -p ~/.config/opencode
-            cat <<EOF > ~/.config/opencode/opencode.json
-            {
-              "\$schema": "https://opencode.ai/config.json",
-              "model": "custom-llm/${OPENAI_MODEL_NAME}",
-              "providers": {
-                "custom-llm": {
-                  "name": "Custom LLM",
-                  "env": ["OPENAI_API_KEY"],
-                  "package": "@opencode/ai/providers/openai-compatible",
-                  "settings": {
-                    "baseURL": "${OPENAI_BASE_URL}"
-                  },
-                  "models": {
-                    "${OPENAI_MODEL_NAME}": {
-                      "name": "${OPENAI_MODEL_NAME}"
-                    }
-                  }
-                }
-              }
-            }
-            EOF
-      - id: configure-mta-settings
-        exec:
-          component: tools
-          commandLine: |
-            mkdir -p /checode/remote/data/Machine
-            [ -f /checode/remote/data/Machine/settings.json ] || echo '{}' > /checode/remote/data/Machine/settings.json
-            cat <<'EOF' > /tmp/mta-settings.json
-            {
-              "mta-core.genai.enabled": true,
-              "mta-core.genai.agentMode": true
-            }
-            EOF
-            jq -s '.[0] * .[1]' /checode/remote/data/Machine/settings.json /tmp/mta-settings.json > /tmp/mta-settings-merged.json \
-              && mv /tmp/mta-settings-merged.json /checode/remote/data/Machine/settings.json
-            rm -f /tmp/mta-settings.json
-      - id: clone-git
-        exec:
-          component: tools
-          commandLine: |
-            REPO_NAME=$(basename "${PROJECT_REPO_URL%/}" .git)
-            if [ -d "/projects/${REPO_NAME}/.git" ]; then
-              git -C "/projects/${REPO_NAME}" pull --ff-only
-            else
-              git clone "${PROJECT_REPO_URL}" "/projects/${REPO_NAME}"
-            fi
-            (
-              CODE_BIN=/checode/checode-linux-libc/ubi9/bin/remote-cli/code-oss
-              export LD_LIBRARY_PATH=/checode/checode-linux-libc/ubi9/ld_libs/openssl:/checode/checode-linux-libc/ubi9/ld_libs/core:/usr/lib64
-              for i in $(seq 1 12); do
-                for sock in $(ls -t /tmp/vscode-ipc-*.sock 2>/dev/null); do
-                  if VSCODE_IPC_HOOK_CLI="$sock" timeout 10 "$CODE_BIN" --add "/projects/${REPO_NAME}" >/dev/null 2>&1; then
-                    exit 0
-                  fi
-                done
-                sleep 10
-              done
-            ) >/dev/null 2>&1 &
-    events:
-      postStart:
-        - install-extensions
-        - install-opencode
-        - configure-opencode
-        - configure-mta-settings
-        - clone-git
----
+#
+# The content ConfigMap is generated by kustomization.yaml (in this directory)
+# directly from devspaces/devfile.yaml and registry-index.json - no manual copy
+# to keep in sync. Apply this directory with: oc apply -k devspaces/
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -158,8 +34,9 @@ spec:
             - containerPort: 8080
           volumeMounts:
             # Serves <url>/devfiles/index.json and <url>/devfiles/<name>/devfile.yaml.
-            # The ConfigMap key names become the file names; the sample devfile sits
-            # one level deeper than the classic layout (links.v2 points to it directly).
+            # The generated ConfigMap's file keys are remapped here: the sample devfile
+            # sits one level deeper than the classic layout (links.v2 points to it
+            # directly).
             - name: content
               mountPath: /var/www/html/devfiles
               readOnly: true
@@ -170,13 +47,16 @@ spec:
             limits:
               memory: 128Mi
       volumes:
+        # kustomize rewrites this name reference to the content-hashed generated
+        # ConfigMap name, so any devfile or index change rolls the registry pod
+        # immediately (no kubelet ConfigMap sync delay).
         - name: content
           configMap:
             name: devfile-registry-content
             items:
-              - key: index.json
+              - key: registry-index.json
                 path: index.json
-              - key: mta-migration-workspace-devfile.yaml
+              - key: devfile.yaml
                 path: mta-migration-workspace/devfile.yaml
 ---
 apiVersion: v1
