@@ -1175,24 +1175,30 @@ The MTA plugin is the [Migration Toolkit for Applications (MTA) Visual Studio Co
     ```
 
     This repository ships that file at `.vscode/extensions.json`. The extension IDs must be available on the Open VSX registry the gallery is served from (see [Extension marketplace configuration](#extension-marketplace-configuration)) — the embedded curated subset contains only a small selection, which is why the public Open VSX registry is used here. Note that the gallery *queries* go to `open-vsx.org`, but the extension **downloads** (`.vsix`) are served from the CDN host `openvsx.eclipsecontent.org` — both must be reachable (e.g. included in the [Squid allowlist](#squid-proxy-deployment-disconnected-environments) in disconnected environments), otherwise every install fails with `Server returned 403`.
-- **Create the LLM credentials Secret**: The devfile expects the `OPENAI_*` variables from the [Prerequisites](#prerequisites) as environment variables in the workspace container. A ready-to-use Secret template is available in this repository at `devspaces/llm-credentials-secret.yaml`. Create the Secret in the user's workspace namespace, where it gets mounted as environment variables into the workspace containers via the `controller.devfile.io/mount-to-devworkspace` label and the `controller.devfile.io/mount-as: env` annotation:
 
-    ```bash
-    # admin-devspaces is the namespace of the workspace used in this PoC - for other
-    # users it is <username>-devspaces, created on their first workspace start
-    export WORKSPACE_NAMESPACE="admin-devspaces"
-    cat devspaces/llm-credentials-secret.yaml | sed "s/<workspace-namespace>/${WORKSPACE_NAMESPACE}/" | envsubst | oc apply -f -
-    ```
+#### Create the LLM credentials Secret
 
-    The Secret must be created in the namespace the workspaces run in. With `controller.devfile.io/watch-secret: 'true'` changes to the Secret are picked up when the workspace is restarted.
-- **Create the clone-config Secret**: the devfile's `clone-git` `postStart` command clones the application source to be migrated (the `jboss/jboss-quickstarts` Gitea repository) into the workspace, using the `PROJECT_REPO_URL` variable provided by this Secret as environment variables. A ready-to-use Secret template is available in this repository at `devspaces/git-clone-secret.yaml` — set `PROJECT_REPO_URL` to the SSH clone URL and create it the same way as the LLM credentials Secret:
+The devfile expects the `OPENAI_*` variables from the [Prerequisites](#prerequisites) as environment variables in the workspace container. A ready-to-use Secret template is available in this repository at `devspaces/llm-credentials-secret.yaml`. Create the Secret in the user's workspace namespace, where it gets mounted as environment variables into the workspace containers via the `controller.devfile.io/mount-to-devworkspace` label and the `controller.devfile.io/mount-as: env` annotation:
 
-    ```bash
-    export PROJECT_REPO_URL="ssh://git@git-ssh.${OPENSHIFT_APPS_DOMAIN}:443/jboss/jboss-quickstarts.git"
-    cat devspaces/git-clone-secret.yaml | sed "s/<workspace-namespace>/${WORKSPACE_NAMESPACE}/" | envsubst | oc apply -f -
-    ```
+```bash
+# admin-devspaces is the namespace of the workspace used in this PoC - for other
+# users it is <username>-devspaces, created on their first workspace start
+export WORKSPACE_NAMESPACE="admin-devspaces"
+cat devspaces/llm-credentials-secret.yaml | sed "s/<workspace-namespace>/${WORKSPACE_NAMESPACE}/" | envsubst | oc apply -f -
+```
 
-    The clone URL must use the `ssh://` form with port 443 (the TLS-passthrough Route, see [Git Authentication with SSH Keys](#git-authentication-with-ssh-keys)) — env variables are expanded in the `exec` `commandLine` because it runs via a shell, unlike the devfile `projects` remotes, which the DevWorkspace Operator resolves as literal arguments before any container exists. The command is idempotent: it clones on first start and pulls on restarts (the `/projects` directory persists on the per-user PVC). The clone itself uses SSH keys via the `git-ssh-key` Secret's `ssh_config` (see [Git Authentication with SSH Keys](#git-authentication-with-ssh-keys)) — without that Secret, the command fails with a public-key error and the workspace reports a warning.
+The Secret must be created in the namespace the workspaces run in. With `controller.devfile.io/watch-secret: 'true'` changes to the Secret are picked up when the workspace is restarted.
+
+#### Create the clone-config Secret
+
+The devfile's `clone-git` `postStart` command clones the application source to be migrated (the `jboss/jboss-quickstarts` Gitea repository) into the workspace, using the `PROJECT_REPO_URL` variable provided by this Secret as environment variables. A ready-to-use Secret template is available in this repository at `devspaces/git-clone-secret.yaml` — set `PROJECT_REPO_URL` to the SSH clone URL and create it the same way as the [LLM credentials Secret](#create-the-llm-credentials-secret):
+
+```bash
+export PROJECT_REPO_URL="ssh://git@git-ssh.${OPENSHIFT_APPS_DOMAIN}:443/jboss/jboss-quickstarts.git"
+cat devspaces/git-clone-secret.yaml | sed "s/<workspace-namespace>/${WORKSPACE_NAMESPACE}/" | envsubst | oc apply -f -
+```
+
+The clone URL must use the `ssh://` form with port 443 (the TLS-passthrough Route, see [Git Authentication with SSH Keys](#git-authentication-with-ssh-keys)) — env variables are expanded in the `exec` `commandLine` because it runs via a shell, unlike the devfile `projects` remotes, which the DevWorkspace Operator resolves as literal arguments before any container exists. The command is idempotent: it clones on first start and pulls on restarts (the `/projects` directory persists on the per-user PVC). The clone itself uses SSH keys via the `git-ssh-key` Secret's `ssh_config` (see [Git Authentication with SSH Keys](#git-authentication-with-ssh-keys)) — without that Secret, the command fails with a public-key error and the workspace reports a warning.
 - **Create a workspace with the MTA plugin enabled**: A ready-to-use `devfile.yaml` is available in this repository at `devspaces/devfile.yaml`. It installs both extensions via the che-code CLI, installs the OpenCode CLI, configures OpenCode, creates the MTA plugin settings, and clones the application source via the `clone-git` command — all via `postStart` commands:
 
     ```yaml
@@ -1310,7 +1316,7 @@ The MTA plugin is the [Migration Toolkit for Applications (MTA) Visual Studio Co
     echo "https://$(oc get route devspaces -n openshift-devspaces -o jsonpath='{.spec.host}')/#https://github.com/jcordes73/mta-use-cases?devfilePath=devspaces/devfile.yaml"
     ```
 
-    When creating the workspace from this repository, the repository itself is cloned into the workspace as the project source. The application source code to be migrated (e.g. from the Gitea instance) can be cloned separately into the workspace.
+    When creating the workspace from this repository, the repository itself is cloned into the workspace as the project source. The application source code to be migrated (the `jboss/jboss-quickstarts` Gitea repository) is cloned automatically by the devfile's `clone-git` `postStart` command (see the [Create the clone-config Secret](#create-the-clone-config-secret) setup step above).
 
     The factory URL also supports cloning the application source **instead of** the use-case repository, via the `remotes=` URL parameter: when one of the additional remotes is named `origin`, the remote from the linked repository is **not** cloned for the workspace, and the remote named `origin` is cloned with its default branch checked out. The devfile is still located in the linked repository (via `devfilePath`):
 
@@ -1328,7 +1334,7 @@ The MTA plugin is the [Migration Toolkit for Applications (MTA) Visual Studio Co
 
     ```bash
     cat <<EOF > /tmp/ssh_config
-    Host git-ssh.apps.cluster-l6zlb.dyn.redhatworkshops.io
+    Host git-ssh.${OPENSHIFT_APPS_DOMAIN}
       IdentityFile /etc/ssh/dwo_ssh_key
       StrictHostKeyChecking no
       ProxyCommand openssl s_client -quiet -connect %h:%p -servername %h
@@ -1355,14 +1361,10 @@ The MTA plugin is the [Migration Toolkit for Applications (MTA) Visual Studio Co
 
     The `controller.devfile.io/mount-to-devworkspace` label mounts the secret into every DevWorkspace in the namespace, `mount-path: /etc/ssh/` with `mount-as: subpath` creates `/etc/ssh/dwo_ssh_key`, `/etc/ssh/dwo_ssh_key.pub`, and **overwrites** `/etc/ssh/ssh_config` — git and the project-clone container then use the key automatically. The `watch-secret` label updates the mounts when the secret changes.
 
-    Use the SSH URL in the devfile's `projects` section (raw-devfile variant) or in the `remotes=` factory URL parameter. The Gitea SSH route is a **TLS-passthrough route backed by a TLS tunnel**: a `gitea-ssh-tunnel` deployment (socat with an `OPENSSL-LISTEN:8443` listener) forwards the TLS-wrapped traffic to Gitea's plain SSH port 2222 — the TLS wrapping is required because OpenShift passthrough routes route by TLS SNI, which plain SSH does not send. A plain `ssh -p 443 git@git-ssh...` is therefore closed immediately (the tunnel expects a TLS handshake); the `ssh_config` above carries a `ProxyCommand` (`openssl s_client -quiet`, available in the UDI image) that unwraps TLS before speaking SSH. Since the scp-like `git@host:path` syntax cannot carry a port, the `ssh://` URL form with port 443 is required:
+    The SSH URL is consumed by the devfile's `clone-git` `postStart` command (via the `PROJECT_REPO_URL` variable from the clone-config Secret, see the [Create the clone-config Secret](#create-the-clone-config-secret) setup step above) or by the `remotes=` factory URL parameter — this devfile does not use a `projects` element (see the note on why below). The `remotes=` parameter accepts SSH URLs directly: the dashboard builds the project from the SSH URL (the `FactoryLocationAdapter` handles `ssh://` locations), and the project-clone container clones it with the mounted `git-ssh-key` Secret — the `/etc/ssh/ssh_config` overwrite (including the `ProxyCommand`) applies to the clone container too. The Gitea SSH route is a **TLS-passthrough route backed by a TLS tunnel**: a `gitea-ssh-tunnel` deployment (socat with an `OPENSSL-LISTEN:8443` listener) forwards the TLS-wrapped traffic to Gitea's plain SSH port 2222 — the TLS wrapping is required because OpenShift passthrough routes route by TLS SNI, which plain SSH does not send. A plain `ssh -p 443 git@git-ssh...` is therefore closed immediately (the tunnel expects a TLS handshake); the `ssh_config` above carries a `ProxyCommand` (`openssl s_client -quiet`, available in the UDI image) that unwraps TLS before speaking SSH. Since the scp-like `git@host:path` syntax cannot carry a port, the `ssh://` URL form with port 443 is required:
 
-    ```yaml
-    projects:
-      - name: jboss-quickstarts
-        git:
-          remotes:
-            origin: ssh://git@git-ssh.apps.cluster-l6zlb.dyn.redhatworkshops.io:443/jboss/jboss-quickstarts.git
+    ```bash
+    export PROJECT_REPO_URL="ssh://git@git-ssh.${OPENSHIFT_APPS_DOMAIN}:443/jboss/jboss-quickstarts.git"
     ```
 
     The username is pinned to `git` (Gitea's SSH username convention); the public key must be added to the Gitea user's `SSH / GPG Keys` settings.
@@ -1373,13 +1375,14 @@ The MTA plugin is the [Migration Toolkit for Applications (MTA) Visual Studio Co
     - Passphrase-protected keys are an experimental DevWorkspace Operator feature: they require `enableExperimentalFeatures: true` in the DevWorkspaceOperatorConfig, a `passphrase` key in the secret, and the operator adds its own `postStart` event that starts the ssh-agent and exports `SSH_AGENT_PID`/`SSH_AUTH_SOCK` into the shell environment.
     - The Hub's `git-ssh-credentials` identity (id 3) is the *Hub-side* SSH credential for agentic clones via the Solution Server — the Dev Spaces workspace mechanism is the mounted secret above; both are needed when the MTA agentic workflow clones the repository.
     - The Gitea SSH route is on the cluster's apps domain, which is covered by Dev Spaces' `nonProxyHosts` — no Squid allowlist change is needed for SSH git access.
-    - The `projects` remotes URLs are **not** expanded — the DevWorkspace Operator clones projects in a dedicated init container that runs before any workspace container exists, and the URL is passed to it as a literal argument (Kubernetes `$(VAR)` expansion only applies to `env:` values in the same `env:` list, never to command arguments, and no user secret is env-mounted into the clone container). To build the URL from a variable, either construct the factory URL in the shell (the `remotes=` parameter above) or clone in a `postStart` command inside a workspace container, where secret-injected environment variables are available.
+    - **Why the devfile clones via a `postStart` command instead of a `projects` element**: the DevWorkspace Operator resolves `projects` git URLs as literal arguments in a dedicated init container that runs before any workspace container exists — no env expansion applies (Kubernetes `$(VAR)` expansion only applies to `env:` values in the same `env:` list, never to command arguments, and no user secret is env-mounted into the clone container). The `clone-git` `postStart` command runs inside the workspace container, where secret-injected environment variables (the `PROJECT_REPO_URL` from the clone-config Secret) are available and expanded by the shell.
 
     When the workspace starts, the MTA extension is automatically installed from the Open VSX registry by the `install-extensions` `postStart` command. Verify it by running `Extensions: Show Installed Extensions` (or `/checode/checode-linux-libc/ubi9/bin/che-code --list-extensions` in the terminal) in the workspace, where the **Migration Toolkit for Applications (MTA)** extension should be listed. The `sst-dev.opencode` extension additionally provides the [OpenCode](https://opencode.ai/v2/docs/) AI coding agent in the IDE. The devfile therefore:
     - relies on the `OPENAI_*` variables provided by the mounted [llm-credentials Secret](#create-the-llm-credentials-secret),
     - installs both extensions via the che-code CLI and the OpenCode CLI, via `postStart` event commands,
-    - configures `~/.config/opencode/opencode.json` with a custom OpenAI-compatible provider pointing at the same LLM endpoint used by the [MTA UI](#automated-migration-using-the-mta-ui) part, via a second `postStart` event command, and
-    - creates the MTA plugin settings via a third `postStart` event command (see below). The `.vscode/extensions.json` file at the repository root additionally makes the editor recommend both extensions at startup.
+    - configures `~/.config/opencode/opencode.json` with a custom OpenAI-compatible provider pointing at the same LLM endpoint used by the [MTA UI](#automated-migration-using-the-mta-ui) part, via a second `postStart` event command,
+    - creates the MTA plugin settings via a third `postStart` event command (see below) — the `.vscode/extensions.json` file at the repository root additionally makes the editor recommend both extensions at startup — and
+    - clones the application source to be migrated from the Gitea instance via the `clone-git` `postStart` command, using the `PROJECT_REPO_URL` variable from the mounted clone-config Secret.
 
     The MTA extension settings (see below) are IDE-specific configuration. The devfile creates them via the `configure-mta-settings` `postStart` command, which writes them into the che-code **machine-level settings file** (`/checode/remote/data/Machine/settings.json`) — the file applies to all workspace folders and is persisted on the per-user PVC (it survives workspace restarts). The command merges with the existing settings (e.g. `git.defaultCloneDirectory`, set by Dev Spaces) using `jq` (available in the UDI image), so it is idempotent. Since the settings are editor-level rather than repo-level, this also works when the workspace clones a different repository than the one hosting the devfile (see the [`remotes=` factory URL variant](#mta-plugin-setup)):
 
