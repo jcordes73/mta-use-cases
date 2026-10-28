@@ -1237,6 +1237,8 @@ cat devspaces/git-clone-secret.yaml | sed "s/<workspace-namespace>/${WORKSPACE_N
 ```
 
 The clone URL must use the `ssh://` form with port 443 (the TLS-passthrough Route, see [Git Authentication with SSH Keys](#git-authentication-with-ssh-keys)) — env variables are expanded in the `exec` `commandLine` because it runs via a shell, unlike the devfile `projects` remotes, which the DevWorkspace Operator resolves as literal arguments before any container exists. The command is idempotent: it clones on first start and pulls on restarts (the `/projects` directory persists on the per-user PVC). The clone itself uses SSH keys via the mounted `git-ssh-key` and `git-ssh-proxy` Secrets (see [Git Authentication with SSH Keys](#git-authentication-with-ssh-keys)) — without those Secrets, the command fails with a public-key error and the workspace reports a warning.
+
+After the clone/pull, the command adds the repository folder to the editor's workspace (multi-root) via the **che-code remote CLI** (`/checode/checode-linux-libc/ubi9/bin/remote-cli/code-oss --add <folder>`), so the cloned source appears in the Explorer without a manual `Add Folder to Workspace`. `--add` of an already-open folder is a no-op, so this effectively only adds the folder when it is not yet part of the workspace. The remote CLI talks to the **running editor** over the `/tmp/vscode-ipc-*.sock` IPC socket (selected via `VSCODE_IPC_HOOK_CLI`) — verified live: it exits `0` on success and `1` when no editor is reachable. Because the editor may still be starting when `postStart` commands run, the add step retries in the background for up to ~2 minutes without blocking or failing the `postStart` event.
 - **Create a workspace with the MTA plugin enabled**: A ready-to-use `devfile.yaml` is available in this repository at `devspaces/devfile.yaml`. It installs both extensions via the che-code CLI, installs the OpenCode CLI, configures OpenCode, creates the MTA plugin settings, and clones the application source via the `clone-git` command — all via `postStart` commands:
 
     ```yaml
@@ -1346,6 +1348,13 @@ The clone URL must use the `ssh://` form with port 443 (the TLS-passthrough Rout
           # directory is derived from the URL's last path segment (without .git), so
           # changing PROJECT_REPO_URL requires no command change. Idempotent:
           # clones on first start, pulls on restarts (/projects persists on the per-user PVC).
+          # After the clone/pull, the repository folder is added to the editor's workspace
+          # via the che-code remote CLI (--add of an open folder is a no-op, so it only
+          # adds the folder when it is not yet part of the workspace). The CLI talks to
+          # the running editor over the /tmp/vscode-ipc-*.sock IPC socket and exits 0 on
+          # success, 1 when no editor is reachable - the editor may still be starting
+          # when postStart commands run, so the retry loop runs in the background for
+          # up to ~2 minutes without blocking or failing the postStart event.
           commandLine: |
             REPO_NAME=$(basename "${PROJECT_REPO_URL%/}" .git)
             if [ -d "/projects/${REPO_NAME}/.git" ]; then
@@ -1353,6 +1362,18 @@ The clone URL must use the `ssh://` form with port 443 (the TLS-passthrough Rout
             else
               git clone "${PROJECT_REPO_URL}" "/projects/${REPO_NAME}"
             fi
+            (
+              CODE_BIN=/checode/checode-linux-libc/ubi9/bin/remote-cli/code-oss
+              export LD_LIBRARY_PATH=/checode/checode-linux-libc/ubi9/ld_libs/openssl:/checode/checode-linux-libc/ubi9/ld_libs/core:/usr/lib64
+              for i in $(seq 1 12); do
+                for sock in $(ls -t /tmp/vscode-ipc-*.sock 2>/dev/null); do
+                  if VSCODE_IPC_HOOK_CLI="$sock" timeout 10 "$CODE_BIN" --add "/projects/${REPO_NAME}" >/dev/null 2>&1; then
+                    exit 0
+                  fi
+                done
+                sleep 10
+              done
+            ) >/dev/null 2>&1 &
     events:
       postStart:
         - install-extensions

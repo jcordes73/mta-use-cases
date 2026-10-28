@@ -112,6 +112,14 @@ commands:
       # directory is derived from the URL's last path segment (without .git), so
       # changing PROJECT_REPO_URL requires no command change. Idempotent:
       # clones on first start, pulls on restarts (/projects persists on the per-user PVC).
+      # After the clone/pull, the repository folder is added to the editor's workspace
+      # (multi-root) via the che-code remote CLI: `--add` of an already-open folder is
+      # a no-op, so it effectively only adds the folder when it is not yet part of the
+      # workspace. The CLI talks to the running editor over the /tmp/vscode-ipc-*.sock
+      # IPC socket (VSCODE_IPC_HOOK_CLI) and exits 0 on success, 1 when no editor is
+      # reachable - the editor may still be starting when postStart commands run, so
+      # the retry loop runs in the background for up to ~2 minutes without blocking
+      # or failing the postStart event.
       commandLine: |
         REPO_NAME=$(basename "${PROJECT_REPO_URL%/}" .git)
         if [ -d "/projects/${REPO_NAME}/.git" ]; then
@@ -119,6 +127,18 @@ commands:
         else
           git clone "${PROJECT_REPO_URL}" "/projects/${REPO_NAME}"
         fi
+        (
+          CODE_BIN=/checode/checode-linux-libc/ubi9/bin/remote-cli/code-oss
+          export LD_LIBRARY_PATH=/checode/checode-linux-libc/ubi9/ld_libs/openssl:/checode/checode-linux-libc/ubi9/ld_libs/core:/usr/lib64
+          for i in $(seq 1 12); do
+            for sock in $(ls -t /tmp/vscode-ipc-*.sock 2>/dev/null); do
+              if VSCODE_IPC_HOOK_CLI="$sock" timeout 10 "$CODE_BIN" --add "/projects/${REPO_NAME}" >/dev/null 2>&1; then
+                exit 0
+              fi
+            done
+            sleep 10
+          done
+        ) >/dev/null 2>&1 &
 events:
   postStart:
     - install-extensions
