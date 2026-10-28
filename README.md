@@ -1205,6 +1205,13 @@ The clone URL must use the `ssh://` form with port 443 (the TLS-passthrough Rout
     schemaVersion: 2.2.0
     metadata:
       name: mta-migration-workspace
+    # Disables the DevWorkspace Operator's project-clone init container: the factory
+    # resolution injects the repository containing this devfile (mta-use-cases) as the
+    # project source, and without this attribute that repository would be cloned into
+    # /projects on every start. The application source to be migrated is cloned
+    # exclusively by the clone-git postStart command below.
+    attributes:
+      controller.devfile.io/project-clone: disable
     components:
       - name: tools
         container:
@@ -1317,9 +1324,9 @@ The clone URL must use the `ssh://` form with port 443 (the TLS-passthrough Rout
     echo "https://$(oc get route devspaces -n openshift-devspaces -o jsonpath='{.spec.host}')/#https://github.com/jcordes73/mta-use-cases?devfilePath=devspaces/devfile.yaml"
     ```
 
-    When creating the workspace from this repository, the repository itself is cloned into the workspace as the project source. The application source code to be migrated (the `jboss/jboss-quickstarts` Gitea repository) is cloned automatically by the devfile's `clone-git` `postStart` command (see the [Create the clone-config Secret](#create-the-clone-config-secret) setup step above).
+    When creating the workspace from this repository, the repository itself would normally be cloned into the workspace as the project source — che-server's factory resolution injects it as the workspace's project because the devfile has no `projects` element. The devfile's `controller.devfile.io/project-clone: disable` attribute disables the DevWorkspace Operator's `project-clone` init container, so the use-case repository is **not** cloned. The application source code to be migrated (the `jboss/jboss-quickstarts` Gitea repository) is cloned exclusively by the devfile's `clone-git` `postStart` command (see the [Create the clone-config Secret](#create-the-clone-config-secret) setup step above).
 
-    The factory URL also supports cloning the application source **instead of** the use-case repository, via the `remotes=` URL parameter: when one of the additional remotes is named `origin`, the remote from the linked repository is **not** cloned for the workspace, and the remote named `origin` is cloned with its default branch checked out. The devfile is still located in the linked repository (via `devfilePath`):
+    Because the `project-clone` init container is disabled, project cloning always comes from the `clone-git` command — the `remotes=` URL parameter only changes which repository is **declared** as the workspace's project, not what is actually cloned. The `remotes=` parameter itself still supports cloning the application source instead of the use-case repository: when one of the additional remotes is named `origin`, the remote from the linked repository is **not** cloned for the workspace, and the remote named `origin` is cloned with its default branch checked out. The devfile is still located in the linked repository (via `devfilePath`):
 
     ```bash
     echo "https://$(oc get route devspaces -n openshift-devspaces -o jsonpath='{.spec.host}')/#https://github.com/jcordes73/mta-use-cases?devfilePath=devspaces/devfile.yaml&remotes={{origin,https://$(oc get route gitea -n gitea -o jsonpath='{.spec.host}')/jboss/jboss-quickstarts.git}}"
@@ -1376,7 +1383,7 @@ The clone URL must use the `ssh://` form with port 443 (the TLS-passthrough Rout
     - Passphrase-protected keys are an experimental DevWorkspace Operator feature: they require `enableExperimentalFeatures: true` in the DevWorkspaceOperatorConfig, a `passphrase` key in the secret, and the operator adds its own `postStart` event that starts the ssh-agent and exports `SSH_AGENT_PID`/`SSH_AUTH_SOCK` into the shell environment.
     - The Hub's `git-ssh-credentials` identity (id 3) is the *Hub-side* SSH credential for agentic clones via the Solution Server — the Dev Spaces workspace mechanism is the mounted secret above; both are needed when the MTA agentic workflow clones the repository.
     - The Gitea SSH route is on the cluster's apps domain, which is covered by Dev Spaces' `nonProxyHosts` — no Squid allowlist change is needed for SSH git access.
-    - **Why the devfile clones via a `postStart` command instead of a `projects` element**: the DevWorkspace Operator resolves `projects` git URLs as literal arguments in a dedicated init container that runs before any workspace container exists — no env expansion applies (Kubernetes `$(VAR)` expansion only applies to `env:` values in the same `env:` list, never to command arguments, and no user secret is env-mounted into the clone container). The `clone-git` `postStart` command runs inside the workspace container, where secret-injected environment variables (the `PROJECT_REPO_URL` from the clone-config Secret) are available and expanded by the shell.
+    - **Why the devfile clones via a `postStart` command instead of a `projects` element**: the DevWorkspace Operator resolves `projects` git URLs as literal arguments in a dedicated init container that runs before any workspace container exists — no env expansion applies (Kubernetes `$(VAR)` expansion only applies to `env:` values in the same `env:` list, never to command arguments, and no user secret is env-mounted into the clone container). The `clone-git` `postStart` command runs inside the workspace container, where secret-injected environment variables (the `PROJECT_REPO_URL` from the clone-config Secret) are available and expanded by the shell. This also keeps the devfile cluster-independent: the clone URL is set per cluster by re-creating the clone-config Secret, not by editing the committed devfile. The `project-clone: disable` attribute is what keeps the injected use-case repository out of `/projects` — an alternative considered was a `postStart` `rm -rf` of the cloned use-case repository, but the init container re-clones it on every restart before postStart commands run (DWO runs `project-clone` first for exactly this reason, see devworkspace-operator#1454), so every start would clone and then delete it.
 
     When the workspace starts, the MTA extension is automatically installed from the Open VSX registry by the `install-extensions` `postStart` command. Verify it by running `Extensions: Show Installed Extensions` (or `/checode/checode-linux-libc/ubi9/bin/che-code --list-extensions` in the terminal) in the workspace, where the **Migration Toolkit for Applications (MTA)** extension should be listed. The `sst-dev.opencode` extension additionally provides the [OpenCode](https://opencode.ai/v2/docs/) AI coding agent in the IDE. The devfile therefore:
     - relies on the `OPENAI_*` variables provided by the mounted [llm-credentials Secret](#create-the-llm-credentials-secret),
