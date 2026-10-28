@@ -84,9 +84,31 @@ commands:
         jq -s '.[0] * .[1]' /checode/remote/data/Machine/settings.json /tmp/mta-settings.json > /tmp/mta-settings-merged.json \
           && mv /tmp/mta-settings-merged.json /checode/remote/data/Machine/settings.json
         rm -f /tmp/mta-settings.json
+  - id: clone-git
+    exec:
+      component: tools
+      # Clones the application source to be migrated from the Gitea instance into
+      # /projects, using the PROJECT_REPO_URL variable provided by the clone-config
+      # Secret mounted as env (see devspaces/git-clone-secret.yaml). Env variables are
+      # expanded in exec commandLines (the command runs via a shell) - unlike the
+      # devfile projects remotes, which the DevWorkspace Operator resolves as literal
+      # arguments before any container exists. SSH auth relies on the git-ssh-key
+      # Secret's ssh_config (ProxyCommand openssl s_client) mounted at /etc/ssh/ -
+      # see the README's "Git Authentication with SSH Keys" section. The target
+      # directory is derived from the URL's last path segment (without .git), so
+      # changing PROJECT_REPO_URL requires no command change. Idempotent:
+      # clones on first start, pulls on restarts (/projects persists on the per-user PVC).
+      commandLine: |
+        REPO_NAME=$(basename "${PROJECT_REPO_URL%/}" .git)
+        if [ -d "/projects/${REPO_NAME}/.git" ]; then
+          git -C "/projects/${REPO_NAME}" pull --ff-only
+        else
+          git clone "${PROJECT_REPO_URL}" "/projects/${REPO_NAME}"
+        fi
 events:
   postStart:
     - install-extensions
     - install-opencode
     - configure-opencode
     - configure-mta-settings
+    - clone-git

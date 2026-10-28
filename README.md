@@ -721,7 +721,7 @@ To use it, create an assessment for an application or archetype in the `Assessme
 
 ##### Create an Archetype
 
-An **archetype** groups applications that share common characteristics — determined by *criteria tags* the applications must carry — and lets you configure the group once instead of per application: analyses and assessments can be created for the archetype and apply to all its member applications, the archetype links stakeholders and stakeholder groups (which assessments inherit), and its *target profiles* reference the analysis profiles that apply to the group. The following example creates an archetype for the EAP 7 → 8 migration, with the `JBoss EAP` tag (id 427, applied to every quickstart during analysis) as the criteria tag, the existing stakeholder and stakeholder group, and a target profile referencing the analysis profile from [Define an Analysis Profile](#define-an-analysis-profile):
+An **archetype** groups applications that share common characteristics — determined by *criteria tags* the applications must carry — and lets you configure the group once instead of per application: analyses and assessments can be created for the archetype and apply to all its member applications, the archetype links stakeholders and stakeholder groups (which assessments inherit), its *target profiles* reference the analysis profiles that apply to the group, and its *review* (the recorded migration decision) is inherited by all member applications. The following example creates an archetype for the EAP 7 → 8 migration, with the `JBoss EAP` tag (id 427, applied to every quickstart during analysis) as the criteria tag, the existing stakeholder and stakeholder group, and a target profile referencing the analysis profile from [Define an Analysis Profile](#define-an-analysis-profile):
 
 ```bash
 curl -s -X POST "${MTA_URL}/hub/archetypes" \
@@ -791,6 +791,83 @@ One caveat: the archetype's `risk` field derives **only** from assessments of qu
 curl -s "${MTA_URL}/hub/archetypes/1" -u admin:admin | jq -c '{assessed, risk, confidence}'
 # {"assessed":true,"risk":"red","confidence":15}
 ```
+
+##### Add a Review to the Archetype
+
+Once the assessment is complete, a **Review** records the stakeholder's formal migration decision for the group: the proposed action, effort estimate, business criticality, and work priority. Applications associated with the archetype **inherit** its review — the MTA UI shows the archetype's review on each member application's detail view (until the application has its own review). Create the review via the MTA UI's `Archetypes` view (select the archetype and open **Review**), or via the Hub REST API — a `Review` links either an application or an archetype ref, and the Hub back-links it on the archetype's `review` field:
+
+```bash
+curl -s -X POST "${MTA_URL}/hub/reviews" \
+  -H "Content-Type: application/json" \
+  -u admin:admin \
+  -d '{
+    "archetype": {"id": 1, "name": "JBoss EAP 7 to EAP 8"},
+    "proposedAction": "refactor",
+    "effortEstimate": "medium",
+    "businessCriticality": 3,
+    "workPriority": 1,
+    "comments": "Refactor the JBoss EAP 7 quickstarts to EAP 8. Medium effort due to Jakarta EE namespace updates."
+  }'
+```
+
+The POST returns `201 Created` with the review (id 1 here). Verify that the archetype links it:
+
+```bash
+curl -s "${MTA_URL}/hub/archetypes/1" -u admin:admin | jq -c '{review, assessed, risk}'
+# {"review":{"id":1},"assessed":true,"risk":"red"}
+```
+
+The review's field values are:
+
+- `proposedAction`: the migration strategy — `rehost`, `replatform`, `refactor`, `repurchase`, `retire`, or `retain`.
+- `effortEstimate`: a qualitative measure of the required work — `small`, `medium`, `large`, or `extra_large`.
+- `businessCriticality` and `workPriority`: numbers used by the adoption/reports views to prioritize the group.
+- `comments`: free-form context.
+
+To change the review later, use a full-object `PUT /hub/reviews/{id}` (the same pattern as the archetype's stakeholder links); `DELETE /hub/reviews/{id}` removes it and clears the archetype's `review` field.
+
+##### Create a Migration Wave
+
+A **migration wave** groups applications that move together in a scheduled time window, with stakeholders and stakeholder groups assigned for the group — it is used by the MTA UI's timeline/reports views to plan the migration sequence. Create the wave via the MTA UI's `Migration waves` view, or via the Hub REST API — `POST /hub/migrationwaves` with the window's dates in **RFC3339 format** (date-only strings are rejected with `parsing time ... cannot parse "" as "T"`):
+
+```bash
+curl -s -X POST "${MTA_URL}/hub/migrationwaves" \
+  -H "Content-Type: application/json" \
+  -u admin:admin \
+  -d '{
+    "name": "EAP 8 Wave 1",
+    "startDate": "2026-11-02T00:00:00Z",
+    "endDate": "2026-12-18T00:00:00Z",
+    "stakeholders": [{"id": 1, "name": "John Doe"}],
+    "stakeholderGroups": [{"id": 1, "name": "JBoss EAP Quickstarts"}]
+  }'
+```
+
+The POST returns `201 Created` with the wave (id 1 here). Assign applications via a full-object `PUT /hub/migrationwaves/{id}` — the Hub sets each application's `migrationWave` back-link automatically:
+
+```bash
+curl -s -X PUT "${MTA_URL}/hub/migrationwaves/1" \
+  -H "Content-Type: application/json" \
+  -u admin:admin \
+  -d '{
+    "id": 1,
+    "name": "EAP 8 Wave 1",
+    "startDate": "2026-11-02T00:00:00Z",
+    "endDate": "2026-12-18T00:00:00Z",
+    "stakeholders": [{"id": 1, "name": "John Doe"}],
+    "stakeholderGroups": [{"id": 1, "name": "JBoss EAP Quickstarts"}],
+    "applications": [{"id": 124, "name": "helloworld"}]
+  }'
+```
+
+Verify that the application is linked:
+
+```bash
+curl -s "${MTA_URL}/hub/applications/124" -u admin:admin | jq -c '{id, name, migrationWave}'
+# {"id":124,"name":"helloworld","migrationWave":{"id":1,"name":"EAP 8 Wave 1"}}
+```
+
+Applications can also be assigned in bulk: retrieve the ids to add (e.g. via `GET /hub/applications` filtered by the archetype's criteria tags) and send them all in the wave's `applications` array. `DELETE /hub/migrationwaves/{id}` removes the wave and clears the assigned applications' `migrationWave` links.
 
 ##### Create custom Skills and Rules
 
@@ -1101,12 +1178,22 @@ The MTA plugin is the [Migration Toolkit for Applications (MTA) Visual Studio Co
 - **Create the LLM credentials Secret**: The devfile expects the `OPENAI_*` variables from the [Prerequisites](#prerequisites) as environment variables in the workspace container. A ready-to-use Secret template is available in this repository at `devspaces/llm-credentials-secret.yaml`. Create the Secret in the user's workspace namespace, where it gets mounted as environment variables into the workspace containers via the `controller.devfile.io/mount-to-devworkspace` label and the `controller.devfile.io/mount-as: env` annotation:
 
     ```bash
-    export WORKSPACE_NAMESPACE="<workspace-namespace>"
+    # admin-devspaces is the namespace of the workspace used in this PoC - for other
+    # users it is <username>-devspaces, created on their first workspace start
+    export WORKSPACE_NAMESPACE="admin-devspaces"
     cat devspaces/llm-credentials-secret.yaml | sed "s/<workspace-namespace>/${WORKSPACE_NAMESPACE}/" | envsubst | oc apply -f -
     ```
 
-    The Secret must be created in the namespace the workspaces run in (e.g. `<username>-devspaces`, which is created on the user's first workspace start). With `controller.devfile.io/watch-secret: 'true'` changes to the Secret are picked up when the workspace is restarted.
-- **Create a workspace with the MTA plugin enabled**: A ready-to-use `devfile.yaml` is available in this repository at `devspaces/devfile.yaml`. It installs both extensions via the che-code CLI, installs the OpenCode CLI, configures OpenCode, and creates the MTA plugin settings — all via `postStart` commands:
+    The Secret must be created in the namespace the workspaces run in. With `controller.devfile.io/watch-secret: 'true'` changes to the Secret are picked up when the workspace is restarted.
+- **Create the clone-config Secret**: the devfile's `clone-git` `postStart` command clones the application source to be migrated (the `jboss/jboss-quickstarts` Gitea repository) into the workspace, using the `PROJECT_REPO_URL` variable provided by this Secret as environment variables. A ready-to-use Secret template is available in this repository at `devspaces/git-clone-secret.yaml` — set `PROJECT_REPO_URL` to the SSH clone URL and create it the same way as the LLM credentials Secret:
+
+    ```bash
+    export PROJECT_REPO_URL="ssh://git@git-ssh.${OPENSHIFT_APPS_DOMAIN}:443/jboss/jboss-quickstarts.git"
+    cat devspaces/git-clone-secret.yaml | sed "s/<workspace-namespace>/${WORKSPACE_NAMESPACE}/" | envsubst | oc apply -f -
+    ```
+
+    The clone URL must use the `ssh://` form with port 443 (the TLS-passthrough Route, see [Git Authentication with SSH Keys](#git-authentication-with-ssh-keys)) — env variables are expanded in the `exec` `commandLine` because it runs via a shell, unlike the devfile `projects` remotes, which the DevWorkspace Operator resolves as literal arguments before any container exists. The command is idempotent: it clones on first start and pulls on restarts (the `/projects` directory persists on the per-user PVC). The clone itself uses SSH keys via the `git-ssh-key` Secret's `ssh_config` (see [Git Authentication with SSH Keys](#git-authentication-with-ssh-keys)) — without that Secret, the command fails with a public-key error and the workspace reports a warning.
+- **Create a workspace with the MTA plugin enabled**: A ready-to-use `devfile.yaml` is available in this repository at `devspaces/devfile.yaml`. It installs both extensions via the che-code CLI, installs the OpenCode CLI, configures OpenCode, creates the MTA plugin settings, and clones the application source via the `clone-git` command — all via `postStart` commands:
 
     ```yaml
     schemaVersion: 2.2.0
@@ -1187,12 +1274,34 @@ The MTA plugin is the [Migration Toolkit for Applications (MTA) Visual Studio Co
             jq -s '.[0] * .[1]' /checode/remote/data/Machine/settings.json /tmp/mta-settings.json > /tmp/mta-settings-merged.json \
               && mv /tmp/mta-settings-merged.json /checode/remote/data/Machine/settings.json
             rm -f /tmp/mta-settings.json
+      - id: clone-git
+        exec:
+          component: tools
+          # Clones the application source to be migrated from the Gitea instance into
+          # /projects, using the PROJECT_REPO_URL variable provided by the clone-config
+          # Secret mounted as env (see devspaces/git-clone-secret.yaml). Env variables are
+          # expanded in exec commandLines (the command runs via a shell) - unlike the
+          # devfile projects remotes, which the DevWorkspace Operator resolves as literal
+          # arguments before any container exists. SSH auth relies on the git-ssh-key
+          # Secret's ssh_config (ProxyCommand openssl s_client) mounted at /etc/ssh/ -
+          # see the README's "Git Authentication with SSH Keys" section. The target
+          # directory is derived from the URL's last path segment (without .git), so
+          # changing PROJECT_REPO_URL requires no command change. Idempotent:
+          # clones on first start, pulls on restarts (/projects persists on the per-user PVC).
+          commandLine: |
+            REPO_NAME=$(basename "${PROJECT_REPO_URL%/}" .git)
+            if [ -d "/projects/${REPO_NAME}/.git" ]; then
+              git -C "/projects/${REPO_NAME}" pull --ff-only
+            else
+              git clone "${PROJECT_REPO_URL}" "/projects/${REPO_NAME}"
+            fi
     events:
       postStart:
         - install-extensions
         - install-opencode
         - configure-opencode
         - configure-mta-settings
+        - clone-git
     ```
 
     The `devfile.yaml` lives in this GitHub repository at `devspaces/devfile.yaml`, so there is no need to commit it elsewhere. Since Dev Spaces only searches the root of a repository for a `devfile.yaml` or `.devfile.yaml`, the relative path must be specified via the `devfilePath` URL parameter. Create the workspace either in the Dev Spaces dashboard via `Create Workspace` and the factory URL, or directly by opening it:
@@ -1201,27 +1310,70 @@ The MTA plugin is the [Migration Toolkit for Applications (MTA) Visual Studio Co
     echo "https://$(oc get route devspaces -n openshift-devspaces -o jsonpath='{.spec.host}')/#https://github.com/jcordes73/mta-use-cases?devfilePath=devspaces/devfile.yaml"
     ```
 
-    Alternatively, for GitHub repositories a direct URL to the devfile also works:
-
-    ```bash
-    echo "https://$(oc get route devspaces -n openshift-devspaces -o jsonpath='{.spec.host}')/#https://raw.githubusercontent.com/jcordes73/mta-use-cases/main/devspaces/devfile.yaml"
-    ```
-
-    > ℹ️ NOTE
-    >
-    > **Devfile registry**: Dev Spaces also supports serving the devfile from a [devfile registry](https://devfile.io/docs/2.3.0/building-a-custom-devfile-registry) so it can be picked from the dashboard's `Create Workspace` catalog (and reused via `odo registry add <url>`). In Dev Spaces 3.31, the internal devfile registry is no longer deployed (`status.devfileRegistryURL` is deprecated since 3.30, this installation has no registry deployment), and the `devfileRegistry.deployment` CheCluster override is marked **deprecated** — the supported configuration is `devfileRegistry.externalDevfileRegistries[].url`, pointing at an externally hosted registry (`index.json` + per-stack folders over HTTP, CORS-enabled because the dashboard fetches the catalog from the browser). Hosting a registry requires either building a custom [devfile/registry](https://github.com/devfile/registry) image or serving the static files behind a Route, which adds moving parts for a single devfile. For this PoC the factory URL above is kept as the reuse mechanism — it needs no additional infrastructure, and the GitHub raw fetch is already covered by the [Squid proxy allowlist](#squid-proxy-deployment-disconnected-environments).
-
     When creating the workspace from this repository, the repository itself is cloned into the workspace as the project source. The application source code to be migrated (e.g. from the Gitea instance) can be cloned separately into the workspace.
 
     The factory URL also supports cloning the application source **instead of** the use-case repository, via the `remotes=` URL parameter: when one of the additional remotes is named `origin`, the remote from the linked repository is **not** cloned for the workspace, and the remote named `origin` is cloned with its default branch checked out. The devfile is still located in the linked repository (via `devfilePath`):
 
     ```bash
-    echo "https://$(oc get route devspaces -n openshift-devspaces -o jsonpath='{.spec.host}')/#https://github.com/jcordes73/mta-use-cases?devfilePath=devspaces/devfile.yaml&remotes={{origin,https://$(oc get route gitea -n gitea -o jsonpath='{.spec.host}')/gitea-admin/<quickstart>.git}}"
+    echo "https://$(oc get route devspaces -n openshift-devspaces -o jsonpath='{.spec.host}')/#https://github.com/jcordes73/mta-use-cases?devfilePath=devspaces/devfile.yaml&remotes={{origin,https://$(oc get route gitea -n gitea -o jsonpath='{.spec.host}')/jboss/jboss-quickstarts.git}}"
     ```
 
     > ⚠️ NOTE
     >
-    > With this variant the cloned project is the Gitea repository, which does not contain this repository's `.vscode/extensions.json`. This does not affect the extensions — they are installed by the devfile's `install-extensions` command via the che-code CLI, independently of the cloned repository (only the startup recommendation prompt is lost). Private Gitea repositories still require Git credentials in the workspace for the project clone to succeed.
+    > With this variant the cloned project is the Gitea repository, which does not contain this repository's `.vscode/extensions.json`. This does not affect the extensions — they are installed by the devfile's `install-extensions` command via the che-code CLI, independently of the cloned repository (only the startup recommendation prompt is lost). Private Gitea repositories still require Git credentials in the workspace for the project clone to succeed — via SSH keys (see [Git Authentication with SSH Keys](#git-authentication-with-ssh-keys)) or via an HTTPS credentials secret mounted the same way.
+
+    #### Git Authentication with SSH Keys
+
+    SSH keys are not carried in the devfile itself — they are provisioned as a secret in the workspace namespace, and the DevWorkspace Operator injects them into the project-clone container and all workspace containers. The secret must contain the private key (`dwo_ssh_key`), the public key (`dwo_ssh_key.pub`), and an `ssh_config` referencing the key. Create it in the workspace namespace (e.g. `admin-devspaces`):
+
+    ```bash
+    cat <<EOF > /tmp/ssh_config
+    Host git-ssh.apps.cluster-l6zlb.dyn.redhatworkshops.io
+      IdentityFile /etc/ssh/dwo_ssh_key
+      StrictHostKeyChecking no
+      ProxyCommand openssl s_client -quiet -connect %h:%p -servername %h
+    EOF
+
+    oc create secret -n admin-devspaces generic git-ssh-key \
+      --from-file=dwo_ssh_key="$SSH_KEY" \
+      --from-file=dwo_ssh_key.pub="$SSH_PUB_KEY" \
+      --from-file=ssh_config=/tmp/ssh_config
+
+    oc patch secret -n admin-devspaces git-ssh-key --type merge -p '{
+      "metadata": {
+        "labels": {
+          "controller.devfile.io/mount-to-devworkspace": "true",
+          "controller.devfile.io/watch-secret": "true"
+        },
+        "annotations": {
+          "controller.devfile.io/mount-path": "/etc/ssh/",
+          "controller.devfile.io/mount-as": "subpath"
+        }
+      }
+    }'
+    ```
+
+    The `controller.devfile.io/mount-to-devworkspace` label mounts the secret into every DevWorkspace in the namespace, `mount-path: /etc/ssh/` with `mount-as: subpath` creates `/etc/ssh/dwo_ssh_key`, `/etc/ssh/dwo_ssh_key.pub`, and **overwrites** `/etc/ssh/ssh_config` — git and the project-clone container then use the key automatically. The `watch-secret` label updates the mounts when the secret changes.
+
+    Use the SSH URL in the devfile's `projects` section (raw-devfile variant) or in the `remotes=` factory URL parameter. The Gitea SSH route is a **TLS-passthrough route backed by a TLS tunnel**: a `gitea-ssh-tunnel` deployment (socat with an `OPENSSL-LISTEN:8443` listener) forwards the TLS-wrapped traffic to Gitea's plain SSH port 2222 — the TLS wrapping is required because OpenShift passthrough routes route by TLS SNI, which plain SSH does not send. A plain `ssh -p 443 git@git-ssh...` is therefore closed immediately (the tunnel expects a TLS handshake); the `ssh_config` above carries a `ProxyCommand` (`openssl s_client -quiet`, available in the UDI image) that unwraps TLS before speaking SSH. Since the scp-like `git@host:path` syntax cannot carry a port, the `ssh://` URL form with port 443 is required:
+
+    ```yaml
+    projects:
+      - name: jboss-quickstarts
+        git:
+          remotes:
+            origin: ssh://git@git-ssh.apps.cluster-l6zlb.dyn.redhatworkshops.io:443/jboss/jboss-quickstarts.git
+    ```
+
+    The username is pinned to `git` (Gitea's SSH username convention); the public key must be added to the Gitea user's `SSH / GPG Keys` settings.
+
+    Notes:
+
+    - `StrictHostKeyChecking = no` (from the DevWorkspace Operator's documented `ssh_config`) disables host-key verification — acceptable for a PoC; for production, add Gitea's host key to a `known_hosts` file in the secret and reference it via `UserKnownHostsFile /etc/ssh/known_hosts` instead.
+    - Passphrase-protected keys are an experimental DevWorkspace Operator feature: they require `enableExperimentalFeatures: true` in the DevWorkspaceOperatorConfig, a `passphrase` key in the secret, and the operator adds its own `postStart` event that starts the ssh-agent and exports `SSH_AGENT_PID`/`SSH_AUTH_SOCK` into the shell environment.
+    - The Hub's `git-ssh-credentials` identity (id 3) is the *Hub-side* SSH credential for agentic clones via the Solution Server — the Dev Spaces workspace mechanism is the mounted secret above; both are needed when the MTA agentic workflow clones the repository.
+    - The Gitea SSH route is on the cluster's apps domain, which is covered by Dev Spaces' `nonProxyHosts` — no Squid allowlist change is needed for SSH git access.
+    - The `projects` remotes URLs are **not** expanded — the DevWorkspace Operator clones projects in a dedicated init container that runs before any workspace container exists, and the URL is passed to it as a literal argument (Kubernetes `$(VAR)` expansion only applies to `env:` values in the same `env:` list, never to command arguments, and no user secret is env-mounted into the clone container). To build the URL from a variable, either construct the factory URL in the shell (the `remotes=` parameter above) or clone in a `postStart` command inside a workspace container, where secret-injected environment variables are available.
 
     When the workspace starts, the MTA extension is automatically installed from the Open VSX registry by the `install-extensions` `postStart` command. Verify it by running `Extensions: Show Installed Extensions` (or `/checode/checode-linux-libc/ubi9/bin/che-code --list-extensions` in the terminal) in the workspace, where the **Migration Toolkit for Applications (MTA)** extension should be listed. The `sst-dev.opencode` extension additionally provides the [OpenCode](https://opencode.ai/v2/docs/) AI coding agent in the IDE. The devfile therefore:
     - relies on the `OPENAI_*` variables provided by the mounted [llm-credentials Secret](#create-the-llm-credentials-secret),
@@ -1246,6 +1398,10 @@ The MTA plugin is the [Migration Toolkit for Applications (MTA) Visual Studio Co
     > ⚠️ NOTE
     >
     > The command runs as a `postStart` event — after the workspace (and editor) has started. VS Code applies settings-file changes live, so the MTA extension reads them in the first session; if a setting is not picked up, reload the editor window. Alternatively, define the same settings via a `.vscode/settings.json` file in the repository cloned into the workspace (workspace-level settings, applied on clone).
+
+    > ℹ️ NOTE
+    >
+    > **OpenCode CLI on the PATH**: no devfile `env` configuration is needed — the OpenCode installer (`install-opencode` command) installs the binary to `~/.opencode/bin` and appends `export PATH=$HOME/.opencode/bin:$PATH` to the shell config file it detects via `$SHELL` (typically `~/.bashrc`, idempotent via an exact-line guard). The file lives on the per-user PVC, so the change persists across restarts. Verify after the first workspace start that the `# opencode` line is present in `~/.bashrc` — if the exec context's `$SHELL` is not `bash`, the installer targets a different config file (or none if it is unwritable), in which case add the export line to `~/.bashrc` manually or extend the `install-opencode` command. Adding PATH via the devfile is not possible cleanly: Kubernetes `$(VAR_NAME)` expansion in container `env` values only resolves variables defined earlier in the same `env:` list — never image-provided variables like `PATH` — so `value: "...:$(PATH)"` would replace the image's PATH with a literal, unexpanded string and break the tools on it.
 
     > ⚠️ NOTE
     >
