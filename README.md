@@ -1091,6 +1091,44 @@ spec:
 
 Set `openVSXURL: ''` to switch back to the embedded curated registry. The editor queries exactly **one** Open VSX endpoint at a time, so this is either/or — the embedded registry stays deployed but is no longer the gallery. In the disconnected environment the `open-vsx.org` traffic goes through the Squid proxy, which already allowlists it. Two caveats: the gallery's extension installs are fetched by the **workspaces** (whose proxy environment variables must cover `open-vsx.org` — the [Squid allowlist](#squid-proxy-deployment-disconnected-environments) does), and the [factory devfile fetch](#squid-proxy-deployment-disconnected-environments) additionally needs `raw.githubusercontent.com`. If full control over the catalog is required instead (strictly air-gapped), a standalone Open VSX registry can be deployed in-cluster via `spec.components.openVSXRegistry.enable: true` and extensions published manually from `.vsix` files.
 
+#### Devfile registry
+
+The devfile registry serves the **sample devfiles list** shown on the Dashboard → `Create Workspace` page. A registry is a simple static HTTP server: an index JSON listing the samples (name, display name, description, tags, icon, and a `links.v2` URL pointing to the devfile) plus the devfiles themselves. This PoC runs one as an **Apache HTTP Server container** serving static content from a ConfigMap — the manifests are in this repository at `devspaces/devfile-registry.yaml` (ConfigMap with the index and the sample devfile, a `ubi9/httpd-24` Deployment, a Service, and an edge Route):
+
+```bash
+oc apply -f devspaces/devfile-registry.yaml
+```
+
+It serves `<url>/devfiles/index.json` and the sample devfile at `<url>/devfiles/mta-migration-workspace/devfile.yaml`. The layout details that matter, verified from the Dev Spaces dashboard source:
+
+- The dashboard fetches external registries at `<url>/index/all` first, falling back to the classic `<url>/devfiles/index.json` location — a plain httpd 404 on the first is sufficient (both locations are tried; only the last failure is fatal).
+- Index entries are validated against `displayName`, `icon`, `links`, and `tags` — all four must be present. The `icon` can be an inline data URI (`{"mediatype": ..., "base64data": ...}`).
+- Relative `links.v2` paths are resolved against the registry base URL, so `devfiles/<name>/devfile.yaml` works without hardcoding the route host.
+- Everything (index and devfile content) is fetched **server-side** via the dashboard backend's data-resolver proxy (`POST /dashboard/api/data/resolver`) — the registry needs **no CORS headers**.
+- The `ubi9/httpd-24` image is used because the cluster's restricted SCC runs containers as an arbitrary non-root UID, which cannot bind port 80 — the image listens on 8080 natively.
+
+The registry is registered cluster-wide via the `devfileRegistry.externalDevfileRegistries` field of the CheCluster custom resource (see `devspaces/che-cluster.yaml`):
+
+```yaml
+spec:
+  components:
+    devfileRegistry:
+      externalDevfileRegistries:
+        - url: https://devfile-registry-openshift-devspaces.apps.<cluster-domain>/
+```
+
+Three notes on the sample's configuration: the internal registry is left enabled (`devfileRegistry.disableInternalRegistry` is not set) — disabling it breaks the empty-workspace flow, which relies on the internal registry's `Empty`-tagged editor devfile. The sample's index entry is tagged **`Empty`** (alongside its descriptive tags) — the dashboard's `selectDefaultDevfile` picks the registry sample tagged `Empty` as the **default devfile** for workspaces created without one, so the MTA workspace devfile (UDI container, extensions, postStart setup, auto-clone) is what users get by default. And the served sample devfile is a **static copy** of `devspaces/devfile.yaml` — when the devfile changes, update the ConfigMap (`oc apply -f devspaces/devfile-registry.yaml`) so the sample stays in sync (ConfigMap volume changes take up to ~a minute to propagate to the served files).
+
+The `Empty` tag has a side effect: the dashboard's samples list forces **`perclick` (ephemeral) storage** for Empty-tagged samples. The devfile's `controller.devfile.io/storage-type: per-user` attribute overrides this at the DevWorkspace level, so workspaces keep persistent storage — this attribute is required in the served devfile for as long as it carries the `Empty` tag. The registration takes effect immediately (the dashboard fetches the CheCluster per request); verify with the dashboard's own data-resolver proxy:
+
+```bash
+oc exec -n openshift-devspaces deploy/devspaces-dashboard -- sh -c \
+  'TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token); \
+   curl -s -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+   -d "{\"url\": \"https://devfile-registry-openshift-devspaces.apps.<cluster-domain>/devfiles/index.json\"}" \
+   http://localhost:8080/dashboard/api/data/resolver'
+```
+
 #### Proxy configuration
 
 On an OpenShift cluster, the Dev Spaces Operator automatically uses the OpenShift cluster-wide proxy configuration. However, the proxy settings can be overridden by configuring them in the `CheCluster` custom resource. This is useful in restricted environments, where workspaces need to reach e.g. GitHub and the Open VSX registry through a proxy.
@@ -1210,8 +1248,14 @@ The clone URL must use the `ssh://` form with port 443 (the TLS-passthrough Rout
     # project source, and without this attribute that repository would be cloned into
     # /projects on every start. The application source to be migrated is cloned
     # exclusively by the clone-git postStart command below.
+    #
+    # The storage-type attribute forces per-user (persistent) storage: the devfile is
+    # also served as the registry sample tagged "Empty" (the dashboard's default
+    # devfile, see the Devfile registry section), and the dashboard forces perclick
+    # (ephemeral) storage for Empty-tagged samples.
     attributes:
       controller.devfile.io/project-clone: disable
+      controller.devfile.io/storage-type: per-user
     components:
       - name: tools
         container:

@@ -19,3 +19,23 @@ spec:
         volumeName: ""
   devWorkspace:
     storageStrategy: per-user
+  devEnvironments:
+    # The default devfile for workspaces created without a devfile (the dashboard's
+    # "Empty Workspace"). The dashboard reads spec.devEnvironments.defaultComponents
+    # first, falling back to the operator-baked default (a bare universal-developer-image
+    # without memory limit or source mount). The default editor (che-code) is unchanged -
+    # it comes from the operator fallback (che-incubator/che-code/latest) and is added
+    # as a separate component alongside these.
+    defaultComponents:
+      - name: tools
+        container:
+          image: registry.redhat.io/devspaces/udi-rhel9:latest
+          memoryLimit: 4Gi
+          mountSources: true
+  devfileRegistry:
+    # External devfile registry serving the MTA sample devfile (see
+    # devspaces/devfile-registry.yaml). The internal registry stays enabled -
+    # disabling it breaks the empty-workspace flow, which relies on the internal
+    # registry's "Empty"-tagged editor devfile.
+    externalDevfileRegistries:
+      - url: https://devfile-registry-openshift-devspaces.apps.cluster-l6zlb.dyn.redhatworkshops.io/

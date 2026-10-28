@@ -6,8 +6,14 @@ metadata:
 # project source, and without this attribute that repository would be cloned into
 # /projects on every start. The application source to be migrated is cloned
 # exclusively by the clone-git postStart command below.
+#
+# The storage-type attribute forces per-user (persistent) storage: this devfile is
+# also served as the registry sample tagged "Empty" (the dashboard's default devfile),
+# and the dashboard forces perclick (ephemeral) storage for Empty-tagged samples -
+# without the attribute every workspace start would get fresh storage.
 attributes:
   controller.devfile.io/project-clone: disable
+  controller.devfile.io/storage-type: per-user
 # The OPENAI_* environment variables used by the configure-opencode command are
 # provided by the llm-credentials Secret mounted into the workspace
 # (see devspaces/llm-credentials-secret.yaml).
