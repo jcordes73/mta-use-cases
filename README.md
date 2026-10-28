@@ -1198,7 +1198,7 @@ export PROJECT_REPO_URL="ssh://git@git-ssh.${OPENSHIFT_APPS_DOMAIN}:443/jboss/jb
 cat devspaces/git-clone-secret.yaml | sed "s/<workspace-namespace>/${WORKSPACE_NAMESPACE}/" | envsubst | oc apply -f -
 ```
 
-The clone URL must use the `ssh://` form with port 443 (the TLS-passthrough Route, see [Git Authentication with SSH Keys](#git-authentication-with-ssh-keys)) — env variables are expanded in the `exec` `commandLine` because it runs via a shell, unlike the devfile `projects` remotes, which the DevWorkspace Operator resolves as literal arguments before any container exists. The command is idempotent: it clones on first start and pulls on restarts (the `/projects` directory persists on the per-user PVC). The clone itself uses SSH keys via the `git-ssh-key` Secret's `ssh_config` (see [Git Authentication with SSH Keys](#git-authentication-with-ssh-keys)) — without that Secret, the command fails with a public-key error and the workspace reports a warning.
+The clone URL must use the `ssh://` form with port 443 (the TLS-passthrough Route, see [Git Authentication with SSH Keys](#git-authentication-with-ssh-keys)) — env variables are expanded in the `exec` `commandLine` because it runs via a shell, unlike the devfile `projects` remotes, which the DevWorkspace Operator resolves as literal arguments before any container exists. The command is idempotent: it clones on first start and pulls on restarts (the `/projects` directory persists on the per-user PVC). The clone itself uses SSH keys via the mounted `git-ssh-key` and `git-ssh-proxy` Secrets (see [Git Authentication with SSH Keys](#git-authentication-with-ssh-keys)) — without those Secrets, the command fails with a public-key error and the workspace reports a warning.
 - **Create a workspace with the MTA plugin enabled**: A ready-to-use `devfile.yaml` is available in this repository at `devspaces/devfile.yaml`. It installs both extensions via the che-code CLI, installs the OpenCode CLI, configures OpenCode, creates the MTA plugin settings, and clones the application source via the `clone-git` command — all via `postStart` commands:
 
     ```yaml
@@ -1289,7 +1289,8 @@ The clone URL must use the `ssh://` form with port 443 (the TLS-passthrough Rout
           # expanded in exec commandLines (the command runs via a shell) - unlike the
           # devfile projects remotes, which the DevWorkspace Operator resolves as literal
           # arguments before any container exists. SSH auth relies on the git-ssh-key
-          # Secret's ssh_config (ProxyCommand openssl s_client) mounted at /etc/ssh/ -
+          # Secret's key files mounted at /etc/ssh/ and the git-ssh-proxy Secret's
+          # ProxyCommand mounted at /etc/ssh/ssh_config.d/ -
           # see the README's "Git Authentication with SSH Keys" section. The target
           # directory is derived from the URL's last path segment (without .git), so
           # changing PROJECT_REPO_URL requires no command change. Idempotent:
@@ -1330,20 +1331,14 @@ The clone URL must use the `ssh://` form with port 443 (the TLS-passthrough Rout
 
     #### Git Authentication with SSH Keys
 
-    SSH keys are not carried in the devfile itself — they are provisioned as a secret in the workspace namespace, and the DevWorkspace Operator injects them into the project-clone container and all workspace containers. The secret must contain the private key (`dwo_ssh_key`), the public key (`dwo_ssh_key.pub`), and an `ssh_config` referencing the key. Create it in the workspace namespace (e.g. `admin-devspaces`):
+    SSH keys are not carried in the devfile itself — they are provisioned as secrets in the workspace namespace, and the DevWorkspace Operator injects them into the project-clone container and all workspace containers. Two secrets are required:
+
+    - **`git-ssh-key`** — the private key (`dwo_ssh_key`) and the public key (`dwo_ssh_key.pub`). It does **not** carry an `ssh_config`: the Dev Spaces server's `SshConfigConfigurator` auto-generates the `ssh_config` key in this Secret (`host *` + `IdentityFile /etc/ssh/dwo_ssh_key` + `StrictHostKeyChecking = no` + `Include /etc/ssh/ssh_config.d/*.conf`) and **reverts any custom `ssh_config`** (e.g. one carrying a `ProxyCommand`) whenever the namespace is configured — so the TLS-unwrapping `ProxyCommand` must live elsewhere (see the `git-ssh-proxy` Secret below). Create the key Secret in the workspace namespace (e.g. `admin-devspaces`):
 
     ```bash
-    cat <<EOF > /tmp/ssh_config
-    Host git-ssh.${OPENSHIFT_APPS_DOMAIN}
-      IdentityFile /etc/ssh/dwo_ssh_key
-      StrictHostKeyChecking no
-      ProxyCommand openssl s_client -quiet -connect %h:%p -servername %h
-    EOF
-
     oc create secret -n admin-devspaces generic git-ssh-key \
       --from-file=dwo_ssh_key="$SSH_KEY" \
-      --from-file=dwo_ssh_key.pub="$SSH_PUB_KEY" \
-      --from-file=ssh_config=/tmp/ssh_config
+      --from-file=dwo_ssh_key.pub="$SSH_PUB_KEY"
 
     oc patch secret -n admin-devspaces git-ssh-key --type merge -p '{
       "metadata": {
@@ -1359,9 +1354,15 @@ The clone URL must use the `ssh://` form with port 443 (the TLS-passthrough Rout
     }'
     ```
 
-    The `controller.devfile.io/mount-to-devworkspace` label mounts the secret into every DevWorkspace in the namespace, `mount-path: /etc/ssh/` with `mount-as: subpath` creates `/etc/ssh/dwo_ssh_key`, `/etc/ssh/dwo_ssh_key.pub`, and **overwrites** `/etc/ssh/ssh_config` — git and the project-clone container then use the key automatically. The `watch-secret` label updates the mounts when the secret changes.
+    - **`git-ssh-proxy`** — the `ProxyCommand`, mounted as a config file into `/etc/ssh/ssh_config.d/`, which the che-server-generated `ssh_config` includes. A ready-to-use Secret template is available in this repository at `devspaces/git-ssh-proxy-secret.yaml`:
 
-    The SSH URL is consumed by the devfile's `clone-git` `postStart` command (via the `PROJECT_REPO_URL` variable from the clone-config Secret, see the [Create the clone-config Secret](#create-the-clone-config-secret) setup step above) or by the `remotes=` factory URL parameter — this devfile does not use a `projects` element (see the note on why below). The `remotes=` parameter accepts SSH URLs directly: the dashboard builds the project from the SSH URL (the `FactoryLocationAdapter` handles `ssh://` locations), and the project-clone container clones it with the mounted `git-ssh-key` Secret — the `/etc/ssh/ssh_config` overwrite (including the `ProxyCommand`) applies to the clone container too. The Gitea SSH route is a **TLS-passthrough route backed by a TLS tunnel**: a `gitea-ssh-tunnel` deployment (socat with an `OPENSSL-LISTEN:8443` listener) forwards the TLS-wrapped traffic to Gitea's plain SSH port 2222 — the TLS wrapping is required because OpenShift passthrough routes route by TLS SNI, which plain SSH does not send. A plain `ssh -p 443 git@git-ssh...` is therefore closed immediately (the tunnel expects a TLS handshake); the `ssh_config` above carries a `ProxyCommand` (`openssl s_client -quiet`, available in the UDI image) that unwraps TLS before speaking SSH. Since the scp-like `git@host:path` syntax cannot carry a port, the `ssh://` URL form with port 443 is required:
+    ```bash
+    cat devspaces/git-ssh-proxy-secret.yaml | sed "s/<workspace-namespace>/${WORKSPACE_NAMESPACE}/" | envsubst | oc apply -f -
+    ```
+
+    The file is scoped with `Host git-ssh.*` so other SSH hosts are unaffected. The `controller.devfile.io/mount-to-devworkspace` label mounts both secrets into every DevWorkspace in the namespace — `/etc/ssh/dwo_ssh_key`, `/etc/ssh/dwo_ssh_key.pub`, and `/etc/ssh/ssh_config.d/99-git-proxy.conf` are created (the image's own `50-redhat.conf` remains alongside), and the generated `/etc/ssh/ssh_config` includes the directory — git and the project-clone container then use the key and the `ProxyCommand` automatically. The `watch-secret` label updates the mounts when the secrets change. New automount secrets are picked up when the workspace restarts.
+
+    The SSH URL is consumed by the devfile's `clone-git` `postStart` command (via the `PROJECT_REPO_URL` variable from the clone-config Secret, see the [Create the clone-config Secret](#create-the-clone-config-secret) setup step above) or by the `remotes=` factory URL parameter — this devfile does not use a `projects` element (see the note on why below). The `remotes=` parameter accepts SSH URLs directly: the dashboard builds the project from the SSH URL (the `FactoryLocationAdapter` handles `ssh://` locations), and the project-clone container clones it with the mounted `git-ssh-key` and `git-ssh-proxy` Secrets — the mounts apply to the clone container too. The Gitea SSH route is a **TLS-passthrough route backed by a TLS tunnel**: a `gitea-ssh-tunnel` deployment (socat with an `OPENSSL-LISTEN:8443` listener) forwards the TLS-wrapped traffic to Gitea's plain SSH port 2222 — the TLS wrapping is required because OpenShift passthrough routes route by TLS SNI, which plain SSH does not send. A plain `ssh -p 443 git@git-ssh...` is therefore closed immediately (the tunnel expects a TLS handshake); the `99-git-proxy.conf` file carries a `ProxyCommand` (`openssl s_client -quiet`, available in the UDI image) that unwraps TLS before speaking SSH. Since the scp-like `git@host:path` syntax cannot carry a port, the `ssh://` URL form with port 443 is required — without an explicit port the `ProxyCommand`'s `%p` expands to the default SSH port 22, where the TLS client fails with `wrong version number`:
 
     ```bash
     export PROJECT_REPO_URL="ssh://git@git-ssh.${OPENSHIFT_APPS_DOMAIN}:443/jboss/jboss-quickstarts.git"
@@ -1371,7 +1372,7 @@ The clone URL must use the `ssh://` form with port 443 (the TLS-passthrough Rout
 
     Notes:
 
-    - `StrictHostKeyChecking = no` (from the DevWorkspace Operator's documented `ssh_config`) disables host-key verification — acceptable for a PoC; for production, add Gitea's host key to a `known_hosts` file in the secret and reference it via `UserKnownHostsFile /etc/ssh/known_hosts` instead.
+    - `StrictHostKeyChecking = no` (from the che-server-generated `ssh_config`) disables host-key verification — acceptable for a PoC; for production, add Gitea's host key to a `known_hosts` file in the secret and reference it via `UserKnownHostsFile /etc/ssh/known_hosts` instead.
     - Passphrase-protected keys are an experimental DevWorkspace Operator feature: they require `enableExperimentalFeatures: true` in the DevWorkspaceOperatorConfig, a `passphrase` key in the secret, and the operator adds its own `postStart` event that starts the ssh-agent and exports `SSH_AGENT_PID`/`SSH_AUTH_SOCK` into the shell environment.
     - The Hub's `git-ssh-credentials` identity (id 3) is the *Hub-side* SSH credential for agentic clones via the Solution Server — the Dev Spaces workspace mechanism is the mounted secret above; both are needed when the MTA agentic workflow clones the repository.
     - The Gitea SSH route is on the cluster's apps domain, which is covered by Dev Spaces' `nonProxyHosts` — no Squid allowlist change is needed for SSH git access.
