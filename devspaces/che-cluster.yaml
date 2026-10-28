@@ -4,10 +4,40 @@ metadata:
   name: devspaces
   namespace: openshift-devspaces
 spec:
+  # This manifest is cluster-independent: the cluster domain is carried as a
+  # ${OPENSHIFT_APPS_DOMAIN} placeholder (the devfile-registry URL and the
+  # proxy nonProxyHosts). Apply it with the same envsubst pattern as the
+  # secrets:
+  #   export OPENSHIFT_APPS_DOMAIN=<cluster-domain>
+  #   cat devspaces/che-cluster.yaml | envsubst | oc apply -f -
+  # Applying with plain `oc apply -f` would store the placeholder literally.
+  # Note the CRD schema prunes unknown fields silently: devfileRegistry and
+  # devWorkspace live under spec.components (not spec top-level, as in the
+  # deprecated v1 schema) - a misplaced block is dropped on apply without an
+  # error, so verify placements against the CRD.
   components:
     cheServer:
       debug: false
       logLevel: INFO
+      # Cluster-level proxy: rendered by the operator as Java system properties
+      # into the che ConfigMap (che-server) and synced by che-server into the
+      # che-user-settings ConfigMap of each workspace namespace, which is
+      # envFrom-mounted into every workspace container. The CheCluster is the
+      # single source of truth - proxy entries set directly in che-user-settings
+      # are overwritten by the reconcile. The nonProxyHosts cover internal
+      # traffic (Hub, Gitea, the devfile-registry route) so it bypasses the
+      # proxy, which only allowlists external destinations. The Kubernetes
+      # service IP (the `kubernetes` ClusterIP) is added to the list by the
+      # operator automatically - it is not part of this manifest.
+      proxy:
+        url: http://squid.squid.svc
+        port: "3128"
+        nonProxyHosts:
+          - localhost
+          - 127.0.0.1
+          - .svc
+          - .cluster.local
+          - .${OPENSHIFT_APPS_DOMAIN}
     # Serve the extension gallery from the public Open VSX registry instead of the
     # embedded curated subset (set to '' to switch back to the embedded registry)
     pluginRegistry:
@@ -17,9 +47,19 @@ spec:
       pvc:
         storageClass: ""
         volumeName: ""
-  devWorkspace:
-    storageStrategy: per-user
+    # External devfile registry serving the MTA sample devfile (see
+    # devspaces/devfile-registry.yaml). The internal registry stays enabled -
+    # disabling it breaks the empty-workspace flow, which relies on the internal
+    # registry's "Empty"-tagged editor devfile.
+    devfileRegistry:
+      externalDevfileRegistries:
+        - url: https://devfile-registry-openshift-devspaces.${OPENSHIFT_APPS_DOMAIN}/
   devEnvironments:
+    # Workspace PVC strategy: per-user (persistent storage shared by all of a
+    # user's workspaces, survives restarts). This is the v2 CRD location - the
+    # v1-era devWorkspace.storageStrategy field no longer exists in v2.
+    storage:
+      pvcStrategy: per-user
     # The default devfile for workspaces created without a devfile (the dashboard's
     # "Empty Workspace"). The dashboard reads spec.devEnvironments.defaultComponents
     # first, falling back to the operator-baked default (a bare universal-developer-image
@@ -32,10 +72,3 @@ spec:
           image: registry.redhat.io/devspaces/udi-rhel9:latest
           memoryLimit: 4Gi
           mountSources: true
-  devfileRegistry:
-    # External devfile registry serving the MTA sample devfile (see
-    # devspaces/devfile-registry.yaml). The internal registry stays enabled -
-    # disabling it breaks the empty-workspace flow, which relies on the internal
-    # registry's "Empty"-tagged editor devfile.
-    externalDevfileRegistries:
-      - url: https://devfile-registry-openshift-devspaces.apps.cluster-l6zlb.dyn.redhatworkshops.io/

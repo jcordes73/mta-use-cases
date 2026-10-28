@@ -128,7 +128,7 @@ oc wait --for=condition=Available deployment squid -n squid --timeout=300s
 
 `OPENAI_BASE_URL` is the same variable exported for the [LLM credentials Secret](#create-the-llm-credentials-secret), so the allowlist follows the LLM endpoint automatically — set `OPENAI_BASE_URL` (or override `OPENAI_HOST` directly) before running the commands. The Secret is only created when it does not already exist — an `OPENAI_HOST` set earlier (e.g. from a previous run) is kept and the Secret is not recreated.
 
-The Squid configuration only permits `CONNECT` (HTTPS) requests to port 443, restricts proxy clients to the cluster networks (adjust the `cluster_networks` ACL to the Pod CIDR of the cluster), and only allows the destinations in the `allowed_domains` ACL. The pid file and coredump directory are configured as `/tmp` because OpenShift runs containers with a random UID (restricted SCC). The allowlist covers `.github.com` and `.open-vsx.org` — note that **`.githubusercontent.com` is a different parent domain** and must be allowlisted separately: the Dev Spaces factory devfile fetch pulls the devfile content from `raw.githubusercontent.com`, so without it the workspace creation fails with "failed to fetch devfile" and falls back to the empty default stack (no devfile extensions installed). The allowlist also includes the **OpenCode LLM endpoint** host (`$OPENAI_HOST`, rendered from the `llm-endpoint` Secret) — the workspace containers' `HTTPS_PROXY` routes all external HTTPS traffic through the proxy, so without it every OpenCode request fails with `Proxy refused to open a tunnel: 403 Forbidden` even though the model is configured correctly (verified live: the model appears in `opencode models`, but the request dies at the proxy). The rendered file is produced at pod start, so changing the LLM endpoint requires re-creating the `llm-endpoint` Secret **and** a pod restart. To allow further destinations, edit the `squid.conf.template` in the `squid-config` ConfigMap and restart the deployment — the rendered file is generated only by the init container, so changes are not picked up by the running pod:
+The Squid configuration only permits `CONNECT` (HTTPS) requests to port 443, restricts proxy clients to the cluster networks (adjust the `cluster_networks` ACL to the Pod CIDR of the cluster), and only allows the destinations in the `allowed_domains` ACL. The pid file and coredump directory are configured as `/tmp` because OpenShift runs containers with a random UID (restricted SCC). The allowlist covers `.github.com`, `.open-vsx.org`, and `.developers.redhat.com` (Red Hat product documentation) — note that **`.githubusercontent.com` is a different parent domain** and must be allowlisted separately: the Dev Spaces factory devfile fetch pulls the devfile content from `raw.githubusercontent.com`, so without it the workspace creation fails with "failed to fetch devfile" and falls back to the empty default stack (no devfile extensions installed). The allowlist also includes the **OpenCode LLM endpoint** host (`$OPENAI_HOST`, rendered from the `llm-endpoint` Secret) — the workspace containers' `HTTPS_PROXY` routes all external HTTPS traffic through the proxy, so without it every OpenCode request fails with `Proxy refused to open a tunnel: 403 Forbidden` even though the model is configured correctly (verified live: the model appears in `opencode models`, but the request dies at the proxy). The rendered file is produced at pod start, so changing the LLM endpoint requires re-creating the `llm-endpoint` Secret **and** a pod restart. To allow further destinations, edit the `squid.conf.template` in the `squid-config` ConfigMap and restart the deployment — the rendered file is generated only by the init container, so changes are not picked up by the running pod:
 
 ```bash
 oc edit configmap squid-config -n squid
@@ -1063,10 +1063,10 @@ While the [MTA UI](#automated-migration-using-the-mta-ui) covers the automated, 
   oc wait --for=jsonpath='{.status.readyReplicas}'=1 deployment devspaces-operator -n openshift-devspaces --timeout=600s
   ```
   Each command should return **`condition met`**.
-- **Create the CheCluster**: Create the `CheCluster` custom resource that configures and starts the Dev Spaces instance:
+- **Create the CheCluster**: Create the `CheCluster` custom resource that configures and starts the Dev Spaces instance. The manifest is cluster-independent — the cluster domain is carried as a `${OPENSHIFT_APPS_DOMAIN}` placeholder (the devfile-registry URL and the proxy `nonProxyHosts`), so it is applied with the same envsubst pattern as the secrets (applying with plain `oc apply -f` would store the placeholder literally):
 
     ```bash
-    oc apply -f devspaces/che-cluster.yaml
+    cat devspaces/che-cluster.yaml | envsubst | oc apply -f -
     ```
     Wait until the Dev Spaces instance is up and running:
 
@@ -1121,7 +1121,16 @@ spec:
   components:
     devfileRegistry:
       externalDevfileRegistries:
-        - url: https://devfile-registry-openshift-devspaces.apps.<cluster-domain>/
+        - url: https://devfile-registry-openshift-devspaces.${OPENSHIFT_APPS_DOMAIN}/
+```
+
+Two CheCluster v2 CRD pitfalls, both verified live: the CRD **prunes unknown fields silently** — the v1-era placements (`spec.devfileRegistry` at the top level, `spec.devWorkspace.storageStrategy`) are dropped on `oc apply` **without an error**, leaving the setting unset (the registration only appears to work until the next reconciliation drops it). In the v2 schema `devfileRegistry` and `devWorkspace` live under `spec.components`. Similarly, the per-user workspace PVC strategy moved: the v1 `devWorkspace.storageStrategy` no longer exists — the v2 field is `spec.devEnvironments.storage.pvcStrategy`:
+
+```yaml
+spec:
+  devEnvironments:
+    storage:
+      pvcStrategy: per-user
 ```
 
 Three notes on the sample's configuration: the internal registry is left enabled (`devfileRegistry.disableInternalRegistry` is not set) — disabling it breaks the empty-workspace flow, which relies on the internal registry's `Empty`-tagged editor devfile. The sample's index entry is tagged **`Empty`** (alongside its descriptive tags) — the dashboard's `selectDefaultDevfile` picks the registry sample tagged `Empty` as the **default devfile** for workspaces created without one, so the MTA workspace devfile (UDI container, extensions, postStart setup, auto-clone) is what users get by default. And because the served sample devfile **is** `devspaces/devfile.yaml` (consumed directly by the kustomize generator), there is no copy to keep in sync: editing the devfile and re-applying with `oc apply -k devspaces/` rolls the registry out with the new content — the generated ConfigMap name carries a content hash (`devfile-registry-content-<hash>`), so kustomize rewrites the Deployment's volume reference and the pod restarts immediately, with no kubelet ConfigMap sync delay.
@@ -1132,13 +1141,15 @@ The `Empty` tag has a side effect: the dashboard's samples list forces **`percli
 oc exec -n openshift-devspaces deploy/devspaces-dashboard -- sh -c \
   'TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token); \
    curl -s -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-   -d "{\"url\": \"https://devfile-registry-openshift-devspaces.apps.<cluster-domain>/devfiles/index.json\"}" \
+   -d "{\"url\": \"https://devfile-registry-openshift-devspaces.${OPENSHIFT_APPS_DOMAIN}/devfiles/index.json\"}" \
    http://localhost:8080/dashboard/api/data/resolver'
 ```
 
 #### Proxy configuration
 
 On an OpenShift cluster, the Dev Spaces Operator automatically uses the OpenShift cluster-wide proxy configuration. However, the proxy settings can be overridden by configuring them in the `CheCluster` custom resource. This is useful in restricted environments, where workspaces need to reach e.g. GitHub and the Open VSX registry through a proxy.
+
+This PoC configures the proxy at the CheCluster level (see `devspaces/che-cluster.yaml`) — the CheCluster is the **single source of truth**. The mechanics, verified live: the operator renders `spec.components.cheServer.proxy` as Java system properties (`-Dhttp.proxyHost=...`) into the `che` ConfigMap consumed by the che-server pod, and che-server **syncs the proxy environment variables into the `che-user-settings` ConfigMap** of each workspace namespace, which is `envFrom`-mounted into every workspace container. Proxy entries set directly in `che-user-settings` are overwritten by the reconcile (verified: deleting the proxy keys from that ConfigMap re-adds them within seconds, with the CheCluster `nonProxyHosts` merged into the `NO_PROXY`). Changing the CheCluster `proxy` rolls the che-server, dashboard, and gateway pods automatically; running workspaces pick up the new env on their next restart.
 
 The proxy configuration in the following instructions (and in the [Gitea](#gitea-installation) and [MTA](#proxy-settings-for-disconnected-environments) proxy sections) is based on the standard HTTP proxy environment variables, exported with an `MTA_` prefix to avoid conflicts with the proxy settings of the shell the subsequent commands are run from. If not already defined, export them. If the [Squid proxy](#squid-proxy-deployment-disconnected-environments) is deployed on the cluster, point the proxy URL at the in-cluster service:
 
@@ -1185,10 +1196,10 @@ If the proxy requires authentication, create the `devspaces-proxy-credentials` S
 
 The proxy `url` is set to `<scheme>://<host>` from `MTA_HTTP_PROXY`, and the `port` property is only set when the proxy URL includes one. The `nonProxyHosts` list is derived by splitting `MTA_NO_PROXY` on commas and contains the hosts that are reached directly without using the proxy. The Dev Spaces Operator automatically adds `.svc` and the Kubernetes service hosts to this list.
 
-To verify the proxy configuration, start a workspace and check that the workspace pod contains the `HTTP_PROXY`, `HTTPS_PROXY`, `http_proxy`, and `https_proxy` environment variables, and the `NO_PROXY` and `no_proxy` environment variables with the comma-separated list of non-proxy hosts:
+To verify the proxy configuration, start a workspace and check the workspace containers' environment for the `HTTP_PROXY`, `HTTPS_PROXY`, `http_proxy`, and `https_proxy` variables, and the `NO_PROXY` and `no_proxy` variables with the comma-separated list of non-proxy hosts. Note the proxy env is injected via `envFrom` (the `che-user-settings` ConfigMap), so it does **not** appear in the pod spec — verify from inside a container:
 
 ```bash
-oc get pod -n <workspace-namespace> -o yaml | grep -iE 'proxy'
+oc exec -n <workspace-namespace> deploy/<workspace-name> -c tools -- env | grep -iE 'proxy'
 ```
 
 ### MTA Plugin Setup

@@ -32,9 +32,10 @@ data:
     # .open-vsx.org serves the extension gallery queries, but the extension downloads
     # (.vsix) are served from the CDN host openvsx.eclipsecontent.org
     # opencode.ai serves the OpenCode CLI install script
+    # developers.redhat.com serves Red Hat product documentation
     # $OPENAI_HOST is the OpenCode LLM endpoint host (rendered from the
     # llm-endpoint Secret)
-    acl allowed_domains dstdomain .github.com .open-vsx.org .githubusercontent.com .eclipsecontent.org .opencode.ai $OPENAI_HOST
+    acl allowed_domains dstdomain .github.com .open-vsx.org .githubusercontent.com .eclipsecontent.org .opencode.ai .developers.redhat.com $OPENAI_HOST
 
     http_access deny !Safe_ports
     http_access deny CONNECT !SSL_ports
