@@ -361,10 +361,9 @@ MTA 8.3 provides automated analysis, assessment, and refactoring tooling for app
     ```
     > ⚠️ NOTE
     >
-    > The Solution Server's LLM proxy additionally consumes a Secret named **`kai-api-keys`** in the `openshift-mta` namespace — the operator's built-in default name, not referenced by the Tackle CR. The secret's keys become the environment variable names injected into the `kai-api` and LLM-proxy pods (e.g. an `OPENAI_API_KEY` key), so without it the LLM proxy has no API key and the Tackle CR reports `KaiAPIKeysConfigured=False` with *"No API keys secret found"*. Create it with the same API key as the model secret:
+    > The Solution Server's LLM proxy additionally consumes a Secret named **`kai-api-keys`** in the `openshift-mta` namespace — the operator's built-in default name, not referenced by the Tackle CR. The secret's keys become the environment variable names injected into the `kai-api` and LLM-proxy pods (e.g. an `OPENAI_API_KEY` key), so without it the LLM proxy has no API key and the Tackle CR reports `KaiAPIKeysConfigured=False` with *"No API keys secret found"*. A ready-to-use Secret template is available in this repository at `mta-ui/kai-api-keys-secret.yaml` — create it with the same envsubst pattern as the other LLM secrets:
     > ```bash
-    > oc create secret generic kai-api-keys -n openshift-mta \
-    >   --from-literal=OPENAI_API_KEY="$(oc get secret mta-ls-llm-provider-secret -n openshift-mta -o jsonpath='{.data.api-key}' | base64 -d)"
+    > cat mta-ui/kai-api-keys-secret.yaml | envsubst | oc apply -f -
     > ```
     > The condition is only updated on the operator's next reconciliation — restart the operator pod (deleting it, since OLM reverts `oc rollout restart` on its own deployment) to trigger one.
 - **Configure the Tackle Instance**: Create a Tackle instance specifying the amount of storage needed, enabling Developer Lightspeed and configuring the Large Language Model (LLM):
