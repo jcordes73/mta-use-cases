@@ -88,7 +88,7 @@ curl -s ${OPENAI_BASE_URL}/chat/completions \
   -d '{
     "model": "'"${OPENAI_MODEL_NAME}"'",
     "messages": [{"role": "user", "content": "Hello"}],
-    "max_tokens": 16
+    "max_tokens": 262000
   }' | jq .
 ```
 
