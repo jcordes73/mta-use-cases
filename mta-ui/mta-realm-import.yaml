@@ -33,6 +33,7 @@ spec:
         redirectUris:
           - "https://mta-openshift-mta.${OPENSHIFT_APPS_DOMAIN}/oidc/idp/callback"
           - "https://mta-openshift-mta.${OPENSHIFT_APPS_DOMAIN}/"
+          - "https://mta-openshift-mta.${OPENSHIFT_APPS_DOMAIN}"
         webOrigins:
           - "https://mta-openshift-mta.${OPENSHIFT_APPS_DOMAIN}"
       - clientId: gitea
