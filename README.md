@@ -116,12 +116,12 @@ The response should contain the model's completion, e.g.:
 
 In a disconnected environment, the workloads in this PoC still need controlled outbound access to external hosts: Gitea migrates the original repositories from GitHub, Dev Spaces workspaces reach GitHub and the Open VSX registry, and the MTA Hub reaches the analyzer package repositories. Deploy a Squid proxy to the cluster to provide this egress. It acts as a forward proxy — the workloads point at it via the standard `HTTP_PROXY`/`HTTPS_PROXY` environment variables, which are set from the `MTA_`-prefixed shell variables described in [Proxy configuration](#proxy-configuration) — and only allows traffic to allowlisted destinations.
 
-Deploy the proxy with the manifest in `squid/squid.yaml`. It creates the `squid` namespace, a `squid-config` ConfigMap with the `squid.conf.template` configuration, a Deployment running the Red Hat `rhel9/squid` image, and a Service exposing it on port 3128. The OpenCode LLM endpoint host is **not hardcoded** in the config — the template carries an `$OPENAI_HOST` placeholder, which a `render-config` init container substitutes from the `OPENAI_HOST` env var of a small `llm-endpoint` Secret in the `squid` namespace (the Squid pod cannot reference the workspace `llm-credentials` Secret — cross-namespace Secret references are not allowed). Create that Secret first with the same envsubst pattern as the Dev Spaces secrets, then apply the manifest:
+Deploy the proxy with the manifest in `squid/squid.yaml`. It creates a `squid-config` ConfigMap with the `squid.conf.template` configuration, a Deployment running the Red Hat `rhel9/squid` image, and a Service exposing it on port 3128 — the `squid` namespace is created by its own manifest in `squid/squid-namespace.yaml`. The OpenCode LLM endpoint host is **not hardcoded** in the config — the template carries an `$OPENAI_HOST` placeholder, which a `render-config` init container substitutes from the `OPENAI_HOST` env var of a small `llm-endpoint` Secret in the `squid` namespace (the Squid pod cannot reference the workspace `llm-credentials` Secret — cross-namespace Secret references are not allowed). Create the namespace first, then the Secret with the same envsubst pattern as the Dev Spaces secrets, then apply the manifest:
 
 ```bash
 export OPENAI_HOST=${OPENAI_HOST:-$(echo "$OPENAI_BASE_URL" | sed -E 's#https?://([^/]+).*#\1#')}
-oc get secret llm-endpoint -n squid >/dev/null 2>&1 || \
-  cat squid/llm-endpoint-secret.yaml | envsubst | oc apply -f -
+oc apply -f squid/squid-namespace.yaml
+cat squid/llm-endpoint-secret.yaml | envsubst | oc apply -f -
 oc apply -f squid/squid.yaml
 oc wait --for=condition=Available deployment squid -n squid --timeout=300s
 ```

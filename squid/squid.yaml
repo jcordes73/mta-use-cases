@@ -1,10 +1,5 @@
 ---
 apiVersion: v1
-kind: Namespace
-metadata:
-  name: squid
----
-apiVersion: v1
 kind: ConfigMap
 metadata:
   name: squid-config
@@ -33,9 +28,10 @@ data:
     # (.vsix) are served from the CDN host openvsx.eclipsecontent.org
     # opencode.ai serves the OpenCode CLI install script
     # developers.redhat.com serves Red Hat product documentation
+    # access.cdn.redhat.com serves Red Hat CDN content (e.g. subscription and container content)
     # $OPENAI_HOST is the OpenCode LLM endpoint host (rendered from the
     # llm-endpoint Secret)
-    acl allowed_domains dstdomain .github.com .open-vsx.org .githubusercontent.com .eclipsecontent.org .opencode.ai .developers.redhat.com $OPENAI_HOST
+    acl allowed_domains dstdomain .github.com .open-vsx.org .githubusercontent.com .eclipsecontent.org .opencode.ai .developers.redhat.com access.cdn.redhat.com $OPENAI_HOST
 
     http_access deny !Safe_ports
     http_access deny CONNECT !SSL_ports
