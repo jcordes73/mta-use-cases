@@ -24,8 +24,15 @@ spec:
           - profile
           - email
           - roles
+        # The base URL is a valid redirect URI so the UI's logout
+        # post_logout_redirect_uri (the app's base URL) is accepted: with
+        # post.logout.redirect.uris = "+", Keycloak validates post-logout
+        # URIs against the client's registered redirect URIs.
+        attributes:
+          post.logout.redirect.uris: "+"
         redirectUris:
           - "https://mta-openshift-mta.${OPENSHIFT_APPS_DOMAIN}/oidc/idp/callback"
+          - "https://mta-openshift-mta.${OPENSHIFT_APPS_DOMAIN}/"
         webOrigins:
           - "https://mta-openshift-mta.${OPENSHIFT_APPS_DOMAIN}"
       - clientId: gitea
