@@ -1,0 +1,45 @@
+apiVersion: k8s.keycloak.org/v2alpha1
+kind: KeycloakRealmImport
+metadata:
+  name: mta-realm-import
+  namespace: openshift-mta
+spec:
+  keycloakCRName: mta-rhbk
+  realm:
+    realm: mta
+    enabled: true
+    # firstName and lastName are optional for Keycloak users - they are omitted
+    # here. Add them to the user below (or to additional users) only when needed.
+    users:
+      - username: admin
+        email: admin@example.com
+    clients:
+      - clientId: mta-ui
+        name: MTA UI
+        protocol: openid-connect
+        publicClient: true
+        standardFlowEnabled: true
+        directAccessGrantsEnabled: false
+        defaultClientScopes:
+          - profile
+          - email
+          - roles
+        redirectUris:
+          - "https://mta-openshift-mta.${OPENSHIFT_APPS_DOMAIN}/oidc/idp/callback"
+        webOrigins:
+          - "https://mta-openshift-mta.${OPENSHIFT_APPS_DOMAIN}"
+      - clientId: gitea
+        name: Gitea
+        protocol: openid-connect
+        publicClient: false
+        standardFlowEnabled: true
+        directAccessGrantsEnabled: false
+        defaultClientScopes:
+          - profile
+          - email
+          - roles
+        secret: gitea-client-secret
+        redirectUris:
+          - "https://git.${OPENSHIFT_APPS_DOMAIN}/user/oauth2/keycloak/callback"
+        webOrigins:
+          - "https://git.${OPENSHIFT_APPS_DOMAIN}"
