@@ -38,7 +38,7 @@ flowchart LR
         subgraph developer["Developer-Infused Migration Using Dev Spaces"]
             direction TB
             WS["Dev Spaces Workspace<br/>(devfile)"]
-            PLUGIN["MTA Plugin<br/>(redhat.mta-vscode-extension)"]
+            PLUGIN["MTA Plugin<br/>(redhat.mta-core + redhat.mta-java)"]
             OPENCODE["OpenCode<br/>(extension + CLI)"]
             WS --> PLUGIN
             WS --> OPENCODE
@@ -128,7 +128,7 @@ oc wait --for=condition=Available deployment squid -n squid --timeout=300s
 
 `OPENAI_BASE_URL` is the same variable exported for the [LLM credentials Secret](#create-the-llm-credentials-secret), so the allowlist follows the LLM endpoint automatically — set `OPENAI_BASE_URL` (or override `OPENAI_HOST` directly) before running the commands. The Secret is only created when it does not already exist — an `OPENAI_HOST` set earlier (e.g. from a previous run) is kept and the Secret is not recreated.
 
-The Squid configuration only permits `CONNECT` (HTTPS) requests to port 443, restricts proxy clients to the cluster networks (adjust the `cluster_networks` ACL to the Pod CIDR of the cluster), and only allows the destinations in the `allowed_domains` ACL. The pid file and coredump directory are configured as `/tmp` because OpenShift runs containers with a random UID (restricted SCC). The allowlist covers `.github.com`, `.open-vsx.org`, and `.developers.redhat.com` (Red Hat product documentation) — note that **`.githubusercontent.com` is a different parent domain** and must be allowlisted separately: the Dev Spaces factory devfile fetch pulls the devfile content from `raw.githubusercontent.com`, so without it the workspace creation fails with "failed to fetch devfile" and falls back to the empty default stack (no devfile extensions installed). The allowlist also includes the **OpenCode LLM endpoint** host (`$OPENAI_HOST`, rendered from the `llm-endpoint` Secret) — the workspace containers' `HTTPS_PROXY` routes all external HTTPS traffic through the proxy, so without it every OpenCode request fails with `Proxy refused to open a tunnel: 403 Forbidden` even though the model is configured correctly (verified live: the model appears in `opencode models`, but the request dies at the proxy). The rendered file is produced at pod start, so changing the LLM endpoint requires re-creating the `llm-endpoint` Secret **and** a pod restart. To allow further destinations, edit the `squid.conf.template` in the `squid-config` ConfigMap and restart the deployment — the rendered file is generated only by the init container, so changes are not picked up by the running pod:
+The Squid configuration only permits `CONNECT` (HTTPS) requests to port 443, restricts proxy clients to the cluster networks (adjust the `cluster_networks` ACL to the Pod CIDR of the cluster), and only allows the destinations in the `allowed_domains` ACL. The pid file and coredump directory are configured as `/tmp` because OpenShift runs containers with a random UID (restricted SCC). The allowlist covers `.github.com`, `.open-vsx.org`, `.developers.redhat.com` (Red Hat product documentation), and `access.cdn.redhat.com` (Red Hat CDN content) — note that **`.githubusercontent.com` is a different parent domain** and must be allowlisted separately: the Dev Spaces factory devfile fetch pulls the devfile content from `raw.githubusercontent.com`, so without it the workspace creation fails with "failed to fetch devfile" and falls back to the empty default stack (no devfile extensions installed). The allowlist also includes the **OpenCode LLM endpoint** host (`$OPENAI_HOST`, rendered from the `llm-endpoint` Secret) — the workspace containers' `HTTPS_PROXY` routes all external HTTPS traffic through the proxy, so without it every OpenCode request fails with `Proxy refused to open a tunnel: 403 Forbidden` even though the model is configured correctly (verified live: the model appears in `opencode models`, but the request dies at the proxy). The rendered file is produced at pod start, so changing the LLM endpoint requires re-creating the `llm-endpoint` Secret **and** a pod restart. To allow further destinations, edit the `squid.conf.template` in the `squid-config` ConfigMap and restart the deployment — the rendered file is generated only by the init container, so changes are not picked up by the running pod:
 
 ```bash
 oc edit configmap squid-config -n squid
@@ -349,8 +349,8 @@ MTA 8.3 provides automated analysis, assessment, and refactoring tooling for app
     ```
     The steps to verify if the deployment of the operator has finished successfully are as follows
     ```bash
-    oc wait --for=create csv mta-operator.v8.3.2 -n openshift-mta --timeout=600s
-    oc wait --for=jsonpath='{.status.phase}'=Succeeded csv mta-operator.v8.3.2 -n openshift-mta --timeout=600s
+    oc wait --for=create csv mta-operator.v8.3.3 -n openshift-mta --timeout=600s
+    oc wait --for=jsonpath='{.status.phase}'=Succeeded csv mta-operator.v8.3.3 -n openshift-mta --timeout=600s
     oc wait --for=create deployment mta-operator -n openshift-mta --timeout=600s
     oc wait --for=jsonpath='{.status.readyReplicas}'=1 deployment mta-operator -n openshift-mta --timeout=600s
     ```
@@ -359,6 +359,14 @@ MTA 8.3 provides automated analysis, assessment, and refactoring tooling for app
     ```bash
     cat mta-ui/mta-ls-llm-provider-secret.yaml | envsubst | oc apply -f -
     ```
+    > ⚠️ NOTE
+    >
+    > The Solution Server's LLM proxy additionally consumes a Secret named **`kai-api-keys`** in the `openshift-mta` namespace — the operator's built-in default name, not referenced by the Tackle CR. The secret's keys become the environment variable names injected into the `kai-api` and LLM-proxy pods (e.g. an `OPENAI_API_KEY` key), so without it the LLM proxy has no API key and the Tackle CR reports `KaiAPIKeysConfigured=False` with *"No API keys secret found"*. Create it with the same API key as the model secret:
+    > ```bash
+    > oc create secret generic kai-api-keys -n openshift-mta \
+    >   --from-literal=OPENAI_API_KEY="$(oc get secret mta-ls-llm-provider-secret -n openshift-mta -o jsonpath='{.data.api-key}' | base64 -d)"
+    > ```
+    > The condition is only updated on the operator's next reconciliation — restart the operator pod (deleting it, since OLM reverts `oc rollout restart` on its own deployment) to trigger one.
 - **Configure the Tackle Instance**: Create a Tackle instance specifying the amount of storage needed, enabling Developer Lightspeed and configuring the Large Language Model (LLM):
 
     ```bash
@@ -608,7 +616,6 @@ The template uses **HTTPS repository URLs** (`https://git.${OPENSHIFT_APPS_DOMAI
 
 During the execution of **Agentic Workflows** information will be stored in Gitea. As the repository is protected by basic auth credentials we need to setup a default credential like this:
 
-```bash
 > The POST returns `409 Conflict` with an error object if the identity already exists — capturing `.id` from that response would yield nothing, so the ID is looked up by name instead:
 
 ```bash
@@ -626,7 +633,6 @@ curl -s -X POST "${MTA_URL}/hub/identities" \
 
 export GIT_CREDENTIALS_ID=$(curl -s "${MTA_URL}/hub/identities" -u admin:admin \
   | jq -r '.[] | select(.name=="git-credentials") | .id')
-```
 ```
 
 If SSH keys are used for authentication against the Git repository then create an identity with the private SSH key stored in the `key` field. The `password` field can optionally hold the passphrase of the key, and the `user` field is the SSH user of the Git server — `git`, the username Gitea's built-in SSH server requires (pinned via `BUILTIN_SSH_SERVER_USER` in the [Gitea installation](#ssh-keys) values; see the SSH clone test there for details):
@@ -1204,7 +1210,7 @@ oc exec -n <workspace-namespace> deploy/<workspace-name> -c tools -- env | grep 
 
 ### MTA Plugin Setup
 
-The MTA plugin is the [Migration Toolkit for Applications (MTA) Visual Studio Code extension](https://marketplace.visualstudio.com/items?itemName=redhat.mta-vscode-extension). It provides the ability to analyze, assess, and migrate source code (using MTA) from within the IDE. The [Visual Studio Code extension guide](https://docs.redhat.com/en/documentation/migration_toolkit_for_applications/8.3/html/configuring_and_using_the_visual_studio_code_extension_for_mta) covers the full details.
+The MTA plugin is the [Migration Toolkit for Applications (MTA) Visual Studio Code extension](https://marketplace.visualstudio.com/items?itemName=redhat.mta-core). It provides the ability to analyze, assess, and migrate source code (using MTA) from within the IDE. The [Visual Studio Code extension guide](https://docs.redhat.com/en/documentation/migration_toolkit_for_applications/8.3/html/configuring_and_using_the_visual_studio_code_extension_for_mta) covers the full details.
 
 - **Install the plugin in a workspace**: Start a workspace in Dev Spaces, open the `Extensions` view, search for `mta` and install the **Migration Toolkit for Applications (MTA)** extension from the Open VSX registry.
 - **Pre-install the plugin for all users**: devfiles no longer support IDE-specific customization — since devfile v2 (schema 2.2.0), the `customizations.vscode.extensions` field of container components is rejected by schema validation ("instance.components[0].container is not allowed to have the additional property customizations"), and a `.vscode/extensions.json` devfile attribute is **not honored** by the che-code editor (it was a Che-Theia-era mechanism). The deterministic way is the `install-extensions` `postStart` command of the devfile below, which runs the **che-code CLI** shipped in the workspace (`/checode/checode-linux-libc/ubi9/bin/che-code --install-extension <ext-id>`, with the bundled Node libs on the `LD_LIBRARY_PATH`) — extensions install immediately into `/checode/remote/extensions` on the per-user PVC (persisted across restarts), with no recommendation prompt and no editor reload:
@@ -1213,18 +1219,21 @@ The MTA plugin is the [Migration Toolkit for Applications (MTA) Visual Studio Co
     export LD_LIBRARY_PATH=/checode/checode-linux-libc/ubi9/ld_libs/openssl:/checode/checode-linux-libc/ubi9/ld_libs/core:/usr/lib64
     /checode/checode-linux-libc/ubi9/bin/che-code \
       --user-data-dir /checode/remote/data --extensions-dir /checode/remote/extensions \
-      --install-extension redhat.mta-vscode-extension
+      --install-extension redhat.mta-core --install-extension redhat.mta-java
     /checode/checode-linux-libc/ubi9/bin/che-code \
       --user-data-dir /checode/remote/data --extensions-dir /checode/remote/extensions \
       --install-extension sst-dev.opencode
     ```
+
+    The devfile installs the **MTA core extension** (`redhat.mta-core`, the extension that provides the analysis and migration features) and the **MTA Java analyzer plugin** (`redhat.mta-java`, the Java-specific analysis rules) directly instead of the `redhat.mta-vscode-extension` pack, which bundles `mta-go`, `mta-javascript`, and `mta-csharp` beyond the two needed here. Both IDs were verified on the Open VSX registry and both are 8.3.1. Java language support (`redhat.java`) is preinstalled in the UDI image and needs no explicit install.
 
     As a fallback, a `.vscode/extensions.json` file in the **repository cloned as the project source** makes the editor recommend the extensions at startup (VS Code shows an install prompt, scanned at editor startup only — a file created by a `postStart` command takes effect on the next reload):
 
     ```json
     {
       "recommendations": [
-        "redhat.mta-vscode-extension",
+        "redhat.mta-core",
+        "redhat.mta-java",
         "sst-dev.opencode"
       ]
     }
@@ -1294,11 +1303,14 @@ After the clone/pull, the command adds the repository folder to the editor's wor
           # at editor startup) and VS Code only prompts for workspace recommendations.
           # Extensions install into /checode/remote/extensions on the per-user PVC (persisted);
           # the CLI needs the bundled Node libs when run outside the editor entrypoint.
+          # Installs the MTA core extension and the Java language support directly instead
+          # of the redhat.mta-vscode-extension pack (which bundles additional extensions);
+          # both IDs verified on the Open VSX registry.
           commandLine: |
             export LD_LIBRARY_PATH=/checode/checode-linux-libc/ubi9/ld_libs/openssl:/checode/checode-linux-libc/ubi9/ld_libs/core:/usr/lib64
             /checode/checode-linux-libc/ubi9/bin/che-code \
               --user-data-dir /checode/remote/data --extensions-dir /checode/remote/extensions \
-              --install-extension redhat.mta-vscode-extension
+              --install-extension redhat.mta-core --install-extension redhat.mta-java
             /checode/checode-linux-libc/ubi9/bin/che-code \
               --user-data-dir /checode/remote/data --extensions-dir /checode/remote/extensions \
               --install-extension sst-dev.opencode
@@ -1485,7 +1497,7 @@ After the clone/pull, the command adds the repository folder to the editor's wor
 
     The MTA extension settings (see below) are IDE-specific configuration. The devfile creates them via the `configure-mta-settings` `postStart` command, which writes them into the che-code **machine-level settings file** (`/checode/remote/data/Machine/settings.json`) — the file applies to all workspace folders and is persisted on the per-user PVC (it survives workspace restarts). The command merges with the existing settings (e.g. `git.defaultCloneDirectory`, set by Dev Spaces) using `jq` (available in the UDI image), so it is idempotent. Since the settings are editor-level rather than repo-level, this also works when the workspace clones a different repository than the one hosting the devfile (see the [`remotes=` factory URL variant](#mta-plugin-setup)):
 
-    The MTA settings pre-configure the AI-assisted remediation of the plugin (the setting IDs were verified against the `redhat.mta-core` 8.3.1 extension, which the `redhat.mta-vscode-extension` extension pack installs):
+    The MTA settings pre-configure the AI-assisted remediation of the plugin (the setting IDs were verified against the `redhat.mta-core` 8.3.1 extension, which the devfile installs directly alongside the `redhat.mta-java` analyzer plugin):
 
     ```json
     {
@@ -1553,7 +1565,7 @@ cp -rf ~/.agents/skills/generate-migration-skill/ ~/.claude/skills/
 ```
 Use the following prompt to generate a skill assuming the migration guide is contained in `README.md`.
 ```
-/generate-migration-skill README.md`
+/generate-migration-skill README.md
 ```
 The skill will be written to the current directory with the following structure:
 
