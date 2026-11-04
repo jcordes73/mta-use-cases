@@ -13,6 +13,13 @@ spec:
     users:
       - username: admin
         email: admin@example.com
+        # The MTA UI login (admin/admin per the README). Imported users have no
+        # credentials unless they are defined here - without this entry the
+        # login fails with "Invalid username or password".
+        credentials:
+          - type: password
+            value: admin
+            temporary: false
     # The +role.admin client scope: the Hub expands +role.<name> references
     # from the IdP access token's scope claim into the named hub role's
     # permission scopes (see the mta-ui client's defaultClientScopes below).
