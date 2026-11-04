@@ -75,7 +75,16 @@ export OPENAI_HOST=<Your LLM endpoint host>
 export OPENAI_BASE_URL=https://${OPENAI_HOST}/v1
 export OPENAI_API_KEY="<Your API Key>"
 export OPENAI_MODEL_NAME="<Your Model name>"
+# For an internal ODF deployment the RWX class is ocs-storagecluster-cephfs;
+# ocs-external-storagecluster-cephfs applies when ODF connects to an external Ceph.
 export STORAGECLASS_RWX=ocs-external-storagecluster-cephfs
+# Passwords for the MTA Keycloak instance (keycloak/, see "Keycloak for MTA")
+# - generate fresh values, e.g. with `openssl rand -hex 16`
+export KEYCLOAK_DB_PASSWORD=<password>
+export KEYCLOAK_ADMIN_PASSWORD=<password>
+# The Gitea OIDC client secret, defined in the realm import
+# (mta-ui/mta-realm-import.yaml - change it there and here if you rotate it)
+export KEYCLOAK_GITEA_CLIENT_SECRET=gitea-client-secret
 export OPENSHIFT_APPS_DOMAIN=$(oc get ingresses.config.openshift.io cluster -o jsonpath='{.spec.domain}')
 ```
 
@@ -111,6 +120,17 @@ The response should contain the model's completion, e.g.:
   ...
 }
 ```
+
+> ⚠️ NOTE
+>
+> The Konveyor Gateway verifies its credential by calling the endpoint's **`/v1/models`** route, which is typically stricter about authentication than `chat/completions` (some gateways accept an arbitrary key for completions but return `401` for the model listing). Verify `/v1/models` explicitly with the real API key before deploying — if it returns `401`, the Gateway reports `Ready=False` with *"Endpoint ... returned HTTP 401 - check the credential secret's API key"* even though test completions succeed:
+>
+> ```bash
+> curl -s -o /dev/null -w "%{http_code}\n" ${OPENAI_BASE_URL}/models \
+>   -H "Authorization: Bearer ${OPENAI_API_KEY}"
+> ```
+>
+> The expected output is `200`.
 
 ## Squid proxy deployment (disconnected environments)
 
@@ -338,6 +358,38 @@ oc wait --for=jsonpath='{.status.readyReplicas}'=1 deployment agent-sandbox-cont
 ```
 The expected output for each command is **`condition met`**.
 
+### Keycloak for MTA
+
+MTA 8.3 requires a Red Hat build of Keycloak (RHBK) instance for its authentication (the MTA operator auto-detects a StatefulSet named `mta-rhbk` in its namespace and configures the UI and Hub against it instead of deploying its own Keycloak). Deploying it explicitly gives control over the database and the realm content:
+
+- **Deploy the RHBK operator, PostgreSQL and the Keycloak instance**: The manifests in `keycloak/` create the shared `openshift-mta` namespace/OperatorGroup (idempotent with the MTA operator manifest), the RHBK operator Subscription, a PostgreSQL StatefulSet (`mta-kcpgsql`) for the Keycloak database, and the `mta-rhbk` Keycloak CR. The cluster domain and the admin password are carried as `envsubst` placeholders:
+
+    ```bash
+    oc apply -f keycloak/keycloak-operator.yaml
+    cat keycloak/keycloak-postgresql.yaml | envsubst | oc apply -f -
+    cat keycloak/keycloak.yaml | envsubst | oc apply -f -
+    oc wait --for=jsonpath='{.status.conditions[?(@.type=="Ready")].status}'=True keycloak mta-rhbk -n openshift-mta --timeout=600s
+    ```
+
+    > ⚠️ NOTE
+    >
+    > The Keycloak CR references the TLS Secret `mta-rhbk-service-serving-cert`, which the service CA operator only mints **after** the `mta-rhbk-service` Service is annotated. If the `mta-rhbk-0` pod sticks in `ContainerCreating` with `FailedMount: secret "mta-rhbk-service-serving-cert" not found`, annotate the Service and the pod recovers on the next mount attempt:
+    >
+    > ```bash
+    > oc annotate svc mta-rhbk-service -n openshift-mta service.beta.openshift.io/serving-cert-secret-name=mta-rhbk-service-serving-cert --overwrite
+    > ```
+    >
+    > The PostgreSQL password is baked into the database at first boot (initdb). If the `keycloak-db-secret` was applied with a wrong/empty value first, a later secret update is not picked up — delete the `mta-kcpgsql-0` pod **and** its `data-mta-kcpgsql-0` PVC to re-initialize the database (Keycloak's `password authentication failed for user "keycloak"` in the pod log is the symptom).
+
+- **Import the `mta` realm**: The realm import (`mta-ui/mta-realm-import.yaml`) creates the `mta` realm with the `admin` user, the `mta-ui` client (redirect URIs for the MTA route incl. logout), the `gitea` OIDC client, and the `+role.admin` client scope that grants hub scopes to federated sessions (see the troubleshooting notes):
+
+    ```bash
+    cat mta-ui/mta-realm-import.yaml | envsubst | oc apply -f -
+    oc get keycloakrealmimport mta-realm-import -n openshift-mta -o jsonpath='{.status.conditions[?(@.type=="Done")].status}{"\n"}'
+    ```
+
+    The expected output is `True`.
+
 ### Migration Toolkit for Applications (MTA) 8.3
 
 #### Installation
@@ -439,18 +491,20 @@ MTA 8.3 provides automated analysis, assessment, and refactoring tooling for app
 The `Tackle` custom resource and the `Konveyor Gateway` custom resource do not provide proxy settings. However, the MTA Operator automatically propagates the standard `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` environment variables from its own pod environment to the `mta-hub` container on reconciliation. In a disconnected environment:
 
 - **LLM access**: No proxy is required for LLM access if the LLM is hosted internally. Point the LLM provider Secret (`mta-ls-llm-provider-secret`) and the `Konveyor Gateway` endpoint at the internal LLM.
-- **Other outbound traffic**: Define the `MTA_`-prefixed proxy environment variables (see [Proxy configuration](#proxy-configuration)) and set them on the MTA Operator deployment using `oc set env`, with their values resolved from the `MTA_`-prefixed shell variables:
+- **Other outbound traffic**: Define the `MTA_`-prefixed proxy environment variables (see [Proxy configuration](#proxy-configuration)) and set them on the MTA operator **via the Subscription's `spec.config.env`** — OLM reverts any `oc set env` drift on the operator deployment it manages, so the Subscription is the durable place. The operator renders the variables into the `mta-hub` deployment on its next reconciliation (delete the operator pod to trigger one immediately — OLM also reverts `oc rollout restart`):
 
     ```bash
-    oc set env deployment/mta-operator -n openshift-mta \
-      HTTP_PROXY=${MTA_HTTP_PROXY} \
-      HTTPS_PROXY=${MTA_HTTPS_PROXY} \
-      NO_PROXY=${MTA_NO_PROXY}
-    oc rollout restart deployment mta-operator -n openshift-mta
+    oc patch subscription mta -n openshift-mta --type=merge -p "$(jq -n \
+      --arg hp "${MTA_HTTP_PROXY}" --arg hps "${MTA_HTTPS_PROXY}" --arg np "${MTA_NO_PROXY}" \
+      '{spec: {config: {env: [
+        {name: "HTTP_PROXY", value: $hp},
+        {name: "HTTPS_PROXY", value: $hps},
+        {name: "NO_PROXY", value: $np}]}}}')"
+    oc delete pod -n openshift-mta $(oc get pods -n openshift-mta -o name | grep '^pod/mta-operator' | cut -d/ -f2)
     oc wait --for=jsonpath='{.status.readyReplicas}'=1 deployment mta-operator -n openshift-mta --timeout=600s
     ```
 
-    The operator renders the variables into the `mta-hub` deployment on its next reconciliation. To verify that they have been propagated:
+    To verify that they have been propagated (the operator pod itself carries them, and the hub deployment inherits them):
 
     ```bash
     oc get deployment mta-hub -n openshift-mta -o jsonpath='{.spec.template.spec.containers[0].env}' | jq '.[] | select(.name | test("PROXY"; "i"))'
@@ -458,7 +512,7 @@ The `Tackle` custom resource and the `Konveyor Gateway` custom resource do not p
 
     > ⚠️ NOTE
     >
-    > Only the `mta-hub` container receives the proxy environment variables — the `kai-api` and `agentic-controller` deployments do not render proxy settings from the `Tackle` CR or the operator environment. The `NO_PROXY` list must include the cluster-internal hosts (e.g. the wildcard domain of the internal routes such as Gitea and Keycloak) so that internal traffic bypasses the proxy.
+    > Only the `mta-hub` container receives the proxy environment variables — the `kai-api` and `agentic-controller` deployments do not render proxy settings from the `Tackle` CR or the operator environment. The `NO_PROXY` list must include the cluster-internal hosts (e.g. the wildcard domain of the internal routes such as Gitea and Keycloak) **and the pod/service networks (`10.128.0.0/14`, `172.30.0.0/16`)** — without the service network the operator's leader-election traffic to the Kubernetes API is routed into the proxy and breaks (the operator pod restarts with `leader election lost`).
 
 #### Setting the Hub proxy via the Tackle Hub API
 
@@ -964,12 +1018,12 @@ For Agentic Migrations, MTA composes agent workloads from **Skills** (SKILL.md f
     
     To check if defining the agents have been successful run
     ```bash
-    oc wait --for create agent jboss-eap-7-to-8-plan-agent -n openshift-mta --timeout=600s
-    oc wait --for create agent jboss-eap-7-to-8-execute-agent -n openshift-mta --timeout=600s
-    oc wait --for create agent jboss-eap-7-to-8-verify-agent -n openshift-mta --timeout=600s
-    oc wait --for jsonpath='{.status.conditions[0].status}'="True" agent jboss-eap-7-to-8-plan-agent -n openshift-mta --timeout=600s
-    oc wait --for jsonpath='{.status.conditions[0].status}'="True" agent jboss-eap-7-to-8-execute-agent -n openshift-mta --timeout=600s
-    oc wait --for jsonpath='{.status.conditions[0].status}'="True" agent jboss-eap-7-to-8-verify-agent -n openshift-mta --timeout=600s
+    oc wait --for create agents.konveyor.io jboss-eap-7-to-8-plan-agent -n openshift-mta --timeout=600s
+    oc wait --for create agents.konveyor.io jboss-eap-7-to-8-execute-agent -n openshift-mta --timeout=600s
+    oc wait --for create agents.konveyor.io jboss-eap-7-to-8-verify-agent -n openshift-mta --timeout=600s
+    oc wait --for jsonpath='{.status.conditions[0].status}'="True" agents.konveyor.io jboss-eap-7-to-8-plan-agent -n openshift-mta --timeout=600s
+    oc wait --for jsonpath='{.status.conditions[0].status}'="True" agents.konveyor.io jboss-eap-7-to-8-execute-agent -n openshift-mta --timeout=600s
+    oc wait --for jsonpath='{.status.conditions[0].status}'="True" agents.konveyor.io jboss-eap-7-to-8-verify-agent -n openshift-mta --timeout=600s
     ```
 - **Create the AgentWorkflow**: Combines an ordered sequence of stages, each referencing an Agent. Stages run sequentially, each in a fresh Sandbox. `plan.md` is not something you author — it is the output contract of the plan stage: the plan skill defines the exact `docs/plan.md` structure (Goal, Source → Target, Scope, Steps with Phase/File/Action/Depends-on/Verify, Verification, Notes) and the execute and verify stages parse it, so a custom plan skill must reproduce this output structure exactly.
 
