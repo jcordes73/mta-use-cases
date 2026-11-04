@@ -13,6 +13,7 @@ spec:
     users:
       - username: admin
         email: admin@example.com
+        emailVerified: true
         # Imported users default to DISABLED - without enabled: true the login
         # fails with "Account is disabled, contact your administrator." (the
         # import also resets this on every re-apply).
