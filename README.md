@@ -394,6 +394,13 @@ MTA 8.3 requires a Red Hat build of Keycloak (RHBK) instance for its authenticat
 
     The expected output is `True`.
 
+    > ⚠️ NOTE
+    >
+    > Two things the realm import cannot carry, so they must be applied to the running realm after each fresh deploy (see [Troubleshooting](troubleshooting/README.md) for the exact commands):
+    >
+    > - **User profile**: the realm's user profile declares `firstName`/`lastName` as required, so the login flow stops at a *Verify profile* form. Make both attributes optional via the `/users/profile` Admin endpoint.
+    > - A re-import resets users defined in the manifest — the `admin` user's `enabled: true` and `admin` password are defined in the manifest, so they re-apply with it.
+
 ### Migration Toolkit for Applications (MTA) 8.3
 
 #### Installation

@@ -13,6 +13,10 @@ spec:
     users:
       - username: admin
         email: admin@example.com
+        # Imported users default to DISABLED - without enabled: true the login
+        # fails with "Account is disabled, contact your administrator." (the
+        # import also resets this on every re-apply).
+        enabled: true
         # The MTA UI login (admin/admin per the README). Imported users have no
         # credentials unless they are defined here - without this entry the
         # login fails with "Invalid username or password".
