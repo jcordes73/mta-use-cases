@@ -1,7 +1,7 @@
 {
   "name": "JBoss EAP 7 to EAP 8 Assessment",
   "description": "Assessment questionnaire for migrating applications from JBoss EAP 7.4 to JBoss EAP 8 (Jakarta EE 10, Java SE 17). Covers the application profile, the current platform, APIs and dependencies, build and tooling, and testing and delivery.",
-  "required": false,
+  "required": true,
   "sections": [
     {
       "order": 1,
