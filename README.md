@@ -129,6 +129,13 @@ export KEYCLOAK_ADMIN_PASSWORD=<password>
 # (mta-ui/mta-realm-import.yaml - change it there and here if you rotate it)
 export KEYCLOAK_GITEA_CLIENT_SECRET=gitea-client-secret
 export OPENSHIFT_APPS_DOMAIN=$(oc get ingresses.config.openshift.io cluster -o jsonpath='{.spec.domain}')
+# Jira Cloud (optional - only for the issue-tracking integration, see
+# "Issue Tracking (Jira integration)"): the <site>.atlassian.net host, the
+# Atlassian account email and an API token (create one at
+# https://id.atlassian.com -> Security -> API tokens)
+export JIRA_HOST=<your-site>.atlassian.net
+export JIRA_EMAIL=<Atlassian account email>
+export JIRA_API_TOKEN=<API token>
 ```
 
 To verify the LLM endpoint is reachable and the model responds, send a test request via `curl`:
@@ -1216,6 +1223,51 @@ oc apply -f mta-ui/agentic-workflow/ant-to-maven/agents/ant-to-maven-execute-age
 oc apply -f mta-ui/agentic-workflow/ant-to-maven/agents/ant-to-maven-verify-agent.yaml
 
 oc apply -f mta-ui/agentic-workflow/ant-to-maven/ant-to-maven-agent-workflow.yaml
+```
+
+## Issue Tracking (Jira integration)
+
+MTA can synchronize migration tickets with an external issue tracker. The Hub ships a Jira connector (tracker kind `jira-cloud`) that talks to the Jira Cloud REST API (`rest/api/2` — `myself` for the connection test, `project`, `issue`, `search` for the ticket lifecycle) using Basic authentication with the **Atlassian account email** and an **API token** (create the token at [id.atlassian.com](https://id.atlassian.com) → Security → API tokens). Because the Hub routes its egress through the Squid proxy, the proxy allowlist must cover the Jira host — `.atlassian.net` is already in the list (see [Squid proxy deployment](#squid-proxy-deployment-disconnected-environments)).
+
+Extend the environment variables with the Jira credentials:
+
+```bash
+export JIRA_HOST=<your-site>.atlassian.net
+export JIRA_EMAIL=<Atlassian account email>
+export JIRA_API_TOKEN=<API token>
+```
+
+Create a Hub identity holding the credentials and register the tracker through the Hub REST API (port-forward the Hub service; `admin:admin` is the Hub basic-auth account set up during the MTA deployment):
+
+```bash
+oc port-forward svc/mta-hub -n openshift-mta 8080:8080 &
+HUB=http://localhost:8080
+AUTH="admin:admin"
+
+# Identity carrying the Jira credentials (the Hub encrypts them at rest)
+IDENTITY_ID=$(curl -s -u "$AUTH" -H "Content-Type: application/json" \
+  -d "{\"name\":\"jira-cloud\",\"kind\":\"basicAuth\",\"user\":\"${JIRA_EMAIL}\",\"password\":\"${JIRA_API_TOKEN}\"}" \
+  "$HUB/identities" | jq -r '.id')
+
+# Tracker pointing at the Jira Cloud site
+curl -s -u "$AUTH" -H "Content-Type: application/json" \
+  -d "{\"kind\":\"jira-cloud\",\"url\":\"https://${JIRA_HOST}\",\"identity\":{\"id\":${IDENTITY_ID},\"name\":\"jira-cloud\"},\"insecure\":false}" \
+  "$HUB/trackers" | jq
+```
+
+Verify the integration: list the Jira projects reachable with the credentials (this exercises the connector end-to-end — the same call the UI's tracker form makes), then fetch the issue types of the project tickets should be filed in (non-subtask, non-Epic types are eligible):
+
+```bash
+TRK_ID=$(curl -s -u "$AUTH" "$HUB/trackers" | jq -r '.[0].id')
+curl -s -u "$AUTH" "$HUB/trackers/${TRK_ID}/projects" | jq
+# pick a project ID from the list, then:
+curl -s -u "$AUTH" "$HUB/trackers/${TRK_ID}/projects/<project-id>" | jq '.issueTypes'
+```
+
+Tickets are created from the MTA UI (e.g. from an application's issues or a migration wave): each ticket becomes a Jira issue with the summary `Migrate <application name>` in the chosen project and issue type, and the Hub periodically refreshes the ticket status from Jira (To Do / In Progress / Done, derived from the issue's status category).
+
+```bash
+kill %1 # stop the port-forward when done
 ```
 
 ## Developer-Infused Migration Using OpenShift Dev Spaces and the MTA Plugin
