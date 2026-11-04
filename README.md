@@ -820,18 +820,9 @@ The template uses **HTTPS repository URLs** (`https://git.${OPENSHIFT_APPS_DOMAI
 
 ###### Importing dependencies for an existing portfolio
 
-The bulk upload above imports **applications** (record type `1`). For a portfolio that is already onboarded, dependencies can be added (or corrected) without recreating applications using **dependency-only records** (record type `2`) — uploaded through the same `importsummaries/upload` endpoint, the importer matches the application by name and only creates `Dependency` edges. The file `mta-ui/application_dependency_import.csv` holds the complete intra-portfolio dependency graph derived from the quickstarts' POMs (see [the per-row dependency table](mta-ui/template_application_import.dependencies.md)); regenerate it from the template with:
+The bulk upload above imports **applications** (record type `1`) — it carries no dependency data. For a portfolio that is already onboarded, dependencies can be added (or corrected) without recreating applications using **dependency-only records** (record type `2`) — uploaded through the same `importsummaries/upload` endpoint, the importer matches the application by name and only creates `Dependency` edges. The file `mta-ui/application_dependency_import.csv` holds the complete intra-portfolio dependency graph derived from the quickstarts' POMs (see [the per-row dependency table](mta-ui/template_application_import.dependencies.md) for how it was derived), maintained alongside the application template as the single source for dependency data:
 
 ```bash
-python3 - <<'EOF'
-import csv
-rows = list(csv.reader(open('mta-ui/template_application_import.csv')))
-out = ["Record Type,Application Name,Dependency,Dependency Direction"]
-for r in rows[1:]:
-    if len(r) >= 15 and r[5]:  # Dependency column set
-        out.append(f"2,{r[1]},,,,{r[5]},{r[6]}")
-open('mta-ui/application_dependency_import.csv', 'w').write("\n".join(out) + "\n")
-EOF
 curl -s -X POST "${MTA_URL}/hub/importsummaries/upload" \
   -u admin:admin \
   -F "fileName=application_dependency_import.csv" \
@@ -845,7 +836,7 @@ The record layout follows the Hub's import format: column 1 is the record type `
 > Two pitfalls with dependency-only imports:
 >
 > - **Column layout**: with one comma too many the dependency lands in the direction column and every record fails with `Application dependency '' could not be found.` The failed `ImportSummary` can simply be deleted (`DELETE ${MTA_URL}/hub/importsummaries/:id`) and re-uploaded.
-> - **No deduplication**: the importer matches application names but never checks whether the edge already exists — each imported record creates a Hub `Dependency`. An edge expressed twice (e.g. once southbound from the consumer, once northbound from the consumed) or re-imported creates duplicates. The generated CSV therefore expresses each of the 42 POM-verified edges exactly once. If duplicates do appear, remove the extras via the Hub REST API, keeping one per `(from, to)` pair:
+> - **No deduplication**: the importer matches application names but never checks whether the edge already exists — each imported record creates a Hub `Dependency`. An edge expressed twice (e.g. once southbound from the consumer, once northbound from the consumed) or re-imported creates duplicates. The file therefore expresses each of the 42 POM-verified edges exactly once. If duplicates do appear, remove the extras via the Hub REST API, keeping one per `(from, to)` pair:
 >
 >   ```bash
 >   # list edges with ids
