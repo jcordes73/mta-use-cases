@@ -29,11 +29,17 @@ flowchart LR
             UI["MTA UI<br/>(web console)"]
             HUB["MTA Hub<br/>(mta-hub, kai-api)<br/>incl. Solution Server / LLM proxy"]
             SANDBOX["Agent Sandbox<br/>(agents running<br/>plan → execute → verify)"]
+            REWRITER["Jira rewriter<br/>(nginx: /rest/api/2/search<br/>→ /rest/api/3/search/jql)"]
             UI -->|"assessments, waves,<br/>agentic migrations"| HUB
+            UI -->|"OIDC SSO login"| KC
             HUB -->|"agent runs"| SANDBOX
             HUB -->|"LLM proxy"| LLM
+            HUB -->|"ticket export &<br/>status sync"| REWRITER
+            REWRITER -->|"Jira Cloud<br/>via proxy"| SQUID
             SANDBOX -->|"LLM access via<br/>Konveyor Gateway"| LLM
+            SANDBOX -->|"Maven builds<br/>via proxy"| SQUID
             SANDBOX -->|"commit migrated code"| GITEA
+            HUB -.->|"RWX PVCs<br/>(Maven cache, bucket)"| ODF
         end
         subgraph developer["Developer-Infused Migration Using Dev Spaces"]
             direction TB
@@ -43,20 +49,27 @@ flowchart LR
             WS --> PLUGIN
             WS --> OPENCODE
         end
+        subgraph shared["Shared Platform Services"]
+            direction TB
+            KC["Keycloak (RHBK)<br/>(SSO for MTA UI<br/>and Gitea)"]
+            ODF["ODF<br/>(RWX storage class)"]
+        end
     end
     LLM["Self-hosted LLM<br/>(OpenAI-compatible endpoint)"]
-    GITEA["Gitea<br/>(application source code)"]
+    GITEA["Gitea<br/>(application source code,<br/>OIDC SSO via Keycloak)"]
     SQUID["Squid proxy<br/>(disconnected environments)"]
-    EXT["External hosts<br/>(GitHub, Open VSX, ...)"]
+    JIRA["Jira Cloud<br/>(migration-wave tickets)"]
+    EXT["External hosts<br/>(GitHub, Open VSX, Maven repos,<br/>OpenCode install, ...)"]
     PLUGIN -->|"Hub connection<br/>(analysis, profiles)"| HUB
     OPENCODE -->|"opencode.json<br/>(OPENAI_BASE_URL)"| LLM
     WS -->|"clone source code"| GITEA
-    WS -->|"GitHub / Open VSX<br/>via proxy"| SQUID
+    WS -->|"GitHub / Open VSX /<br/>LLM endpoint via proxy"| SQUID
     GITEA -->|"repo migration<br/>via proxy"| SQUID
     SQUID -->|"allowlisted<br/>destinations"| EXT
+    SQUID -->|"atlassian.net<br/>(allowlisted)"| JIRA
 ```
 
-Both parts share the same **self-hosted LLM**: the MTA plugin reaches it through the Hub's LLM proxy, the agentic workflows through the Konveyor Gateway, and the OpenCode agent directly via the `OPENAI_BASE_URL` configured in `opencode.json`. The **Squid proxy** is optional and only deployed in disconnected environments, providing allowlisted outbound egress (GitHub, Open VSX, ...) for the workspaces and Gitea; in a connected environment these components reach the external hosts directly.
+Both parts share the same **self-hosted LLM**: the MTA plugin reaches it through the Hub's LLM proxy, the agentic workflows through the Konveyor Gateway, and the OpenCode agent directly via the `OPENAI_BASE_URL` configured in `opencode.json`. **Keycloak** (Red Hat build of Keycloak) is the shared identity provider: the MTA UI logins are OIDC SSO against the `mta` realm, and Gitea is configured with the same realm as an OIDC auth source. **ODF** provides the RWX storage class the Tackle instance's PVCs (Maven cache, Hub bucket) bind to — auto-detected, or installed via ODF when the platform ships none (see the *Configure RWX storage* step in the [MTA installation](#migration-toolkit-for-applications-mta-83)). The **Jira integration** exports migration tickets from the Hub to Jira Cloud; because Jira Cloud removed the `/rest/api/2/search` endpoint the Hub still calls for status sync, the traffic flows through a small in-cluster rewriter (see [Issue Tracking (Jira integration)](#issue-tracking-jira-integration)). The **Squid proxy** is optional and only deployed in disconnected environments, providing allowlisted outbound egress — GitHub, Open VSX, the Maven repositories (`repo.maven.apache.org`, `maven.repository.redhat.com`), Atlassian, and the LLM endpoint — for the workspaces, the Gitea repo migration, the Hub (LLM calls, Jira sync), and the agentic Maven builds; in a connected environment these components reach the external hosts directly.
 
 ## Components and Versions
 
