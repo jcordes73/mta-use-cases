@@ -67,7 +67,7 @@ The versions below are what this PoC was validated against (OpenShift 4.22 sandb
 | Component | Version | Notes |
 |---|---|---|
 | OpenShift Container Platform | 4.22 (Kubernetes v1.35) | cluster-admin access required |
-| OpenShift Data Foundation (ODF) | 4.22 (`odf-operator.v4.22.7-rhodf`, pinned) | Provides the RWX storage class (`ocs-storagecluster-cephfs` internal / `ocs-external-storagecluster-cephfs` external); optional in connected environments with an existing RWX class. Pinned manifests: `storage/odf-subscription.yaml` + `storage/storage-cluster.yaml` |
+| OpenShift Data Foundation (ODF) | 4.22 (`odf-operator.v4.22.7-rhodf`, pinned) | Provides the RWX storage class (`ocs-storagecluster-cephfs` internal / `ocs-external-storagecluster-cephfs` external); installed automatically by the storage detection step when the platform ships no RWX-capable class. Pinned manifests: `storage/odf-subscription.yaml` + `storage/storage-cluster.yaml` |
 | cert-manager Operator | 1.20.1 *(catalog)* | Usually pre-installed |
 
 ### MTA Stack
@@ -118,8 +118,10 @@ export OPENAI_HOST=<Your LLM endpoint host>
 export OPENAI_BASE_URL=https://${OPENAI_HOST}/v1
 export OPENAI_API_KEY="<Your API Key>"
 export OPENAI_MODEL_NAME="<Your Model name>"
-# For an internal ODF deployment the RWX class is ocs-storagecluster-cephfs;
-# ocs-external-storagecluster-cephfs applies when ODF connects to an external Ceph.
+# RWX storage class for the MTA PVCs - auto-detected, or installed via ODF,
+# by the "Configure RWX storage" step of the MTA installation. Override here
+# only if the class is known upfront (e.g. ocs-external-storagecluster-cephfs
+# for an external ODF).
 export STORAGECLASS_RWX=ocs-external-storagecluster-cephfs
 # Passwords for the MTA Keycloak instance (keycloak/, see "Keycloak for MTA")
 # - generate fresh values, e.g. with `openssl rand -hex 16`
@@ -503,6 +505,59 @@ MTA 8.3 provides automated analysis, assessment, and refactoring tooling for app
     > cat mta-ui/kai-api-keys-secret.yaml | envsubst | oc apply -f -
     > ```
     > The condition is only updated on the operator's next reconciliation — restart the operator pod (deleting it, since OLM reverts `oc rollout restart` on its own deployment) to trigger one.
+- **Configure RWX storage**: The MTA stack requires a storage class that supports `ReadWriteMany` (RWX) access — the Tackle instance provisions 2 RWX PVCs (100Gi each, for the Maven cache and Hub bucket storage) in addition to its RWO databases. Many platforms provide an RWX-capable class out of the box (Amazon EFS, Azure Files, Google Filestore, NFS, or an existing ODF/CephFS). Because storage classes do not declare their supported access modes, the check below probes each class empirically with a throwaway `ReadWriteMany` PVC and keeps the first one that binds:
+
+    ```bash
+    RWX_SC=""
+    for SC in $(oc get sc -o json | jq -r '.items[].metadata.name'); do
+      cat <<EOF | oc apply -f - > /dev/null
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: rwx-probe
+      namespace: default
+    spec:
+      accessModes: ["ReadWriteMany"]
+      storageClassName: $SC
+      resources:
+        requests:
+          storage: 1Gi
+    EOF
+      if oc wait --for=jsonpath='{.status.phase}'=Bound pvc/rwx-probe -n default --timeout=90s > /dev/null 2>&1; then
+        RWX_SC=$SC
+      fi
+      oc delete pvc rwx-probe -n default --ignore-not-found --wait=false > /dev/null 2>&1
+      [ -n "$RWX_SC" ] && break
+    done
+    echo "RWX-capable storage class: ${RWX_SC:-none found}"
+    ```
+
+    When a class binds, export it for the Tackle instance:
+
+    ```bash
+    export STORAGECLASS_RWX=$RWX_SC
+    ```
+
+    When **no class binds** (`none found`), detect the infrastructure platform and install ODF (OpenShift Data Foundation), which provides the RWX class `ocs-storagecluster-cephfs`:
+
+    ```bash
+    oc get infrastructure cluster -o jsonpath='{.status.platformStatus.type}{"\n"}'
+    ```
+
+    On **AWS** the shipped manifests work as-is (3 OSDs × 512Gi on `gp3-csi`, portable across the worker nodes). Label the workers so the ODF scheduler can place Ceph on them, install the pinned ODF operator, create the StorageCluster, and wait for the storage class to appear (~15-20 minutes):
+
+    ```bash
+    oc label nodes -l node-role.kubernetes.io/worker cluster.ocs.openshift.io/openshift-storage="" --overwrite
+    oc apply -f storage/odf-subscription.yaml
+    oc wait --for=create csv odf-operator.v4.22.7-rhodf -n openshift-storage --timeout=900s
+    oc wait --for=jsonpath='{.status.phase}'=Succeeded csv odf-operator.v4.22.7-rhodf -n openshift-storage --timeout=900s
+    oc apply -f storage/storage-cluster.yaml
+    oc wait --for=create sc ocs-storagecluster-cephfs --timeout=1800s
+    export STORAGECLASS_RWX=ocs-storagecluster-cephfs
+    ```
+
+    On other platforms (Azure, GCP, vSphere, bare metal) the same flow applies, but the `storage/storage-cluster.yaml` StorageCluster must reference that platform's block storage class for the OSD data PVCs (`spec.storageDeviceSets[].dataPVCTemplate.spec.storageClassName` — e.g. `managed-csi` or `premium_LRS` on Azure, `pd-balanced` on GCP); the worker-node labeling is identical. See the [ODF documentation](https://docs.redhat.com/en/documentation/openshift_data_foundation) for platform-specific sizing, then export `STORAGECLASS_RWX=ocs-storagecluster-cephfs` as above.
+
 - **Configure the Tackle Instance**: Create a Tackle instance specifying the amount of storage needed, enabling Developer Lightspeed and configuring the Large Language Model (LLM):
 
     ```bash
