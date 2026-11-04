@@ -1,0 +1,105 @@
+# Jira Cloud search-API compatibility rewriter for the MTA tracker.
+#
+# WHY: Atlassian removed the /rest/api/2/search endpoint from Jira Cloud
+# (changelog CHANGE-2046). The go-jira client embedded in the MTA Hub still
+# uses it for the ticket status refresh (RefreshAll), so Jira Cloud trackers
+# create tickets fine but never sync their status. The replacement is
+# /rest/api/3/search/jql, which differs in two ways this rewriter handles:
+#   - the path changes
+#   - it returns NO fields by default (the old endpoint returned navigable
+#     fields), so "fields=status" must be injected - the Hub reads
+#     fields.status.statusCategory from the response
+# All other paths (myself, project, issue) pass through unchanged.
+#
+# The MTA tracker's URL is pointed at this service instead of the Jira site:
+#   http://jira-rewriter.openshift-mta.svc:8080
+# The Hub's NO_PROXY already covers .svc, so this hop does not go through
+# the Squid proxy; the rewriter itself talks to Jira Cloud directly.
+# Deploy with the same envsubst pattern as the other manifests - note the
+# whitelist (nginx's own $args variable in the config must survive envsubst):
+#   set -a && source <(echo "$JIRA_ENV")   # exports JIRA_HOST
+#   cat jira/jira-cloud-search-rewriter.yaml | envsubst '$JIRA_HOST' | oc apply -f -
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jira-rewriter-nginx
+  namespace: openshift-mta
+data:
+  nginx.conf: |
+    events {}
+    http {
+      server {
+        listen 8080;
+        # CHANGE-2046: removed endpoint - rewrite to the v3 jql search and
+        # inject the fields=status parameter the Hub's parser relies on.
+        location = /rest/api/2/search {
+          proxy_pass https://${JIRA_HOST}/rest/api/3/search/jql?$args&fields=status;
+          proxy_ssl_server_name on;
+          proxy_set_header Host ${JIRA_HOST};
+          proxy_set_header Authorization $http_authorization;
+        }
+        # Everything else (myself, project, issue) passes through unchanged.
+        location / {
+          proxy_pass https://${JIRA_HOST};
+          proxy_ssl_server_name on;
+          proxy_set_header Host ${JIRA_HOST};
+          proxy_set_header Authorization $http_authorization;
+        }
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jira-rewriter
+  namespace: openshift-mta
+  labels:
+    app: jira-rewriter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jira-rewriter
+  template:
+    metadata:
+      labels:
+        app: jira-rewriter
+    spec:
+      containers:
+        - name: nginx
+          image: registry.redhat.io/rhel9/nginx-124:latest
+          # The s2i image's run script prints usage help when used this way -
+          # start nginx directly with the mounted configuration instead.
+          command: ["nginx", "-g", "daemon off;"]
+          ports:
+            - containerPort: 8080
+              name: http
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8080
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: jira-rewriter-nginx
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jira-rewriter
+  namespace: openshift-mta
+  labels:
+    app: jira-rewriter
+spec:
+  selector:
+    app: jira-rewriter
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

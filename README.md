@@ -1237,25 +1237,35 @@ export JIRA_EMAIL=<Atlassian account email>
 export JIRA_API_TOKEN=<API token>
 ```
 
-Create a Hub identity holding the credentials and register the tracker through the Hub REST API (port-forward the Hub service; `admin:admin` is the Hub basic-auth account set up during the MTA deployment):
+Create a Hub identity holding the credentials and register the tracker through the Hub REST API (port-forward the Hub service; `admin:admin` is the Hub basic-auth account set up during the MTA deployment). Because Jira Cloud **removed the `/rest/api/2/search` endpoint** (Atlassian changelog [CHANGE-2046](https://developer.atlassian.com/changelog/#CHANGE-2046)) while the go-jira client embedded in the Hub still uses it for the ticket status refresh, the tracker URL points at a small in-cluster rewriter (`jira/jira-cloud-search-rewriter.yaml`) instead of the Jira site directly: it rewrites the removed search path to the `/rest/api/3/search/jql` replacement and injects the `fields=status` parameter the new endpoint requires (it returns no fields by default). Ticket creation, the connection test, and project browsing pass through unchanged:
 
 ```bash
+# Deploy the search-API rewriter (JIRA_HOST from the environment variables
+# above; note the envsubst whitelist - nginx's own $args variable in the
+# config must survive substitution)
+cat jira/jira-cloud-search-rewriter.yaml | envsubst '$JIRA_HOST' | oc apply -f -
+oc rollout status deploy/jira-rewriter -n openshift-mta --timeout=300s
+
 oc port-forward svc/mta-hub -n openshift-mta 8080:8080 &
 HUB=http://localhost:8080
 AUTH="admin:admin"
 
 # Identity carrying the Jira credentials (the Hub encrypts them at rest)
 IDENTITY_ID=$(curl -s -u "$AUTH" -H "Content-Type: application/json" \
-  -d "{\"name\":\"jira-cloud\",\"kind\":\"basicAuth\",\"user\":\"${JIRA_EMAIL}\",\"password\":\"${JIRA_API_TOKEN}\"}" \
+  -d "{\"name\":\"jira-cloud\",\"kind\":\"basic-auth\",\"user\":\"${JIRA_EMAIL}\",\"password\":\"${JIRA_API_TOKEN}\"}" \
   "$HUB/identities" | jq -r '.id')
 
-# Tracker pointing at the Jira Cloud site
+# Tracker pointing at the rewriter in front of the Jira Cloud site
 curl -s -u "$AUTH" -H "Content-Type: application/json" \
-  -d "{\"kind\":\"jira-cloud\",\"url\":\"https://${JIRA_HOST}\",\"identity\":{\"id\":${IDENTITY_ID},\"name\":\"jira-cloud\"},\"insecure\":false}" \
+  -d "{\"name\":\"jira-cloud\",\"kind\":\"jira-cloud\",\"url\":\"http://jira-rewriter.openshift-mta.svc:8080\",\"identity\":{\"id\":${IDENTITY_ID},\"name\":\"jira-cloud\"},\"insecure\":false}" \
   "$HUB/trackers" | jq
 ```
 
-Verify the integration: list the Jira projects reachable with the credentials (this exercises the connector end-to-end — the same call the UI's tracker form makes), then fetch the issue types of the project tickets should be filed in (non-subtask, non-Epic types are eligible):
+> ⚠️ NOTE
+>
+> The identity kind must be exactly **`basic-auth`** (hyphenated) - other spellings fail the connection test with *"unsupported identity kind"*. The Hub runs a background manager that tests disconnected trackers every 10 seconds and connected ones every 60, so a tracker flips to `connected: true` on its own once the credentials and URL are correct - the `GET /trackers/{id}/projects` endpoint only reports the last test's stored result, it does not test on demand.
+
+Verify the integration: the tracker's `connected` field (checked by the background manager against `/rest/api/2/myself` through the rewriter), the Jira projects reachable with the credentials, and the issue types of the project tickets should be filed in (non-subtask, non-Epic types are eligible):
 
 ```bash
 TRK_ID=$(curl -s -u "$AUTH" "$HUB/trackers" | jq -r '.[0].id')
@@ -1264,7 +1274,7 @@ curl -s -u "$AUTH" "$HUB/trackers/${TRK_ID}/projects" | jq
 curl -s -u "$AUTH" "$HUB/trackers/${TRK_ID}/projects/<project-id>" | jq '.issueTypes'
 ```
 
-Tickets are created from the MTA UI (e.g. from an application's issues or a migration wave): each ticket becomes a Jira issue with the summary `Migrate <application name>` in the chosen project and issue type, and the Hub periodically refreshes the ticket status from Jira (To Do / In Progress / Done, derived from the issue's status category).
+Tickets are created from the MTA UI (e.g. from an application's issues or a migration wave): each ticket becomes a Jira issue with the summary `Migrate <application name>` in the chosen project and issue type, and the Hub periodically refreshes the ticket status from Jira (To Do / In Progress / Done, derived from the issue's status category). End-to-end verified with a live Jira Cloud site: ticket `KAN-4` (`Migrate helloworld`, Task in the `MTA` project) created by the Hub, then transitioned to Done in Jira — the Hub picked up the new status within its 30-second refresh cycle.
 
 ```bash
 kill %1 # stop the port-forward when done
