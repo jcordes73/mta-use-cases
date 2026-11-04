@@ -25,3 +25,6 @@ spec:
   name: rhbk-operator
   source: redhat-operators
   sourceNamespace: openshift-marketplace
+  # The CSV that served from the catalog at validation time. Remove this
+  # line (or bump it) to install a newer operator version from the channel.
+  startingCSV: rhbk-operator.v26.6.7-opr.3

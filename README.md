@@ -60,14 +60,14 @@ Both parts share the same **self-hosted LLM**: the MTA plugin reaches it through
 
 ## Components and Versions
 
-The versions below are what this PoC was validated against (OpenShift 4.22 sandbox, November 2026). Operator versions marked *(catalog)* are the newest CSVs the connected OperatorHub catalog served at validation time — pinning them is optional.
+The versions below are what this PoC was validated against (OpenShift 4.22 sandbox, November 2026). Operator versions marked *(catalog)* are the newest CSVs the connected OperatorHub catalog served at validation time — the manifests in this repository pin them via `startingCSV`; remove the line (or bump it) to install newer versions. The Gitea Helm chart is pinned via `--version` in the install commands.
 
 ### Platform & Infrastructure
 
 | Component | Version | Notes |
 |---|---|---|
 | OpenShift Container Platform | 4.22 (Kubernetes v1.35) | cluster-admin access required |
-| OpenShift Data Foundation (ODF) | 4.22 (`*-4.22.7-rhodf` CSVs) *(catalog)* | Provides the RWX storage class (`ocs-storagecluster-cephfs` internal / `ocs-external-storagecluster-cephfs` external); optional in connected environments with an existing RWX class |
+| OpenShift Data Foundation (ODF) | 4.22 (`odf-operator.v4.22.7-rhodf`, pinned) | Provides the RWX storage class (`ocs-storagecluster-cephfs` internal / `ocs-external-storagecluster-cephfs` external); optional in connected environments with an existing RWX class. Pinned manifests: `storage/odf-subscription.yaml` + `storage/storage-cluster.yaml` |
 | cert-manager Operator | 1.20.1 *(catalog)* | Usually pre-installed |
 
 ### MTA Stack
@@ -76,19 +76,19 @@ The versions below are what this PoC was validated against (OpenShift 4.22 sandb
 |---|---|---|
 | MTA Operator | **8.3.3** (pinned) | `redhat-operators`, channel `stable-v8` |
 | └ mta-ui / mta-hub / mta-solution-server / mta-agentic-controller | 8.3.3 (CSV digest-pinned) | `registry.redhat.io/mta/*-rhel9` |
-| RHBK Operator (Red Hat build of Keycloak) | 26.4+ (validated: 26.6.7-opr.3) *(catalog)* | `redhat-operators`, channel `stable-v26` |
+| RHBK Operator (Red Hat build of Keycloak) | 26.6.7-opr.3 (pinned) | `redhat-operators`, channel `stable-v26` — `keycloak/keycloak-operator.yaml` |
 | └ Keycloak server | 26.6.7.redhat-00003 | `rhbk/keycloak-rhel9` |
 | PostgreSQL (Keycloak database) | 16 (`rhel9/postgresql-16`) | `registry.redhat.io` |
-| Agent Sandbox Operator | 0.9.0 | `redhat-operators`, channel `preview-0.9` |
+| Agent Sandbox Operator | 0.9.0 (pinned) | `redhat-operators`, channel `preview-0.9` |
 | Migration skill images (built on-cluster) | 0.0.1 | UBI 9 micro base, one per agentic workflow |
 
 ### Developer-Infused Migration
 
 | Component | Version | Source |
 |---|---|---|
-| OpenShift Dev Spaces Operator | 3.30+ (validated: 3.31.2) *(catalog)* + DevWorkspace Operator 1.0.0 | `redhat-operators`, channel `stable` |
-| Gitea | 1.27 (rootless) | Helm chart `gitea-12.7.0` (`dl.gitea.com/charts`) |
-| Squid proxy (disconnected environments) | 5.5 (`rhel9/squid`) | `registry.redhat.io` |
+| OpenShift Dev Spaces Operator | 3.31.2 (pinned) + DevWorkspace Operator 1.0.0 | `redhat-operators`, channel `stable` — `devspaces/openshift-devspaces-operator.yaml` |
+| Gitea | 1.27 (rootless) | Helm chart `gitea-12.7.0` (`dl.gitea.com/charts`), pinned via `--version` |
+| Squid proxy (disconnected environments) | 5.5 (`rhel9/squid`, pinned) | `registry.redhat.io` |
 | MTA VS Code extensions | 8.3.1 (`redhat.mta-core`, `redhat.mta-java`) | Open VSX |
 | OpenCode extension + CLI | `sst-dev.opencode` (latest) | Open VSX |
 
@@ -231,7 +231,7 @@ To prevent unwanted changes and/or commits to existing source code, the original
     oc apply -f gitea/gitea-namespace.yaml
     helm repo add gitea-charts https://dl.gitea.com/charts/
     helm repo update
-    cat gitea/values.yaml | envsubst | helm install -n gitea -f - gitea gitea-charts/gitea
+    cat gitea/values.yaml | envsubst | helm install -n gitea -f - gitea gitea-charts/gitea --version 12.7.0
     oc wait --for=jsonpath='{.status.readyReplicas}'=1 statefulset gitea-valkey-primary -n gitea --timeout=600s
     oc wait --for=jsonpath='{.status.readyReplicas}'=1 statefulset gitea-postgresql -n gitea --timeout=600s
     cat gitea/create-db.sh | oc exec statefulset/gitea-postgresql -n gitea -i -t -- bash -il
@@ -316,7 +316,7 @@ To prevent unwanted changes and/or commits to existing source code, the original
     helm install -n gitea \
       -f <(envsubst < gitea/values.yaml) \
       -f <(envsubst < gitea/values-proxy.yaml) \
-      gitea gitea-charts/gitea
+      gitea gitea-charts/gitea --version 12.7.0
     oc wait --for=jsonpath='{.status.readyReplicas}'=1 statefulset gitea-valkey-primary -n gitea --timeout=600s
     oc wait --for=jsonpath='{.status.readyReplicas}'=1 statefulset gitea-postgresql -n gitea --timeout=600s
     cat gitea/create-db.sh | oc exec statefulset/gitea-postgresql -n gitea -i -t -- bash -il
@@ -328,6 +328,29 @@ To prevent unwanted changes and/or commits to existing source code, the original
     ```bash
     oc get pod -n gitea -o yaml | grep -iE 'proxy'
     ```
+
+- **OIDC SSO login via Keycloak**: Gitea can authenticate users against the MTA's Keycloak instance (see [Keycloak for MTA](#keycloak-for-mta)) — users then log into Gitea with their MTA credentials and Gitea auto-creates the local account from the token's email on first login. The chart's `configure-gitea` init container runs `gitea admin auth add-oauth` for each `gitea.oauth` entry of the additional values file `gitea/values-keycloak.yaml` (its `autoDiscoverUrl` points at the MTA UI route's `/auth` path, so the MTA route must exist — deploy MTA first or re-run the `helm upgrade` afterwards). Install with all three values files (this also upgrades an existing installation):
+
+    ```bash
+    # OPENSHIFT_APPS_DOMAIN and KEYCLOAK_GITEA_CLIENT_SECRET from the
+    # prerequisites section must be set
+    helm upgrade -n gitea \
+      -f <(envsubst < gitea/values.yaml) \
+      -f <(envsubst < gitea/values-proxy.yaml) \
+      -f <(envsubst < gitea/values-keycloak.yaml) \
+      gitea gitea-charts/gitea --version 12.7.0
+    oc wait --for=jsonpath='{.status.readyReplicas}'=1 deployment gitea -n gitea --timeout=600s
+    ```
+
+    To verify that the auth source was registered (the `configure-gitea` init log ends with `...installed.`):
+
+    ```bash
+    oc logs -n gitea deploy/gitea -c configure-gitea | grep -E 'oauth|installed'
+    ```
+
+    > ⚠️ NOTE
+    >
+    > The init container fails with *"Non-success code for Discovery URL: 503"* if the discovery URL's host has no matching Route — the MTA UI route's host is `mta-openshift-mta.${OPENSHIFT_APPS_DOMAIN}`, not `mta.${OPENSHIFT_APPS_DOMAIN}`. The failed init crash-loops the Gitea pod until the URL is corrected (fix the values and `helm upgrade` again).
 
 - **SSH Keys**: If SSH keys should be used for authentication against the Git repository in addition to basic auth, first generate a keypair (skip this step if you already have one):
 

@@ -1,0 +1,28 @@
+# The internal ODF StorageCluster: 3 OSDs (512Gi gp3 each, portable across the
+# worker nodes) + monitors with the metadata on the node root filesystem. The
+# worker nodes must be labeled first (the ocs-operator schedules Ceph on them):
+#   oc label nodes -l node-role.kubernetes.io/worker cluster.ocs.openshift.io/openshift-storage="" --overwrite
+# Wait for the RWX storage class to appear (~15-20 minutes):
+#   oc wait --for=create sc ocs-storagecluster-cephfs --timeout=1800s
+apiVersion: ocs.openshift.io/v1
+kind: StorageCluster
+metadata:
+  name: ocs-storagecluster
+  namespace: openshift-storage
+spec:
+  manageNodes: false
+  monDataDirHostPath: /var/lib/rook
+  storageDeviceSets:
+  - name: ocs-deviceset
+    count: 3
+    dataPVCTemplate:
+      spec:
+        storageClassName: gp3-csi
+        accessModes:
+        - ReadWriteOnce
+        volumeMode: Block
+        resources:
+          requests:
+            storage: "512Gi"
+    portable: true
+    replica: 3

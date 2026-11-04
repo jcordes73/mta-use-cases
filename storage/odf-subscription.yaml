@@ -1,0 +1,34 @@
+# OpenShift Data Foundation (internal mode) - provides the RWX storage class
+# `ocs-storagecluster-cephfs` used by the MTA Tackle CR (`STORAGECLASS_RWX`).
+# Deploy BEFORE the Tackle instance; the deployment takes ~15-20 minutes.
+#
+# Pinned to the CSV served by the catalog at validation time - remove the
+# startingCSV line (or bump it) to install a newer version from the channel.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openshift-storage
+  annotations:
+    workload.openshift.io/allowed: management
+---
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: openshift-storage-operatorgroup
+  namespace: openshift-storage
+spec:
+  targetNamespaces:
+  - openshift-storage
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: odf-operator
+  namespace: openshift-storage
+spec:
+  channel: stable-4.22
+  installPlanApproval: Automatic
+  name: odf-operator
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace
+  startingCSV: odf-operator.v4.22.7-rhodf
