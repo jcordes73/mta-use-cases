@@ -63,3 +63,63 @@ The `PUT` is a full-object update — the fetched config is modified and written
 back rather than a partial patch. Verify with the `GET` above: the
 `firstName` and `lastName` attributes should no longer carry a `required`
 field, while `username`/`email` keep their existing settings.
+
+## Jira (Hub tracker): integration pitfalls
+
+The Jira tracker integration (see "Issue Tracking (Jira integration)" in the
+main README) surfaced four distinct failure modes. All of them surface through
+the same place: the tracker's stored `message` field (`GET ${MTA_URL}/hub/trackers/<id>`)
+— the Hub's background manager tests trackers on a 10-second (disconnected) /
+60-second (connected) cycle and writes the last test's result there; the
+`GET /trackers/{id}/projects` endpoint never tests on demand, it only replays
+that stored result.
+
+### 1. `unsupported identity kind`
+
+The tracker package resolves the identity kind against exact string constants:
+the Basic-auth kind is **`basic-auth`** (hyphenated), not `basicAuth`. An
+identity with a different kind fails every connector operation. Fix: `PUT`
+the identity with `kind: "basic-auth"` (full object, including `user` and
+`password` — the API does not return secrets on `GET`, so fetch nothing, send
+the full payload).
+
+### 2. Connection test returns `401` although the token is valid
+
+The connector authenticates with Basic auth `user:password` = Atlassian
+account email : API token. A **401 with a valid token means the email was
+empty or wrong** — e.g. the environment variable was unset when the identity
+was created, which silently produces an identity with `user: ""`. Diagnose by
+testing the credential pair directly, outside the cluster:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" -u "${JIRA_EMAIL}:${JIRA_API_TOKEN}" \
+  "https://${JIRA_HOST}/rest/api/2/myself"
+```
+
+If this returns 200 while the tracker's message reports 401, the identity is
+the problem: re-`PUT` it with the correct `user`. (The authoritative email is
+also visible in the JSON returned by `https://<site>/rest/api/2/myself` from
+a logged-in browser session.) Also verify the Hub pod's egress path: the Hub
+routes through the Squid proxy, so the Jira host domain must be in the proxy
+allowlist — a blocked host fails with `403`, not `401`.
+
+### 3. Tickets are created but their status never syncs
+
+Hub log (`oc logs deploy/mta-hub -n openshift-mta | grep -A1 'Failed to refresh'`)
+shows: *"The requested API has been removed. Please migrate to the
+/rest/api/3/search/jql API"* — Atlassian removed `/rest/api/2/search` from
+Jira Cloud (changelog CHANGE-2046) while the go-jira client embedded in the
+Hub still uses it for the refresh cycle. Ticket creation, the connection test,
+and project browsing are unaffected. Fix: deploy the search-API rewriter
+(`jira/jira-cloud-search-rewriter.yaml`) and point the tracker's URL at
+`http://jira-rewriter.openshift-mta.svc:8080` — the rewriter rewrites the
+removed path to `/rest/api/3/search/jql` and injects the mandatory
+`fields=status` parameter (the v3 endpoint returns no fields by default).
+The Hub's `NO_PROXY` covers `.svc`, so the rewriter hop bypasses Squid while
+the rewriter itself talks to Jira Cloud directly.
+
+### 4. Tracker POST rejected: `Key: 'Tracker.Name' Error:Field validation for 'Name' failed on the 'required' tag`
+
+The `name` field is mandatory on `POST /trackers` (and distinct from the
+`identity.name`). The example command in the main README includes it.
+

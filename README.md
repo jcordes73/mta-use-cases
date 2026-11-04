@@ -837,7 +837,7 @@ curl -s -u admin:admin -H "Content-Type: application/json" \
 
 > ⚠️ NOTE
 >
-> The identity kind must be exactly **`basic-auth`** (hyphenated) - other spellings fail the connection test with *"unsupported identity kind"*. The Hub runs a background manager that tests disconnected trackers every 10 seconds and connected ones every 60, so a tracker flips to `connected: true` on its own once the credentials and URL are correct - the `GET /trackers/{id}/projects` endpoint only reports the last test's stored result, it does not test on demand.
+> The identity kind must be exactly **`basic-auth`** (hyphenated) - other spellings fail the connection test with *"unsupported identity kind"*, and omitting the tracker's `name` field fails the POST with a `Name ... required` validation error. The Hub runs a background manager that tests disconnected trackers every 10 seconds and connected ones every 60, so a tracker flips to `connected: true` on its own once the credentials and URL are correct - the `GET /trackers/{id}/projects` endpoint only reports the last test's stored result, it does not test on demand. A `401` in the tracker's `message` field means the identity's `user` (the Atlassian email) is empty or wrong - e.g. when the environment variable was unset at identity-creation time - even if the API token is valid; see [troubleshooting/README.md](troubleshooting/README.md) for the Jira symptom→cause table.
 
 Verify the integration: the tracker's `connected` field (checked by the background manager against `/rest/api/2/myself` through the rewriter), the Jira projects reachable with the credentials, and the issue types of the project tickets should be filed in (non-subtask, non-Epic types are eligible):
 
