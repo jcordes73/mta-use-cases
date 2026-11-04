@@ -202,6 +202,10 @@ To prevent unwanted changes and/or commits to existing source code, the original
     ![image](images/gitea_ui.png)
 
     To login click on the `Sign in` button and use the credentials `gitea-admin/giteaftw!`.    
+
+    > ⚠️ NOTE
+    >
+    > The chart defaults to a `RollingUpdate` deployment strategy, which deadlocks on the single RWO data PVC: the new pod waits with *"Multi-Attach error for volume ... Volume is already used by pod(s) ..."*, while the old pod keeps serving. `gitea/values.yaml` sets `strategy.type: Recreate` to replace the pod before the new one starts — without it a later `helm upgrade` stalls the rollout.
 - **Verify Open API endpoint**: To verify if the Gitea Open API endpoint is working use
     ```bash
     curl -s -o /dev/null -w "%{http_code}\n" https://git.${OPENSHIFT_APPS_DOMAIN}/api/swagger

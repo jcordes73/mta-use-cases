@@ -19,7 +19,8 @@ metadata:
 type: Opaque
 stringData:
   # The bootstrap admin of the RHBK instance. Used to log into the Keycloak
-  # admin console (https://mta.${OPENSHIFT_APPS_DOMAIN}/auth/admin/master/console/)
+  # admin console (fronted through the MTA UI route's /auth path:
+  # https://mta-openshift-mta.${OPENSHIFT_APPS_DOMAIN}/auth/admin/master/console/)
   # and referenced by the Keycloak CR's spec.bootstrapAdmin.
   username: admin
   password: "${KEYCLOAK_ADMIN_PASSWORD}"
@@ -54,8 +55,8 @@ spec:
   # Keycloak derives the frontend URL (issuer, redirect endpoints) from the
   # X-Forwarded-* headers. Requests reach it through the MTA UI route's /auth
   # path (the UI pod proxies /auth to this instance), so the frontend URL
-  # becomes https://mta.${OPENSHIFT_APPS_DOMAIN}/auth/... for browsers, the
-  # Hub and Gitea - no dedicated Keycloak Route is needed.
+  # becomes https://mta-openshift-mta.${OPENSHIFT_APPS_DOMAIN}/auth/... for
+  # browsers, the Hub and Gitea - no dedicated Keycloak Route is needed.
   hostname:
     strict: false
   proxy:

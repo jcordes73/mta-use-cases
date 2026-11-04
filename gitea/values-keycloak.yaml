@@ -10,8 +10,10 @@
 # OIDC discovery URL.
 #
 # Keycloak is fronted through the MTA UI route's /auth path, so the
-# discovery URL points at https://mta.${OPENSHIFT_APPS_DOMAIN}/auth/... -
-# the MTA route must exist (MTA deployed) for the login flow to work.
+# discovery URL points at https://mta-openshift-mta.${OPENSHIFT_APPS_DOMAIN}/auth/...
+# (the auto-generated host of the MTA UI route - `mta.${OPENSHIFT_APPS_DOMAIN}`
+# is NOT a route host and the router answers it with 503). The MTA route must
+# exist (MTA deployed) for the login flow to work.
 #
 # The manifest is cluster-independent: the cluster domain and the client
 # secret are carried as ${OPENSHIFT_APPS_DOMAIN} /
@@ -29,4 +31,4 @@ gitea:
       provider: openidConnect
       key: gitea
       secret: "${KEYCLOAK_GITEA_CLIENT_SECRET}"
-      autoDiscoverUrl: "https://mta.${OPENSHIFT_APPS_DOMAIN}/auth/realms/mta/.well-known/openid-configuration"
+      autoDiscoverUrl: "https://mta-openshift-mta.${OPENSHIFT_APPS_DOMAIN}/auth/realms/mta/.well-known/openid-configuration"

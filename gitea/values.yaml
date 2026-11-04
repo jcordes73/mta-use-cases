@@ -23,6 +23,11 @@ valkey-cluster:
   enabled: false
 openshift:
   enabled: true
+# Recreate (not RollingUpdate): the single RWO PVC (gitea-shared-storage) cannot
+# be attached by the new pod while the old one still holds it - a rolling
+# update stalls the new pod with "Multi-Attach error" until the old pod dies.
+strategy:
+  type: Recreate
 route:
   enabled: true
   host: git.${OPENSHIFT_APPS_DOMAIN}
