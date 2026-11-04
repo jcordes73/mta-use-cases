@@ -58,6 +58,49 @@ flowchart LR
 
 Both parts share the same **self-hosted LLM**: the MTA plugin reaches it through the Hub's LLM proxy, the agentic workflows through the Konveyor Gateway, and the OpenCode agent directly via the `OPENAI_BASE_URL` configured in `opencode.json`. The **Squid proxy** is optional and only deployed in disconnected environments, providing allowlisted outbound egress (GitHub, Open VSX, ...) for the workspaces and Gitea; in a connected environment these components reach the external hosts directly.
 
+## Components and Versions
+
+The versions below are what this PoC was validated against (OpenShift 4.22 sandbox, November 2026). Operator versions marked *(catalog)* are the newest CSVs the connected OperatorHub catalog served at validation time — pinning them is optional.
+
+### Platform & Infrastructure
+
+| Component | Version | Notes |
+|---|---|---|
+| OpenShift Container Platform | 4.22 (Kubernetes v1.35) | cluster-admin access required |
+| OpenShift Data Foundation (ODF) | 4.22 (`*-4.22.7-rhodf` CSVs) *(catalog)* | Provides the RWX storage class (`ocs-storagecluster-cephfs` internal / `ocs-external-storagecluster-cephfs` external); optional in connected environments with an existing RWX class |
+| cert-manager Operator | 1.20.1 *(catalog)* | Usually pre-installed |
+
+### MTA Stack
+
+| Component | Version | Source |
+|---|---|---|
+| MTA Operator | **8.3.3** (pinned) | `redhat-operators`, channel `stable-v8` |
+| └ mta-ui / mta-hub / mta-solution-server / mta-agentic-controller | 8.3.3 (CSV digest-pinned) | `registry.redhat.io/mta/*-rhel9` |
+| RHBK Operator (Red Hat build of Keycloak) | 26.4+ (validated: 26.6.7-opr.3) *(catalog)* | `redhat-operators`, channel `stable-v26` |
+| └ Keycloak server | 26.6.7.redhat-00003 | `rhbk/keycloak-rhel9` |
+| PostgreSQL (Keycloak database) | 16 (`rhel9/postgresql-16`) | `registry.redhat.io` |
+| Agent Sandbox Operator | 0.9.0 | `redhat-operators`, channel `preview-0.9` |
+| Migration skill images (built on-cluster) | 0.0.1 | UBI 9 micro base, one per agentic workflow |
+
+### Developer-Infused Migration
+
+| Component | Version | Source |
+|---|---|---|
+| OpenShift Dev Spaces Operator | 3.30+ (validated: 3.31.2) *(catalog)* + DevWorkspace Operator 1.0.0 | `redhat-operators`, channel `stable` |
+| Gitea | 1.27 (rootless) | Helm chart `gitea-12.7.0` (`dl.gitea.com/charts`) |
+| Squid proxy (disconnected environments) | 5.5 (`rhel9/squid`) | `registry.redhat.io` |
+| MTA VS Code extensions | 8.3.1 (`redhat.mta-core`, `redhat.mta-java`) | Open VSX |
+| OpenCode extension + CLI | `sst-dev.opencode` (latest) | Open VSX |
+
+### Workstation Tooling
+
+| Tool | Version |
+|---|---|
+| `oc` CLI | 4.20+ |
+| `helm` CLI | 3.x/4.x (v4.2.2 used for validation) |
+| `yq` | 4.x (v4.53.3 used for validation) |
+| `jq` | any recent |
+
 ## Prerequisites
 
 Below you can find the requirements for getting started with this PoC:
