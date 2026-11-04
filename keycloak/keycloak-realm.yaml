@@ -1,0 +1,73 @@
+# Realm import for the Red Hat build of Keycloak instance. Creates the `mta`
+# realm the MTA operator's auto-generated IdentityProvider CR expects
+# (issuer path /auth/realms/mta) with the clients and users the integration
+# needs:
+#
+# - `mta-ui` (public): the client the Hub's IdentityProvider CR authenticates
+#   against - its redirect URI is the Hub's <MTA route>/oidc/idp/callback,
+# The MTA operator does not set the Route host explicitly, so OpenShift
+# generates it as `<route-name>-<namespace>.<domain>`:
+# mta-openshift-mta.${OPENSHIFT_APPS_DOMAIN}. The redirect URIs below must
+# match that generated host.
+# - `gitea` (confidential): the OIDC client Gitea uses for its SSO login
+#   (see gitea/values-keycloak.yaml) - the secret must match
+#   KEYCLOAK_GITEA_CLIENT_SECRET.
+# - user `admin`: the MTA UI login (with idp_primary: true, the MTA UI login
+#   redirects to Keycloak and authenticates against this user).
+#
+# The manifest is cluster-independent: the cluster domain and secrets are
+# carried as ${OPENSHIFT_APPS_DOMAIN} / ${KEYCLOAK_ADMIN_PASSWORD} /
+# ${KEYCLOAK_GITEA_CLIENT_SECRET} placeholders, applied with the envsubst
+# pattern:
+#   export OPENSHIFT_APPS_DOMAIN=<cluster-domain>
+#   export KEYCLOAK_ADMIN_PASSWORD=<password>
+#   export KEYCLOAK_GITEA_CLIENT_SECRET=<client-secret>
+#   cat keycloak/keycloak-realm.yaml | envsubst | oc apply -f -
+apiVersion: k8s.keycloak.org/v2alpha1
+kind: KeycloakRealmImport
+metadata:
+  name: mta-realm-import
+  namespace: openshift-mta
+spec:
+  keycloakCRName: mta-rhbk
+  realm:
+    realm: mta
+    enabled: true
+    clients:
+      - clientId: mta-ui
+        name: MTA UI
+        protocol: openid-connect
+        publicClient: true
+        standardFlowEnabled: true
+        directAccessGrantsEnabled: false
+        redirectUris:
+          - "https://mta-openshift-mta.${OPENSHIFT_APPS_DOMAIN}/oidc/idp/callback"
+        webOrigins:
+          - "https://mta-openshift-mta.${OPENSHIFT_APPS_DOMAIN}"
+        defaultClientScopes:
+          - profile
+          - email
+          - roles
+      - clientId: gitea
+        name: Gitea
+        protocol: openid-connect
+        publicClient: false
+        standardFlowEnabled: true
+        directAccessGrantsEnabled: false
+        secret: "${KEYCLOAK_GITEA_CLIENT_SECRET}"
+        redirectUris:
+          - "https://git.${OPENSHIFT_APPS_DOMAIN}/user/oauth2/keycloak/callback"
+        webOrigins:
+          - "https://git.${OPENSHIFT_APPS_DOMAIN}"
+        defaultClientScopes:
+          - profile
+          - email
+          - roles
+    users:
+      - username: admin
+        enabled: true
+        email: admin@example.com
+        emailVerified: true
+        credentials:
+          - type: password
+            value: "${KEYCLOAK_ADMIN_PASSWORD}"

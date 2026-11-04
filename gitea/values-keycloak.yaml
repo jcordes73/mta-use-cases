@@ -1,0 +1,32 @@
+# OIDC SSO login for Gitea against the Red Hat build of Keycloak instance
+# (see keycloak/keycloak-realm.yaml for the `gitea` client). The chart's
+# configure script runs `gitea admin auth add-oauth` for each `gitea.oauth`
+# entry, so users log into Gitea with their Keycloak accounts (Gitea
+# auto-creates the local account from the token's email on first login).
+#
+# The chart flags are kebab-cased from the entry keys: `provider` becomes
+# `--provider` (the Gitea OIDC provider name is `openid-connect`), `key`/
+# `secret` are the OAuth client credentials, and `autoDiscoverUrl` the
+# OIDC discovery URL.
+#
+# Keycloak is fronted through the MTA UI route's /auth path, so the
+# discovery URL points at https://mta.${OPENSHIFT_APPS_DOMAIN}/auth/... -
+# the MTA route must exist (MTA deployed) for the login flow to work.
+#
+# The manifest is cluster-independent: the cluster domain and the client
+# secret are carried as ${OPENSHIFT_APPS_DOMAIN} /
+# ${KEYCLOAK_GITEA_CLIENT_SECRET} placeholders, applied with the envsubst
+# pattern as an additional values file of the Gitea installation:
+#   export OPENSHIFT_APPS_DOMAIN=<cluster-domain>
+#   export KEYCLOAK_GITEA_CLIENT_SECRET=<client-secret>
+#   helm install -n gitea \
+#     -f <(envsubst < gitea/values.yaml) \
+#     -f <(envsubst < gitea/values-keycloak.yaml) \
+#     gitea gitea-charts/gitea
+gitea:
+  oauth:
+    - name: keycloak
+      provider: openidConnect
+      key: gitea
+      secret: "${KEYCLOAK_GITEA_CLIENT_SECRET}"
+      autoDiscoverUrl: "https://mta.${OPENSHIFT_APPS_DOMAIN}/auth/realms/mta/.well-known/openid-configuration"

@@ -1,0 +1,70 @@
+# Red Hat build of Keycloak instance for the MTA. The Keycloak CR name
+# `mta-rhbk` matters: the MTA operator auto-detects the `mta-rhbk`
+# StatefulSet in the same namespace and configures itself against this
+# instance instead of deploying its own Keycloak (the UI pod proxies
+# `/auth` to the `mta-rhbk-service` Service and the Hub federates logins
+# to this realm via the auto-created IdentityProvider CR).
+#
+# The manifest is cluster-independent: the cluster domain and the admin
+# password are carried as ${OPENSHIFT_APPS_DOMAIN} / ${KEYCLOAK_ADMIN_PASSWORD}
+# placeholders, applied with the envsubst pattern:
+#   export OPENSHIFT_APPS_DOMAIN=<cluster-domain>
+#   export KEYCLOAK_ADMIN_PASSWORD=<password>
+#   cat keycloak/keycloak.yaml | envsubst | oc apply -f -
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mta-keycloak-rhbk
+  namespace: openshift-mta
+type: Opaque
+stringData:
+  # The bootstrap admin of the RHBK instance. Used to log into the Keycloak
+  # admin console (https://mta.${OPENSHIFT_APPS_DOMAIN}/auth/admin/master/console/)
+  # and referenced by the Keycloak CR's spec.bootstrapAdmin.
+  username: admin
+  password: "${KEYCLOAK_ADMIN_PASSWORD}"
+---
+apiVersion: k8s.keycloak.org/v2alpha1
+kind: Keycloak
+metadata:
+  name: mta-rhbk
+  namespace: openshift-mta
+spec:
+  instances: 1
+  db:
+    vendor: postgres
+    host: mta-kcpgsql
+    port: 5432
+    database: keycloak_db
+    usernameSecret:
+      name: keycloak-db-secret
+      key: POSTGRES_USERNAME
+    passwordSecret:
+      name: keycloak-db-secret
+      key: POSTGRES_PASSWORD
+  # The Keycloak CR creates the `mta-rhbk-service` Service. The TLS Secret
+  # is minted by the service CA operator AFTER annotating the service with
+  # `service.beta.openshift.io/serving-cert-secret-name=mta-rhbk-service-serving-cert`
+  # (see README) - until then the CR reports a not-ready condition. The cert
+  # covers `mta-rhbk-service.openshift-mta.svc`, so the MTA UI pod (which
+  # trusts the service CA via NODE_EXTRA_CA_CERTS) can connect to
+  # https://mta-rhbk-service.openshift-mta.svc:8443.
+  http:
+    tlsSecret: mta-rhbk-service-serving-cert
+  # Keycloak derives the frontend URL (issuer, redirect endpoints) from the
+  # X-Forwarded-* headers. Requests reach it through the MTA UI route's /auth
+  # path (the UI pod proxies /auth to this instance), so the frontend URL
+  # becomes https://mta.${OPENSHIFT_APPS_DOMAIN}/auth/... for browsers, the
+  # Hub and Gitea - no dedicated Keycloak Route is needed.
+  hostname:
+    strict: false
+  proxy:
+    headers: xforwarded
+  additionalOptions:
+    # The realm path must be /auth/realms/mta - the IdentityProvider CR the
+    # MTA operator generates expects the Keycloak-relative-path /auth prefix.
+    - name: http-relative-path
+      value: /auth
+  bootstrapAdmin:
+    user:
+      secret: mta-keycloak-rhbk

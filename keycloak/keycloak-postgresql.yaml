@@ -1,0 +1,91 @@
+# PostgreSQL database for the Red Hat build of Keycloak instance. The RHBK
+# operator requires an external database for real use - the `mta-rhbk`
+# Keycloak CR (keycloak/keycloak.yaml) connects to it with the credentials
+# from the `keycloak-db-secret` Secret. The names matter: the Keycloak CR's
+# `spec.db.host` points at the `mta-kcpgsql` Service created here.
+#
+# The manifest is cluster-independent: the DB password is carried as a
+# ${KEYCLOAK_DB_PASSWORD} placeholder, applied with the envsubst pattern:
+#   export KEYCLOAK_DB_PASSWORD=<password>
+#   cat keycloak/keycloak-postgresql.yaml | envsubst | oc apply -f -
+apiVersion: v1
+kind: Secret
+metadata:
+  name: keycloak-db-secret
+  namespace: openshift-mta
+type: Opaque
+stringData:
+  # The keys match the Keycloak CR's spec.db.usernameSecret/passwordSecret.
+  POSTGRES_DATABASE: keycloak_db
+  POSTGRES_USERNAME: keycloak
+  POSTGRES_PASSWORD: "${KEYCLOAK_DB_PASSWORD}"
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mta-kcpgsql
+  namespace: openshift-mta
+spec:
+  serviceName: mta-kcpgsql
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mta-kcpgsql
+  template:
+    metadata:
+      labels:
+        app: mta-kcpgsql
+    spec:
+      containers:
+      - name: postgresql
+        # The rhel9/postgresql image listens on 5432 as non-root and is
+        # compatible with the restricted SCC (random UID).
+        image: registry.redhat.io/rhel9/postgresql-16:latest
+        ports:
+        - containerPort: 5432
+        env:
+        - name: POSTGRESQL_USER
+          valueFrom:
+            secretKeyRef:
+              name: keycloak-db-secret
+              key: POSTGRES_USERNAME
+        - name: POSTGRESQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: keycloak-db-secret
+              key: POSTGRES_PASSWORD
+        - name: POSTGRESQL_DATABASE
+          valueFrom:
+            secretKeyRef:
+              name: keycloak-db-secret
+              key: POSTGRES_DATABASE
+        readinessProbe:
+          exec:
+            # kubelet does not expand env vars in exec probes - the user is
+            # hardcoded (it is fixed in the keycloak-db-secret Secret).
+            command: ["/bin/sh", "-c", "pg_isready -U keycloak"]
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/pgsql/data
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 5Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mta-kcpgsql
+  namespace: openshift-mta
+spec:
+  selector:
+    app: mta-kcpgsql
+  ports:
+  - port: 5432
+    targetPort: 5432
