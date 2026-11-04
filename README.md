@@ -818,6 +818,44 @@ The template uses **HTTPS repository URLs** (`https://git.${OPENSHIFT_APPS_DOMAI
 >
 > The repository URLs must use the **HTTPS scheme**: the agentic harness takes the application's URL verbatim and clones/pushes in-process with the Go git library, whose only auth method is HTTP basic auth — an `ssh://git@git-ssh.${OPENSHIFT_APPS_DOMAIN}:443/...` URL (the SSH route from the [SSH clone test](#ssh-keys)) would fail the agentic run at the clone step, and the TLS-passthrough SSH route could not be traversed by the harness anyway. SSH URLs serve the workstation-side SSH flow only. Likewise, a `source`-kind SSH-key identity (e.g. `git-ssh-credentials`) linked to an application or set as default does not affect the harness — it authenticates the analyzer's clone, which over HTTPS uses the basic-auth identity instead.
 
+###### Importing dependencies for an existing portfolio
+
+The bulk upload above imports **applications** (record type `1`). For a portfolio that is already onboarded, dependencies can be added (or corrected) without recreating applications using **dependency-only records** (record type `2`) — uploaded through the same `importsummaries/upload` endpoint, the importer matches the application by name and only creates `Dependency` edges. The file `mta-ui/application_dependency_import.csv` holds the complete intra-portfolio dependency graph derived from the quickstarts' POMs (see [the per-row dependency table](mta-ui/template_application_import.dependencies.md)); regenerate it from the template with:
+
+```bash
+python3 - <<'EOF'
+import csv
+rows = list(csv.reader(open('mta-ui/template_application_import.csv')))
+out = ["Record Type,Application Name,Dependency,Dependency Direction"]
+for r in rows[1:]:
+    if len(r) >= 15 and r[5]:  # Dependency column set
+        out.append(f"2,{r[1]},,,,{r[5]},{r[6]}")
+open('mta-ui/application_dependency_import.csv', 'w').write("\n".join(out) + "\n")
+EOF
+curl -s -X POST "${MTA_URL}/hub/importsummaries/upload" \
+  -u admin:admin \
+  -F "fileName=application_dependency_import.csv" \
+  -F "file=@mta-ui/application_dependency_import.csv"
+```
+
+The record layout follows the Hub's import format: column 1 is the record type `2`, column 2 the application name, and the dependency and its direction sit in columns 6 and 7 — i.e. `2,<app>,,,,<dep>,<direction>` with **exactly four commas** between the application name and the dependency. `southbound` means the application depends on the named application (the Hub edge runs application → dependency), `northbound` means the named application depends on this one (edge runs dependency → application).
+
+> ⚠️ WARNING
+>
+> Two pitfalls with dependency-only imports:
+>
+> - **Column layout**: with one comma too many the dependency lands in the direction column and every record fails with `Application dependency '' could not be found.` The failed `ImportSummary` can simply be deleted (`DELETE ${MTA_URL}/hub/importsummaries/:id`) and re-uploaded.
+> - **No deduplication**: the importer matches application names but never checks whether the edge already exists — each imported record creates a Hub `Dependency`. An edge expressed twice (e.g. once southbound from the consumer, once northbound from the consumed) or re-imported creates duplicates. The generated CSV therefore expresses each of the 42 POM-verified edges exactly once. If duplicates do appear, remove the extras via the Hub REST API, keeping one per `(from, to)` pair:
+>
+>   ```bash
+>   # list edges with ids
+>   curl -s "${MTA_URL}/hub/dependencies" -u admin:admin | \
+>     jq -r '.[] | "\(.id)|\(.from.name) -> \(.to.name)"'
+>   curl -s -X DELETE "${MTA_URL}/hub/dependencies/:id" -u admin:admin
+>   ```
+>
+> Also note the importer resolves application names with a `LIKE` match — a name that is a prefix of another application's name can resolve to the wrong row, which the quickstarts' exact names avoid.
+
 ##### Create default Git credentials
 
 During the execution of **Agentic Workflows** information will be stored in Gitea. As the repository is protected by basic auth credentials we need to setup a default credential like this:

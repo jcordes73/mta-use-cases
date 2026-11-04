@@ -16,6 +16,15 @@ format); where an application has several, the table below lists the full
 set and the CSV carries the primary consumer edge (the application's own
 `pom.xml` dependency, southbound).
 
+Each edge is expressed **exactly once** across the whole template: 12 rows
+whose only relationship was already covered by the consumer's southbound
+edge carry no dependency (an edge expressed from both ends would import
+twice - the Hub importer does not deduplicate; see the
+[Bulk Uploading Applications](../README.md#bulk-uploading-applications)
+section). `mta-ui/application_dependency_import.csv`, the dependency-only
+import file for an already-onboarded portfolio, is generated from these
+42 rows.
+
 | Application | Path | Packaging | Depends on (southbound) | Used by (northbound) | CSV Dependency |
 |---|---|---|---|---|---|
 | helloworld | `helloworld` | war | — | — | — |
@@ -31,10 +40,10 @@ set and the CSV carries the primary consumer edge (the application's own
 | contacts-jquerymobile | `contacts-jquerymobile` | war | — | — | — |
 | ejb-asynchronous | `ejb-asynchronous` | pom | ejb-asynchronous-ejb | — | ejb-asynchronous-ejb (southbound) |
 | ejb-asynchronous-client | `ejb-asynchronous/client` | jar | ejb-asynchronous-ejb | — | ejb-asynchronous-ejb (southbound) |
-| ejb-asynchronous-ejb | `ejb-asynchronous/ejb` | ejb | — | ejb-asynchronous, ejb-asynchronous-client | ejb-asynchronous (northbound) |
+| ejb-asynchronous-ejb | `ejb-asynchronous/ejb` | ejb | — | ejb-asynchronous, ejb-asynchronous-client | — |
 | ejb-in-ear | `ejb-in-ear` | pom | ejb-in-ear-ejb, ejb-in-ear-web | — | ejb-in-ear-ejb (southbound) |
 | ejb-in-ear-ear | `ejb-in-ear/ear` | ear | ejb-in-ear-ejb, ejb-in-ear-web | — | ejb-in-ear-ejb (southbound) |
-| ejb-in-ear-ejb | `ejb-in-ear/ejb` | ejb | — | ejb-in-ear, ejb-in-ear-ear, ejb-in-ear-web | ejb-in-ear-ear (northbound) |
+| ejb-in-ear-ejb | `ejb-in-ear/ejb` | ejb | — | ejb-in-ear, ejb-in-ear-ear, ejb-in-ear-web | — |
 | ejb-in-ear-web | `ejb-in-ear/web` | war | ejb-in-ear-ejb | ejb-in-ear, ejb-in-ear-ear | ejb-in-ear-ejb (southbound) |
 | ejb-in-war | `ejb-in-war` | war | — | — | — |
 | ejb-multi-server | `ejb-multi-server` | pom | — | — | — |
@@ -44,10 +53,10 @@ set and the CSV carries the primary consumer edge (the application's own
 | ejb-multi-server-app-main-web | `ejb-multi-server/app-main/web` | war | ejb-multi-server-app-main-ejb, ejb-multi-server-app-one-ejb, ejb-multi-server-app-two-ejb | ejb-multi-server-app-main-ear | ejb-multi-server-app-main-ejb (southbound) |
 | ejb-multi-server-app-one | `ejb-multi-server/app-one` | pom | — | — | ejb-multi-server (northbound) |
 | ejb-multi-server-app-one-ear | `ejb-multi-server/app-one/ear` | ear | ejb-multi-server-app-one-ejb | — | ejb-multi-server-app-one-ejb (southbound) |
-| ejb-multi-server-app-one-ejb | `ejb-multi-server/app-one/ejb` | ejb | — | ejb-multi-server-app-main-ejb, ejb-multi-server-app-main-web, ejb-multi-server-app-one-ear, ejb-multi-server-app-web | ejb-multi-server-app-one-ear (northbound) |
+| ejb-multi-server-app-one-ejb | `ejb-multi-server/app-one/ejb` | ejb | — | ejb-multi-server-app-main-ejb, ejb-multi-server-app-main-web, ejb-multi-server-app-one-ear, ejb-multi-server-app-web | — |
 | ejb-multi-server-app-two | `ejb-multi-server/app-two` | pom | — | — | ejb-multi-server (northbound) |
 | ejb-multi-server-app-two-ear | `ejb-multi-server/app-two/ear` | ear | ejb-multi-server-app-two-ejb | — | ejb-multi-server-app-two-ejb (southbound) |
-| ejb-multi-server-app-two-ejb | `ejb-multi-server/app-two/ejb` | ejb | — | ejb-multi-server-app-main-ejb, ejb-multi-server-app-main-web, ejb-multi-server-app-two-ear, ejb-multi-server-app-web | ejb-multi-server-app-two-ear (northbound) |
+| ejb-multi-server-app-two-ejb | `ejb-multi-server/app-two/ejb` | ejb | — | ejb-multi-server-app-main-ejb, ejb-multi-server-app-main-web, ejb-multi-server-app-two-ear, ejb-multi-server-app-web | — |
 | ejb-multi-server-app-web | `ejb-multi-server/app-web` | war | ejb-multi-server-app-main-ejb, ejb-multi-server-app-one-ejb, ejb-multi-server-app-two-ejb | — | ejb-multi-server-app-main-ejb (southbound) |
 | ejb-multi-server-client | `ejb-multi-server/client` | jar | ejb-multi-server-app-main-ejb | — | ejb-multi-server-app-main-ejb (southbound) |
 | ejb-remote | `ejb-remote` | pom | — | — | — |
@@ -86,29 +95,29 @@ set and the CSV carries the primary consumer edge (the application's own
 | inter-app | `inter-app` | pom | inter-app-shared | — | inter-app-shared (southbound) |
 | inter-app-AppA | `inter-app/appA` | war | inter-app-shared | — | inter-app-shared (southbound) |
 | inter-app-AppB | `inter-app/appB` | war | inter-app-shared | — | inter-app-shared (southbound) |
-| inter-app-shared | `inter-app/shared` | ejb | — | inter-app, inter-app-AppA, inter-app-AppB | inter-app (northbound) |
+| inter-app-shared | `inter-app/shared` | ejb | — | inter-app, inter-app-AppA, inter-app-AppB | — |
 | jaxrs-client | `jaxrs-client` | war | — | — | — |
 | jaxws-addressing | `jaxws-addressing` | pom | jaxws-addressing-service | — | jaxws-addressing-service (southbound) |
 | jaxws-addressing-client | `jaxws-addressing/client` | jar | jaxws-addressing-service | — | jaxws-addressing-service (southbound) |
-| jaxws-addressing-service | `jaxws-addressing/service` | war | — | jaxws-addressing, jaxws-addressing-client | jaxws-addressing (northbound) |
+| jaxws-addressing-service | `jaxws-addressing/service` | war | — | jaxws-addressing, jaxws-addressing-client | — |
 | jaxws-ejb | `jaxws-ejb` | pom | — | — | — |
 | jaxws-ejb-client | `jaxws-ejb/client` | jar | jaxws-ejb-service | — | jaxws-ejb-service (southbound) |
-| jaxws-ejb-service | `jaxws-ejb/service` | war | — | jaxws-ejb-client | jaxws-ejb-client (northbound) |
+| jaxws-ejb-service | `jaxws-ejb/service` | war | — | jaxws-ejb-client | — |
 | jaxws-pojo | `jaxws-pojo` | pom | — | — | — |
 | jaxws-pojo-client | `jaxws-pojo/client` | jar | jaxws-pojo-service | — | jaxws-pojo-service (southbound) |
-| jaxws-pojo-service | `jaxws-pojo/service` | war | — | jaxws-pojo-client | jaxws-pojo-client (northbound) |
+| jaxws-pojo-service | `jaxws-pojo/service` | war | — | jaxws-pojo-client | — |
 | jaxws-retail | `jaxws-retail` | pom | — | — | — |
 | jaxws-retail-client | `jaxws-retail/client` | jar | jaxws-retail-service | — | jaxws-retail-service (southbound) |
-| jaxws-retail-service | `jaxws-retail/service` | war | — | jaxws-retail-client | jaxws-retail-client (northbound) |
+| jaxws-retail-service | `jaxws-retail/service` | war | — | jaxws-retail-client | — |
 | jsonp | `jsonp` | war | — | — | — |
 | jta-crash-rec | `jta-crash-rec` | war | — | — | — |
 | jts | `jts` | pom | jts-application-component-2 | — | jts-application-component-2 (southbound) |
 | jts-component-1 | `jts/application-component-1` | war | jts-application-component-2 | — | jts-application-component-2 (southbound) |
-| jts-application-component-2 | `jts/application-component-2` | jar | — | jts, jts-component-1 | jts (northbound) |
+| jts-application-component-2 | `jts/application-component-2` | jar | — | jts, jts-component-1 | — |
 | kitchensink-angularjs | `kitchensink-angularjs` | war | — | — | — |
 | kitchensink-ear | `kitchensink-ear` | pom | kitchensink-ear-ejb, kitchensink-ear-web | — | kitchensink-ear-ejb (southbound) |
 | kitchensink-ear-ear | `kitchensink-ear/ear` | ear | kitchensink-ear-ejb, kitchensink-ear-web | — | kitchensink-ear-ejb (southbound) |
-| kitchensink-ear-ejb | `kitchensink-ear/ejb` | ejb | — | kitchensink-ear, kitchensink-ear-ear, kitchensink-ear-web | kitchensink-ear (northbound) |
+| kitchensink-ear-ejb | `kitchensink-ear/ejb` | ejb | — | kitchensink-ear, kitchensink-ear-ear, kitchensink-ear-web | — |
 | kitchensink-ear-web | `kitchensink-ear/web` | war | kitchensink-ear-ejb | kitchensink-ear, kitchensink-ear-ear | kitchensink-ear-ejb (southbound) |
 | kitchensink-jsp | `kitchensink-jsp` | war | — | — | — |
 | kitchensink-ml | `kitchensink-ml` | war | — | — | — |
@@ -124,7 +133,7 @@ set and the CSV carries the primary consumer edge (the application's own
 | servlet-security | `servlet-security` | war | — | — | — |
 | shopping-cart | `shopping-cart` | pom | shopping-cart-server | — | shopping-cart-server (southbound) |
 | shopping-cart-client | `shopping-cart/client` | jar | shopping-cart-server | — | shopping-cart-server (southbound) |
-| shopping-cart-server | `shopping-cart/server` | ejb | — | shopping-cart, shopping-cart-client | shopping-cart (northbound) |
+| shopping-cart-server | `shopping-cart/server` | ejb | — | shopping-cart, shopping-cart-client | — |
 | spring-greeter | `spring-greeter` | war | — | — | — |
 | spring-kitchensink-basic | `spring-kitchensink-basic` | war | — | — | — |
 | spring-kitchensink-springmvctest | `spring-kitchensink-springmvctest` | war | — | — | — |
@@ -167,3 +176,11 @@ helloworld, app-client, batch-processing, bean-validation, bean-validation-custo
    in the table above. Membership to a pure aggregator `pom` row is kept
    only where no POM dependency exists (e.g. `ejb-multi-server-app-main`
    → `ejb-multi-server`).
+4. **Duplicate edges removed** (12 rows): the earlier template expressed
+   12 edges from both ends - southbound from the consumer and northbound
+   from the consumed (e.g. `ejb-asynchronous` → `ejb-asynchronous-ejb`
+   southbound *and* `ejb-asynchronous-ejb` → `ejb-asynchronous`
+   northbound, which create the identical Hub edge). The northbound twin
+   was dropped so the 42-row template imports to exactly the 42-edge
+   graph; the dropped rows remain visible as `—` in the CSV Dependency
+   column.
