@@ -123,3 +123,39 @@ the rewriter itself talks to Jira Cloud directly.
 The `name` field is mandatory on `POST /trackers` (and distinct from the
 `identity.name`). The example command in the main README includes it.
 
+
+## Dev Spaces: workspace git clone fails with `Permission denied (publickey)`
+
+The devfile's `clone-git` `postStart` command (or a manual `git clone
+ssh://git@git-ssh...:443/...` in the workspace terminal) fails with
+`git@git-ssh...: Permission denied (publickey)` although the TLS tunnel, the
+`ProxyCommand`, and the Gitea key registration are all fine. `ssh -vv` in the
+workspace shows the config being read (including
+`99-git-proxy.conf`) but **no key being offered** — no `Offering public key`
+line before the denial.
+
+Root cause: the Dev Spaces server's `SshConfigConfigurator` is documented to
+auto-generate an `ssh_config` key (with `IdentityFile /etc/ssh/dwo_ssh_key`)
+in the `git-ssh-key` Secret, but **verified live it never runs** in this
+setup — the Secret keeps only the keys it was created with, `/etc/ssh/ssh_config`
+stays the stock file, and SSH offers only the default `~/.ssh/id_*` identities,
+none of which Gitea knows. Fix: ship the `ssh_config` in the Secret explicitly
+(see the [Git Authentication with SSH Keys](../README.md#git-authentication-with-ssh-keys)
+section) — the `watch-secret` label propagates it into running workspaces,
+which restart to pick up the mount. Verify with
+`ssh -G git-ssh.$OPENSHIFT_APPS_DOMAIN | grep identityfile` (expect
+`identityfile /etc/ssh/dwo_ssh_key`).
+
+Two adjacent pitfalls hit while debugging:
+
+- **scp-style `ssh git@host:443` is not a port specification** — `ssh -T
+  git@host:443` treats `host:443` as the hostname, the `ProxyCommand` expands
+  to `-connect host:443:22` and OpenSSL 3.5 fails with `s_client: -connect
+  argument or target parameter malformed or ambiguous`. Use the `ssh://` URL
+  form (`ssh://git@host:443/...`) or `ssh -p 443 git@host`.
+- **The key must be registered on a Gitea account with access to the repo** —
+  SSH keys authenticate as their owning user; a key that Gitea does not know
+  surfaces as `Permission denied (publickey)` (as does an unoffered key per
+  the root cause above), while a key that authenticates but lacks access to
+  the repository returns `Repository does not exist or you do not have
+  access` instead.

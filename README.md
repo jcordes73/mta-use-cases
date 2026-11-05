@@ -1570,14 +1570,15 @@ The Secret must be created in the namespace the workspaces run in. With `control
 
 #### Create the clone-config Secret
 
-The devfile's `clone-git` `postStart` command clones the application source to be migrated (the `jboss/jboss-quickstarts` Gitea repository) into the workspace, using the `PROJECT_REPO_URL` variable provided by this Secret as environment variables. A ready-to-use Secret template is available in this repository at `devspaces/git-clone-secret.yaml` — set `PROJECT_REPO_URL` to the SSH clone URL and create it the same way as the [LLM credentials Secret](#create-the-llm-credentials-secret):
+The devfile's `clone-git` `postStart` command clones the application source to be migrated (the `jboss/jboss-quickstarts` Gitea repository) into the workspace, using the `PROJECT_REPO_URL` and `PROJECT_REPO_BRANCH` variables provided by this Secret as environment variables. A ready-to-use Secret template is available in this repository at `devspaces/git-clone-secret.yaml` — set `PROJECT_REPO_URL` to the SSH clone URL and `PROJECT_REPO_BRANCH` to the branch to clone/track, and create it the same way as the [LLM credentials Secret](#create-the-llm-credentials-secret):
 
 ```bash
 export PROJECT_REPO_URL="ssh://git@git-ssh.${OPENSHIFT_APPS_DOMAIN}:443/jboss/jboss-quickstarts.git"
+export PROJECT_REPO_BRANCH="7.4.x"
 cat devspaces/git-clone-secret.yaml | sed "s/<workspace-namespace>/${WORKSPACE_NAMESPACE}/" | envsubst | oc apply -f -
 ```
 
-The clone URL must use the `ssh://` form with port 443 (the TLS-passthrough Route, see [Git Authentication with SSH Keys](#git-authentication-with-ssh-keys)) — env variables are expanded in the `exec` `commandLine` because it runs via a shell, unlike the devfile `projects` remotes, which the DevWorkspace Operator resolves as literal arguments before any container exists. The command is idempotent: it clones on first start and pulls on restarts (the `/projects` directory persists on the per-user PVC). The clone itself uses SSH keys via the mounted `git-ssh-key` and `git-ssh-proxy` Secrets (see [Git Authentication with SSH Keys](#git-authentication-with-ssh-keys)) — without those Secrets, the command fails with a public-key error and the workspace reports a warning.
+The clone URL must use the `ssh://` form with port 443 (the TLS-passthrough Route, see [Git Authentication with SSH Keys](#git-authentication-with-ssh-keys)) — env variables are expanded in the `exec` `commandLine` because it runs via a shell, unlike the devfile `projects` remotes, which the DevWorkspace Operator resolves as literal arguments before any container exists. The branch matters: without `PROJECT_REPO_BRANCH` the clone lands on the repository's **default** branch — `8.1.x` for `jboss-quickstarts` — while the application records imported into MTA reference `7.4.x` (the [import template](#bulk-uploading-applications)); analyzing a different working tree than the MTA records would compare inconsistent sources. The command is idempotent: it clones (at the configured branch) on first start and checks out/pulls on restarts (the `/projects` directory persists on the per-user PVC). The clone itself uses SSH keys via the mounted `git-ssh-key` and `git-ssh-proxy` Secrets (see [Git Authentication with SSH Keys](#git-authentication-with-ssh-keys)) — without those Secrets, the command fails with a public-key error and the workspace reports a warning.
 
 After the clone/pull, the command adds the repository folder to the editor's workspace (multi-root) via the **che-code remote CLI** (`/checode/checode-linux-libc/ubi9/bin/remote-cli/code-oss --add <folder>`), so the cloned source appears in the Explorer without a manual `Add Folder to Workspace`. `--add` of an already-open folder is a no-op, so this effectively only adds the folder when it is not yet part of the workspace. The remote CLI talks to the **running editor** over the `/tmp/vscode-ipc-*.sock` IPC socket (selected via `VSCODE_IPC_HOOK_CLI`) — verified live: it exits `0` on success and `1` when no editor is reachable. Because the editor may still be starting when `postStart` commands run, the add step retries in the background for up to ~2 minutes without blocking or failing the `postStart` event.
 - **Create a workspace with the MTA plugin enabled**: A ready-to-use `devfile.yaml` is available in this repository at `devspaces/devfile.yaml`. It installs both extensions via the che-code CLI, installs the OpenCode CLI, configures OpenCode, creates the MTA plugin settings, and clones the application source via the `clone-git` command — all via `postStart` commands:
@@ -1689,8 +1690,13 @@ After the clone/pull, the command adds the repository folder to the editor's wor
         exec:
           component: tools
           # Clones the application source to be migrated from the Gitea instance into
-          # /projects, using the PROJECT_REPO_URL variable provided by the clone-config
-          # Secret mounted as env (see devspaces/git-clone-secret.yaml). Env variables are
+          # /projects, using the PROJECT_REPO_URL and PROJECT_REPO_BRANCH variables
+          # provided by the clone-config Secret mounted as env (see
+          # devspaces/git-clone-secret.yaml). PROJECT_REPO_BRANCH selects the branch
+          # to clone/track - without it the clone lands on the repository's default
+          # branch, which does not match the branch the MTA application records
+          # import (the import template carries 7.4.x while the quickstarts'
+          # default is 8.1.x). Env variables are
           # expanded in exec commandLines (the command runs via a shell) - unlike the
           # devfile projects remotes, which the DevWorkspace Operator resolves as literal
           # arguments before any container exists. SSH auth relies on the git-ssh-key
@@ -1699,7 +1705,8 @@ After the clone/pull, the command adds the repository folder to the editor's wor
           # see the README's "Git Authentication with SSH Keys" section. The target
           # directory is derived from the URL's last path segment (without .git), so
           # changing PROJECT_REPO_URL requires no command change. Idempotent:
-          # clones on first start, pulls on restarts (/projects persists on the per-user PVC).
+          # clones on first start, checks out/pulls on restarts (/projects persists on
+          # the per-user PVC).
           # After the clone/pull, the repository folder is added to the editor's workspace
           # via the che-code remote CLI (--add of an open folder is a no-op, so it only
           # adds the folder when it is not yet part of the workspace). The CLI talks to
@@ -1710,7 +1717,10 @@ After the clone/pull, the command adds the repository folder to the editor's wor
           commandLine: |
             REPO_NAME=$(basename "${PROJECT_REPO_URL%/}" .git)
             if [ -d "/projects/${REPO_NAME}/.git" ]; then
+              [ -n "${PROJECT_REPO_BRANCH}" ] && git -C "/projects/${REPO_NAME}" checkout "${PROJECT_REPO_BRANCH}"
               git -C "/projects/${REPO_NAME}" pull --ff-only
+            elif [ -n "${PROJECT_REPO_BRANCH}" ]; then
+              git clone --branch "${PROJECT_REPO_BRANCH}" "${PROJECT_REPO_URL}" "/projects/${REPO_NAME}"
             else
               git clone "${PROJECT_REPO_URL}" "/projects/${REPO_NAME}"
             fi
@@ -1757,7 +1767,7 @@ After the clone/pull, the command adds the repository folder to the editor's wor
 
     SSH keys are not carried in the devfile itself — they are provisioned as secrets in the workspace namespace, and the DevWorkspace Operator injects them into the project-clone container and all workspace containers. Two secrets are required:
 
-    - **`git-ssh-key`** — the private key (`dwo_ssh_key`) and the public key (`dwo_ssh_key.pub`). It does **not** carry an `ssh_config`: the Dev Spaces server's `SshConfigConfigurator` auto-generates the `ssh_config` key in this Secret (`host *` + `IdentityFile /etc/ssh/dwo_ssh_key` + `StrictHostKeyChecking = no` + `Include /etc/ssh/ssh_config.d/*.conf`) and **reverts any custom `ssh_config`** (e.g. one carrying a `ProxyCommand`) whenever the namespace is configured — so the TLS-unwrapping `ProxyCommand` must live elsewhere (see the `git-ssh-proxy` Secret below). Create the key Secret in the workspace namespace (e.g. `admin-devspaces`):
+    - **`git-ssh-key`** — the private key (`dwo_ssh_key`), the public key (`dwo_ssh_key.pub`), and an explicit `ssh_config` key carrying the `IdentityFile`. The Dev Spaces server's `SshConfigConfigurator` is *supposed* to auto-generate the `ssh_config` key in this Secret (`Host *` + `IdentityFile /etc/ssh/dwo_ssh_key` + `StrictHostKeyChecking = no` + `Include /etc/ssh/ssh_config.d/*.conf`), but **verified live it does not run in this setup** — the Secret keeps only the keys it was created with, `/etc/ssh/ssh_config` stays the stock file, and SSH then offers only the default identity keys (`~/.ssh/id_*`), failing every clone with `Permission denied (publickey)` even though the tunnel, the `ProxyCommand`, and the Gitea key registration are all fine. Ship the `ssh_config` in the Secret explicitly (same content the configurator would generate — do **not** put a `ProxyCommand` here, the `git-ssh-proxy` Secret owns that; see below). Create the key Secret in the workspace namespace (e.g. `admin-devspaces`):
 
     ```bash
     oc create secret -n admin-devspaces generic git-ssh-key \
@@ -1765,6 +1775,9 @@ After the clone/pull, the command adds the repository folder to the editor's wor
       --from-file=dwo_ssh_key.pub="$SSH_PUB_KEY"
 
     oc patch secret -n admin-devspaces git-ssh-key --type merge -p '{
+      "stringData": {
+        "ssh_config": "Host *\n  IdentityFile /etc/ssh/dwo_ssh_key\n  StrictHostKeyChecking no\n  Include /etc/ssh/ssh_config.d/*.conf\n"
+      },
       "metadata": {
         "labels": {
           "controller.devfile.io/mount-to-devworkspace": "true",
@@ -1778,7 +1791,9 @@ After the clone/pull, the command adds the repository folder to the editor's wor
     }'
     ```
 
-    - **`git-ssh-proxy`** — the `ProxyCommand`, mounted as a config file into `/etc/ssh/ssh_config.d/`, which the che-server-generated `ssh_config` includes. A ready-to-use Secret template is available in this repository at `devspaces/git-ssh-proxy-secret.yaml`:
+    The `watch-secret` label propagates the change into running workspaces (which restart to pick up the new mount) — to verify inside the workspace that the effective configuration now carries the identity file, run `ssh -G git-ssh.${OPENSHIFT_APPS_DOMAIN} | grep identityfile` and expect `identityfile /etc/ssh/dwo_ssh_key` alongside the defaults. If a workspace was started before the Secret existed or was patched, the clone fails once with the public-key error; restarting the workspace (or re-running the devfile's `clone-git` command from a terminal) completes it.
+
+    - **`git-ssh-proxy`** — the `ProxyCommand`, mounted as a config file into `/etc/ssh/ssh_config.d/`, which the `ssh_config` above includes. A ready-to-use Secret template is available in this repository at `devspaces/git-ssh-proxy-secret.yaml`:
 
     ```bash
     cat devspaces/git-ssh-proxy-secret.yaml | sed "s/<workspace-namespace>/${WORKSPACE_NAMESPACE}/" | envsubst | oc apply -f -

@@ -114,8 +114,13 @@ commands:
     exec:
       component: tools
       # Clones the application source to be migrated from the Gitea instance into
-      # /projects, using the PROJECT_REPO_URL variable provided by the clone-config
-      # Secret mounted as env (see devspaces/git-clone-secret.yaml). Env variables are
+      # /projects, using the PROJECT_REPO_URL and PROJECT_REPO_BRANCH variables
+      # provided by the clone-config Secret mounted as env (see
+      # devspaces/git-clone-secret.yaml). PROJECT_REPO_BRANCH selects the branch to
+      # clone/track - without it the clone lands on the repository's default
+      # branch, which does not match the branch the MTA application records import
+      # (the import template carries 7.4.x while the quickstarts' default is
+      # 8.1.x). Env variables are
       # expanded in exec commandLines (the command runs via a shell) - unlike the
       # devfile projects remotes, which the DevWorkspace Operator resolves as literal
       # arguments before any container exists. SSH auth relies on the git-ssh-key
@@ -124,7 +129,8 @@ commands:
       # "Git Authentication with SSH Keys" section. The target
       # directory is derived from the URL's last path segment (without .git), so
       # changing PROJECT_REPO_URL requires no command change. Idempotent:
-      # clones on first start, pulls on restarts (/projects persists on the per-user PVC).
+      # clones on first start, checks out/pulls on restarts (/projects persists on
+      # the per-user PVC).
       # After the clone/pull, the repository folder is added to the editor's workspace
       # (multi-root) via the che-code remote CLI: `--add` of an already-open folder is
       # a no-op, so it effectively only adds the folder when it is not yet part of the
@@ -136,7 +142,10 @@ commands:
       commandLine: |
         REPO_NAME=$(basename "${PROJECT_REPO_URL%/}" .git)
         if [ -d "/projects/${REPO_NAME}/.git" ]; then
+          [ -n "${PROJECT_REPO_BRANCH}" ] && git -C "/projects/${REPO_NAME}" checkout "${PROJECT_REPO_BRANCH}"
           git -C "/projects/${REPO_NAME}" pull --ff-only
+        elif [ -n "${PROJECT_REPO_BRANCH}" ]; then
+          git clone --branch "${PROJECT_REPO_BRANCH}" "${PROJECT_REPO_URL}" "/projects/${REPO_NAME}"
         else
           git clone "${PROJECT_REPO_URL}" "/projects/${REPO_NAME}"
         fi
