@@ -1,0 +1,8 @@
+{
+  "recommendations": [
+    "redhat.mta-core",
+    "redhat.mta-java",
+    "redhat.fabric8-analytics",
+    "sst-dev.opencode"
+  ]
+}

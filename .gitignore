@@ -1,3 +1,4 @@
 .claude
 *.pem
-.vscode/
+.vscode/*
+!.vscode/extensions.json
