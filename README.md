@@ -612,6 +612,21 @@ MTA 8.3 provides automated analysis, assessment, and refactoring tooling for app
     ```bash
     oc delete -f mta-ui/cache-pvc-inspector.yaml
     ```
+- **Automate the cleanup of dead task pods**: the hub's task scheduler enforces a pod limit (10 in this deployment) counted over **existing** task pods — including pods in `Error` state. Dead pods therefore block the queue: the scheduler logs `quota=10/10 requested=N scheduled=0` and no task — including explicitly triggered analyses — is ever scheduled again (the hub reaps pods of succeeded tasks itself, but never removes pods of failed tasks). A `CronJob` in `mta-ui/task-pod-cleanup-cronjob.yaml` deletes task pods in a terminal state every hour, so the queue can never wedge permanently:
+
+    ```bash
+    oc apply -f mta-ui/task-pod-cleanup-cronjob.yaml
+    ```
+
+    It creates a `ServiceAccount`, a `Role` (pods get/list/delete in `openshift-mta`), a `RoleBinding`, and the hourly `CronJob` — the job container uses the cluster's own CLI imagestream (`openshift/cli:latest` from the internal registry, matching the running OpenShift version, so no external pulls). Trigger a run manually (e.g. to verify after installing):
+
+    ```bash
+    oc create job --from=cronjob/task-pod-cleanup task-pod-cleanup-manual -n openshift-mta
+    oc logs job/task-pod-cleanup-manual -n openshift-mta
+    oc delete job task-pod-cleanup-manual -n openshift-mta
+    ```
+
+    The full failure mode and the manual fix are in [the troubleshooting section](troubleshooting/README.md#mta-analyses-and-discovery-tasks-fail-or-never-start).
 - **Create a Konveyor Gateway**: The `Konveyor Gateway` abstracts the access to the LLM.
     ```bash
     cat mta-ui/llm-gateway.yaml | envsubst | oc apply -f -

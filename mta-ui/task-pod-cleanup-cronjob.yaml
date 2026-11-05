@@ -1,0 +1,93 @@
+# Hourly cleanup of dead MTA task pods.
+#
+# The hub's task scheduler enforces a pod limit (10 in this deployment)
+# counted over *existing* task pods - including pods in Error or Completed
+# state. Dead pods therefore block the queue: the scheduler logs
+# "quota=10/10 requested=N scheduled=0" and no task (including analyses) is
+# ever scheduled again (see troubleshooting/README.md, "MTA: analyses and
+# discovery tasks fail or never start"). The hub reaps pods of succeeded
+# tasks itself but never removes pods of failed tasks, so they accumulate.
+#
+# This CronJob deletes task pods (name pattern task-<id>-<suffix>) in a
+# terminal state every hour. The hub pod and the application deployments are
+# unaffected: the selector matches task pods only, and a deleted deployment
+# pod is recreated by its controller anyway.
+#
+# The container uses the cluster's own CLI imagestream (the ose-cli image
+# matching the running OpenShift version, served by the internal registry -
+# no external pulls or pull secrets needed).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: task-pod-cleanup
+  namespace: openshift-mta
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: task-pod-cleanup
+  namespace: openshift-mta
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "delete"]
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: task-pod-cleanup
+  namespace: openshift-mta
+subjects:
+  - kind: ServiceAccount
+    name: task-pod-cleanup
+    namespace: openshift-mta
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: task-pod-cleanup
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: task-pod-cleanup
+  namespace: openshift-mta
+spec:
+  schedule: "0 * * * *"  # hourly
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app: task-pod-cleanup
+        spec:
+          restartPolicy: Never
+          serviceAccountName: task-pod-cleanup
+          containers:
+            - name: cleanup
+              image: image-registry.openshift-image-registry.svc:5000/openshift/cli:latest
+              imagePullPolicy: IfNotPresent
+              command: ["/bin/bash", "-ec"]
+              args:
+                - |
+                  echo "task-pod-cleanup run at $(date -u +%FT%TZ)"
+                  # task pods in a terminal-failed phase (Failed/Evicted) -
+                  # these block the scheduler's pod quota
+                  DEAD=$(oc get pods -n openshift-mta -o name \
+                           --field-selector=status.phase=Failed 2>/dev/null \
+                           | grep -E '^pod/task-[0-9]+-' || true)
+                  # completed task pods the hub has not reaped yet
+                  DONE=$(oc get pods -n openshift-mta -o name \
+                           --field-selector=status.phase=Succeeded 2>/dev/null \
+                           | grep -E '^pod/task-[0-9]+-' || true)
+                  if [ -n "$DEAD" ] || [ -n "$DONE" ]; then
+                    echo "deleting dead task pods:"
+                    echo "${DEAD}${DONE}" | sed 's/^/  /'
+                    # shellcheck disable=SC2086
+                    oc delete $DEAD $DONE -n openshift-mta --wait=false
+                  else
+                    echo "no dead task pods - nothing to do"
+                  fi
