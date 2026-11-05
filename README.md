@@ -1393,10 +1393,32 @@ oc start-build mta-ant-to-maven-skills -n openshift-mta \
 oc apply -f mta-ui/agentic-workflow/ant-to-maven/agents/skills/ant-to-maven/ant-to-maven-skillcard.yaml
 
 oc apply -f mta-ui/agentic-workflow/ant-to-maven/agents/ant-to-maven-plan-agent.yaml
-oc apply -f mta-ui/agentic-workflow/ant-to-maven/agents/ant-to-maven-execute-agent.yaml
-oc apply -f mta-ui/agentic-workflow/ant-to-maven/agents/ant-to-maven-verify-agent.yaml
+oc apply -f mta-ui/agentic-workflow/ant-to-maven/ant-to-maven-execute-agent.yaml
+oc apply -f mta-ui/agentic-workflow/ant-to-maven/ant-to-maven-verify-agent.yaml
 
 oc apply -f mta-ui/agentic-workflow/ant-to-maven/ant-to-maven-agent-workflow.yaml
+```
+
+#### MigIQ
+
+[MigIQ](https://www.npmjs.com/package/@sshaaf/migiq) is an AI-powered application migration orchestrator for coding agents. Its skills are bundled as a **multi-skill image**: unlike the single-skill images above, one image hosts eleven skills (the `migiq` orchestrator, the `mig-*` phase skills, and the `rgctl`/`rgctl-review` analysis skills), and one `SkillCard` per skill selects its skill from the image with `subPath`. The image is based on `quay.io/konveyor/agent-java` and additionally builds the `rgctl` CLI (v0.4.24) from source, which the skills drive for knowledge-graph code analysis:
+
+```bash
+oc new-build --name mta-migiq-agent --strategy=docker --binary -n openshift-mta
+
+oc patch bc mta-migiq-agent -n openshift-mta --type=json \
+-p='[{"op":"add","path":"/spec/strategy/dockerStrategy/dockerfilePath","value":"Containerfile"}]'
+
+oc start-build mta-migiq-agent -n openshift-mta \
+  --from-dir=mta-ui/agentic-workflow/migiq/agents --follow
+
+oc apply -f mta-ui/agentic-workflow/migiq/agents/skills/migiq-skillcards.yaml
+```
+
+The build takes ~10 minutes (it compiles `rgctl` with the Rust toolchain). The `SkillCard` manifest creates one card per skill (`migiq`, `mig-rgctl`, `mig-prompt-builder`, `mig-plan`, `mig-execute`, `mig-test-gen`, `mig-containerize`, `mig-deploy`, `mig-verify`, `rgctl`, `rgctl-review`), all referencing the same image `image-registry.openshift-image-registry.svc:5000/openshift-mta/mta-migiq-agent:latest` with `subPath` naming the skill's directory at the image root. Verify them as follows:
+
+```bash
+oc get skillcards -n openshift-mta | grep -E "migiq|rgctl|mig-"
 ```
 
 ## Developer-Infused Migration Using OpenShift Dev Spaces and the MTA Plugin

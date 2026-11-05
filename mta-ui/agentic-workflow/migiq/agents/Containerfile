@@ -1,0 +1,42 @@
+# MigIQ agent image: Konveyor agent-java + rgctl built for this image's glibc.
+ARG BASE_IMAGE=quay.io/konveyor/agent-java:latest
+
+FROM ${BASE_IMAGE} AS rgctl-builder
+ARG RGCTL_VERSION=0.4.24
+ARG RGCTL_REPO=https://github.com/rgctl/rgctl.git
+USER root
+RUN set -eux; \
+    dnf install -y gcc gcc-c++ make git openssl-devel \
+      && dnf clean all; \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+      | sh -s -- -y --default-toolchain stable --profile minimal; \
+    . "$HOME/.cargo/env"; \
+    git clone --depth 1 --branch "v${RGCTL_VERSION}" "${RGCTL_REPO}" /tmp/rgctl-src; \
+    cd /tmp/rgctl-src; \
+    cargo build --release -p rgctl; \
+    install -m 0755 target/release/rgctl /usr/local/bin/rgctl; \
+    test -x /usr/local/bin/rgctl; \
+    /usr/local/bin/rgctl --version
+
+FROM ${BASE_IMAGE}
+USER root
+COPY --from=rgctl-builder /usr/local/bin/rgctl /usr/local/bin/rgctl
+RUN test -x /usr/local/bin/rgctl && /usr/local/bin/rgctl --version
+# The multiple MigIQ + rgctl skills, matching the layout of the former
+# skills/Containerfile (one directory per skill at the image root; each
+# SkillCard selects one via subPath). The build context (--from-dir) is this
+# directory's parent, so the skills live under skills/ in it.
+COPY skills/migiq /migiq
+COPY skills/mig-rgctl /mig-rgctl
+COPY skills/mig-prompt-builder /mig-prompt-builder
+COPY skills/mig-plan /mig-plan
+COPY skills/mig-execute /mig-execute
+COPY skills/mig-test-gen /mig-test-gen
+COPY skills/mig-containerize /mig-containerize
+COPY skills/mig-deploy /mig-deploy
+COPY skills/mig-verify /mig-verify
+COPY skills/rgctl /rgctl
+COPY skills/rgctl-review /rgctl-review
+USER 1001
+ENTRYPOINT ["migration-harness"]
+CMD ["run"]

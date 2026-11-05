@@ -1,0 +1,190 @@
+# SkillCards for the MigIQ agentic workflow.
+#
+# One SkillCard per skill in the mta-migiq-agent image (each skill is one
+# directory at the image root; a SkillCard is always one skill, so subPath
+# selects which). Built and pushed by the mta-migiq-agent BuildConfig
+# (see agents/Containerfile). The 'migiq' card is the orchestrator entry
+# point that chains the mig-* skills; 'rgctl'/'rgctl-review' drive the
+# rgctl CLI knowledge-graph analysis the bundle ships with.
+---
+apiVersion: konveyor.io/v1alpha1
+kind: SkillCard
+metadata:
+  name: mig-containerize
+  namespace: openshift-mta
+spec:
+  image: image-registry.openshift-image-registry.svc:5000/openshift-mta/mta-migiq-agent:latest
+  displayName: MigIQ Skill - mig-containerize
+  version: "0.2.3"
+  description: "Containerize applications for OpenShift using Red Hat UBI images. Use when the user wants to containerize code, deploy to OpenShift, create Dockerfiles, or migrate applications to containers. Triggers on phrases like \"containerize this\", \"create Dockerfile\", \"deploy to OpenShift\", \"move to containers\", \"build container image\", or any mention of Docker/Podman/OpenShift deployment. Requires the codebase to be indexed with rgctl first."
+  type: skill
+  subPath: mig-containerize
+  tags:
+    - migration
+    - migiq
+    - openshift
+---
+apiVersion: konveyor.io/v1alpha1
+kind: SkillCard
+metadata:
+  name: mig-deploy
+  namespace: openshift-mta
+spec:
+  image: image-registry.openshift-image-registry.svc:5000/openshift-mta/mta-migiq-agent:latest
+  displayName: MigIQ Skill - mig-deploy
+  version: "0.2.3"
+  description: "Deploy containerized applications to OpenShift with dependency management and comprehensive verification. Use when the user wants to deploy an application to OpenShift, push to a cluster, set up deployment infrastructure, or verify a deployment is working. Triggers on phrases like \"deploy to OpenShift\", \"deploy this app\", \"push to cluster\", \"set up on OpenShift\", \"deploy with dependencies\", or any mention of OpenShift deployment. This skill REQUIRES mig-containerize output to exist first - the containerization artifacts must be generated before deployment."
+  type: skill
+  subPath: mig-deploy
+  tags:
+    - migration
+    - migiq
+    - openshift
+---
+apiVersion: konveyor.io/v1alpha1
+kind: SkillCard
+metadata:
+  name: mig-execute
+  namespace: openshift-mta
+spec:
+  image: image-registry.openshift-image-registry.svc:5000/openshift-mta/mta-migiq-agent:latest
+  displayName: MigIQ Skill - mig-execute
+  version: "0.2.3"
+  description: "Executes migration plans created by mig-plan skill with automated task execution, progress tracking, and failure recovery. Use this skill whenever the user wants to execute, run, implement, or carry out a migration plan. Also trigger when users say \"execute the plan\", \"run the migration\", \"implement the migration\", \"start the migration\", or \"let's do the migration\". This skill requires mig-plan to have run first and orchestrates sub-agents to implement tasks in parallel while tracking progress and handling failures."
+  type: skill
+  subPath: mig-execute
+  tags:
+    - migration
+    - migiq
+---
+apiVersion: konveyor.io/v1alpha1
+kind: SkillCard
+metadata:
+  name: mig-plan
+  namespace: openshift-mta
+spec:
+  image: image-registry.openshift-image-registry.svc:5000/openshift-mta/mta-migiq-agent:latest
+  displayName: MigIQ Skill - mig-plan
+  version: "0.2.3"
+  description: "Creates comprehensive migration plans for application modernization projects. Use this skill whenever the user mentions migrating, modernizing, or upgrading an application from one platform/framework/language to another (e.g., Java EE to Spring Boot, monolith to microservices, on-prem to cloud). Also trigger when users ask for migration roadmaps, migration strategies, or how to plan a migration. This skill orchestrates the full planning workflow including specification, design, task breakdown, and user story generation."
+  type: skill
+  subPath: mig-plan
+  tags:
+    - migration
+    - migiq
+---
+apiVersion: konveyor.io/v1alpha1
+kind: SkillCard
+metadata:
+  name: mig-prompt-builder
+  namespace: openshift-mta
+spec:
+  image: image-registry.openshift-image-registry.svc:5000/openshift-mta/mta-migiq-agent:latest
+  displayName: MigIQ Skill - mig-prompt-builder
+  version: "0.2.3"
+  description: "Builds comprehensive, standardized migration prompts for application modernization projects. Use this skill whenever a user mentions wanting to migrate, modernize, or upgrade an application but their request is vague, incomplete, or missing key details. Also trigger when users ask \"how do I describe my migration?\", \"help me plan a migration\", or provide minimal migration context. This skill uses rgctl knowledge output, gathers requirements, and generates a complete migration prompt ready for mig-plan or other migration tools."
+  type: skill
+  subPath: mig-prompt-builder
+  tags:
+    - migration
+    - migiq
+---
+apiVersion: konveyor.io/v1alpha1
+kind: SkillCard
+metadata:
+  name: mig-rgctl
+  namespace: openshift-mta
+spec:
+  image: image-registry.openshift-image-registry.svc:5000/openshift-mta/mta-migiq-agent:latest
+  displayName: MigIQ Skill - mig-rgctl
+  version: "0.2.3"
+  description: "MigIQ-specific code knowledge graph analysis using rgctl. Use during MigIQ migrations when you need to index a codebase, validate graph artifacts, or query structure for prompt-building, planning, containerization, or execution. Prefer this over the generic rgctl skill inside MigIQ workflows — it documents MigIQ phase commands, required artifacts (.rgctl/, communities, migration_plan.json), and discover flags per stage. Trigger when migiq, mig-prompt-builder, mig-plan, mig-containerize, or mig-execute need graph analysis."
+  type: skill
+  subPath: mig-rgctl
+  tags:
+    - migration
+    - migiq
+---
+apiVersion: konveyor.io/v1alpha1
+kind: SkillCard
+metadata:
+  name: mig-test-gen
+  namespace: openshift-mta
+spec:
+  image: image-registry.openshift-image-registry.svc:5000/openshift-mta/mta-migiq-agent:latest
+  displayName: MigIQ Skill - mig-test-gen
+  version: "0.2.3"
+  description: "Generate prioritized test suites based on rgctl knowledge graph analysis. Use when the user needs to add tests to an existing codebase, especially during migrations or when improving test coverage. Triggers on phrases like \"generate tests\", \"add test coverage\", \"need tests for migration\", \"create unit tests\", or when preparing a codebase for refactoring/migration. Requires the codebase to be indexed with rgctl first."
+  type: skill
+  subPath: mig-test-gen
+  tags:
+    - migration
+    - migiq
+---
+apiVersion: konveyor.io/v1alpha1
+kind: SkillCard
+metadata:
+  name: mig-verify
+  namespace: openshift-mta
+spec:
+  image: image-registry.openshift-image-registry.svc:5000/openshift-mta/mta-migiq-agent:latest
+  displayName: MigIQ Skill - mig-verify
+  version: "0.2.3"
+  description: "Verifies a MigIQ migration by building, testing, and checking handoff artifacts against the migration plan. Use after mig-execute to confirm the target branch compiles and critical checks pass."
+  type: skill
+  subPath: mig-verify
+  tags:
+    - migration
+    - migiq
+---
+apiVersion: konveyor.io/v1alpha1
+kind: SkillCard
+metadata:
+  name: migiq
+  namespace: openshift-mta
+spec:
+  image: image-registry.openshift-image-registry.svc:5000/openshift-mta/mta-migiq-agent:latest
+  displayName: MigIQ Skill - migiq
+  version: "0.2.3"
+  description: "Complete end-to-end application migration orchestrator. Use this skill whenever the user wants to migrate, modernize, or port their entire application from one technology stack to another. This skill automatically orchestrates the full migration workflow from analysis to execution. Trigger when users say \"migrate this app\", \"migrate to [technology]\", \"modernize this application\", \"port to [framework]\", or simply \"migrate\". This is the primary entry point for any complete migration - it runs rgctl for analysis, mig-prompt-builder for requirements, mig-plan for planning, mig-execute for implementation, and generates a comprehensive final report."
+  type: skill
+  subPath: migiq
+  tags:
+    - migration
+    - migiq
+---
+apiVersion: konveyor.io/v1alpha1
+kind: SkillCard
+metadata:
+  name: rgctl
+  namespace: openshift-mta
+spec:
+  image: image-registry.openshift-image-registry.svc:5000/openshift-mta/mta-migiq-agent:latest
+  displayName: MigIQ Skill - rgctl
+  version: "0.2.3"
+  description: "Answer structural questions about a codebase using the rgctl CLI graph (architecture, communities, call relationships, blast radius, data-flow slices, CPG, semantic search, migration roadmap, CI gates). Use when the user asks how code is connected, what calls what, impact of changing a symbol, where data flows, migration planning/roadmap, repo structure/hotspots, or when `.rgctl/` exists — treat natural-language codebase questions as rgctl queries first."
+  type: skill
+  subPath: rgctl
+  tags:
+    - migration
+    - migiq
+    - rgctl
+    - analysis
+---
+apiVersion: konveyor.io/v1alpha1
+kind: SkillCard
+metadata:
+  name: rgctl-review
+  namespace: openshift-mta
+spec:
+  image: image-registry.openshift-image-registry.svc:5000/openshift-mta/mta-migiq-agent:latest
+  displayName: MigIQ Skill - rgctl-review
+  version: "0.2.3"
+  description: "Review a PR or branch with rgctl review (paths / check): call-path deltas, optional blast radius, architecture-doc soft pass, and REVIEW_REPORT.md plus a short four-section verdict. Session-only — no GitHub/GitLab posting. Use when asked to review a PR, branch diff, or call-path impact vs a base ref."
+  type: skill
+  subPath: rgctl-review
+  tags:
+    - migration
+    - migiq
+    - rgctl
+    - analysis
