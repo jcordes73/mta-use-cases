@@ -103,6 +103,7 @@ The versions below are what this PoC was validated against (OpenShift 4.22 sandb
 | Gitea | 1.27 (rootless) | Helm chart `gitea-12.7.0` (`dl.gitea.com/charts`), pinned via `--version` |
 | Squid proxy (disconnected environments) | 5.5 (`rhel9/squid`, pinned) | `registry.redhat.io` |
 | MTA VS Code extensions | 8.3.1 (`redhat.mta-core`, `redhat.mta-java`) | Open VSX |
+| Dependency Analytics extension | 1.1.0 (`redhat.fabric8-analytics`) | Open VSX |
 | OpenCode extension + CLI | `sst-dev.opencode` (latest) | Open VSX |
 
 ### Workstation Tooling
@@ -1536,10 +1537,13 @@ The MTA plugin is the [Migration Toolkit for Applications (MTA) Visual Studio Co
       --install-extension redhat.mta-core --install-extension redhat.mta-java
     /checode/checode-linux-libc/ubi9/bin/che-code \
       --user-data-dir /checode/remote/data --extensions-dir /checode/remote/extensions \
+      --install-extension redhat.fabric8-analytics
+    /checode/checode-linux-libc/ubi9/bin/che-code \
+      --user-data-dir /checode/remote/data --extensions-dir /checode/remote/extensions \
       --install-extension sst-dev.opencode
     ```
 
-    The devfile installs the **MTA core extension** (`redhat.mta-core`, the extension that provides the analysis and migration features) and the **MTA Java analyzer plugin** (`redhat.mta-java`, the Java-specific analysis rules) directly instead of the `redhat.mta-vscode-extension` pack, which bundles `mta-go`, `mta-javascript`, and `mta-csharp` beyond the two needed here. Both IDs were verified on the Open VSX registry and both are 8.3.1. Java language support (`redhat.java`) is preinstalled in the UDI image and needs no explicit install.
+    The devfile installs the **MTA core extension** (`redhat.mta-core`, the extension that provides the analysis and migration features) and the **MTA Java analyzer plugin** (`redhat.mta-java`, the Java-specific analysis rules) directly instead of the `redhat.mta-vscode-extension` pack, which bundles `mta-go`, `mta-javascript`, and `mta-csharp` beyond the two needed here. The **Dependency Analytics extension** (`redhat.fabric8-analytics`) adds the dependency-analytics panel (Red Hat Dependency Analytics / Stack reporting — license and CVE checks against the Maven dependencies of the cloned quickstarts). All IDs were verified on the Open VSX registry (`mta-core`/`mta-java` are 8.3.1, `fabric8-analytics` is 1.1.0). Java language support (`redhat.java`) is preinstalled in the UDI image and needs no explicit install.
 
     As a fallback, a `.vscode/extensions.json` file in the **repository cloned as the project source** makes the editor recommend the extensions at startup (VS Code shows an install prompt, scanned at editor startup only — a file created by a `postStart` command takes effect on the next reload):
 
@@ -1548,6 +1552,7 @@ The MTA plugin is the [Migration Toolkit for Applications (MTA) Visual Studio Co
       "recommendations": [
         "redhat.mta-core",
         "redhat.mta-java",
+        "redhat.fabric8-analytics",
         "sst-dev.opencode"
       ]
     }
@@ -1581,7 +1586,7 @@ cat devspaces/git-clone-secret.yaml | sed "s/<workspace-namespace>/${WORKSPACE_N
 The clone URL must use the `ssh://` form with port 443 (the TLS-passthrough Route, see [Git Authentication with SSH Keys](#git-authentication-with-ssh-keys)) — env variables are expanded in the `exec` `commandLine` because it runs via a shell, unlike the devfile `projects` remotes, which the DevWorkspace Operator resolves as literal arguments before any container exists. The branch matters: without `PROJECT_REPO_BRANCH` the clone lands on the repository's **default** branch — `8.1.x` for `jboss-quickstarts` — while the application records imported into MTA reference `7.4.x` (the [import template](#bulk-uploading-applications)); analyzing a different working tree than the MTA records would compare inconsistent sources. The command is idempotent: it clones (at the configured branch) on first start and checks out/pulls on restarts (the `/projects` directory persists on the per-user PVC). The clone itself uses SSH keys via the mounted `git-ssh-key` and `git-ssh-proxy` Secrets (see [Git Authentication with SSH Keys](#git-authentication-with-ssh-keys)) — without those Secrets, the command fails with a public-key error and the workspace reports a warning.
 
 After the clone/pull, the command adds the repository folder to the editor's workspace (multi-root) via the **che-code remote CLI** (`/checode/checode-linux-libc/ubi9/bin/remote-cli/code-oss --add <folder>`), so the cloned source appears in the Explorer without a manual `Add Folder to Workspace`. `--add` of an already-open folder is a no-op, so this effectively only adds the folder when it is not yet part of the workspace. The remote CLI talks to the **running editor** over the `/tmp/vscode-ipc-*.sock` IPC socket (selected via `VSCODE_IPC_HOOK_CLI`) — verified live: it exits `0` on success and `1` when no editor is reachable. Because the editor may still be starting when `postStart` commands run, the add step retries in the background for up to ~5 minutes without blocking or failing the `postStart` event — verified live that on a cold start the editor can take longer than 2 minutes to become reachable, and a too-short retry loop leaves the cloned folder out of the workspace (the fix for a workspace where this already happened is running the `--add` from a terminal, or just restarting the workspace — the loop runs again on every start and the folder addition persists on the per-user PVC).
-- **Create a workspace with the MTA plugin enabled**: A ready-to-use `devfile.yaml` is available in this repository at `devspaces/devfile.yaml`. It installs both extensions via the che-code CLI, installs the OpenCode CLI, configures OpenCode, creates the MTA plugin settings, and clones the application source via the `clone-git` command — all via `postStart` commands:
+- **Create a workspace with the MTA plugin enabled**: A ready-to-use `devfile.yaml` is available in this repository at `devspaces/devfile.yaml`. It installs the extensions (MTA core + Java analyzer, Dependency Analytics, OpenCode) via the che-code CLI, installs the OpenCode CLI, configures OpenCode, creates the MTA plugin settings, and clones the application source via the `clone-git` command — all via `postStart` commands:
 
     ```yaml
     schemaVersion: 2.2.0
@@ -1620,12 +1625,16 @@ After the clone/pull, the command adds the repository folder to the editor's wor
           # the CLI needs the bundled Node libs when run outside the editor entrypoint.
           # Installs the MTA core extension and the Java language support directly instead
           # of the redhat.mta-vscode-extension pack (which bundles additional extensions);
-          # both IDs verified on the Open VSX registry.
+          # redhat.fabric8-analytics adds the dependency-analytics panel. All IDs
+          # verified on the Open VSX registry.
           commandLine: |
             export LD_LIBRARY_PATH=/checode/checode-linux-libc/ubi9/ld_libs/openssl:/checode/checode-linux-libc/ubi9/ld_libs/core:/usr/lib64
             /checode/checode-linux-libc/ubi9/bin/che-code \
               --user-data-dir /checode/remote/data --extensions-dir /checode/remote/extensions \
               --install-extension redhat.mta-core --install-extension redhat.mta-java
+            /checode/checode-linux-libc/ubi9/bin/che-code \
+              --user-data-dir /checode/remote/data --extensions-dir /checode/remote/extensions \
+              --install-extension redhat.fabric8-analytics
             /checode/checode-linux-libc/ubi9/bin/che-code \
               --user-data-dir /checode/remote/data --extensions-dir /checode/remote/extensions \
               --install-extension sst-dev.opencode

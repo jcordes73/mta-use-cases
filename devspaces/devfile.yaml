@@ -43,13 +43,19 @@ commands:
       # Installs the MTA core extension and the MTA Java analyzer plugin directly
       # instead of the redhat.mta-vscode-extension pack (which bundles mta-go,
       # mta-javascript, and mta-csharp beyond the two needed here); both IDs
-      # verified on the Open VSX registry. Java language support (redhat.java)
-      # is preinstalled in the UDI image and needs no explicit install.
+      # verified on the Open VSX registry. redhat.fabric8-analytics adds the
+      # dependency-analytics panel (RHDA / Stack reporting against the Maven
+      # dependencies of the cloned quickstarts). Java language support
+      # (redhat.java) is preinstalled in the UDI image and needs no explicit
+      # install.
       commandLine: |
         export LD_LIBRARY_PATH=/checode/checode-linux-libc/ubi9/ld_libs/openssl:/checode/checode-linux-libc/ubi9/ld_libs/core:/usr/lib64
         /checode/checode-linux-libc/ubi9/bin/che-code \
           --user-data-dir /checode/remote/data --extensions-dir /checode/remote/extensions \
           --install-extension redhat.mta-core --install-extension redhat.mta-java
+        /checode/checode-linux-libc/ubi9/bin/che-code \
+          --user-data-dir /checode/remote/data --extensions-dir /checode/remote/extensions \
+          --install-extension redhat.fabric8-analytics
         /checode/checode-linux-libc/ubi9/bin/che-code \
           --user-data-dir /checode/remote/data --extensions-dir /checode/remote/extensions \
           --install-extension sst-dev.opencode
