@@ -1,0 +1,19 @@
+# The MigIQ agent: a single orchestrator agent.
+#
+# Unlike ant-to-maven's plan/execute/verify agent trio, MigIQ is itself an
+# orchestrator - its 'migiq' skill chains analysis, requirements, planning,
+# execution, and verification - so one agent carries the whole
+# migiq-skills collection and runs on the mta-migiq-agent image (which
+# provides the migration-harness runtime, the rgctl CLI the skills drive,
+# and the skills themselves).
+apiVersion: konveyor.io/v1alpha1
+kind: Agent
+metadata:
+  name: migiq-agent
+  namespace: openshift-mta
+spec:
+  image: image-registry.openshift-image-registry.svc:5000/openshift-mta/mta-migiq-agent:latest
+  skillCollections:
+    - ref: migiq-skills
+  execution:
+    maxTurns: 200
