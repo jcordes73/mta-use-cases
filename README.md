@@ -639,6 +639,17 @@ MTA 8.3 provides automated analysis, assessment, and refactoring tooling for app
     ![image](images/mta_login.png)    
 
     Login with `admin/admin`.
+- **Add an MTA entry to the OpenShift console**: A `ConsoleLink` resource puts an MTA entry into the OpenShift web console's application menu (the grid launcher in the masthead), so users reach the MTA UI without knowing the route URL. The manifest is cluster-independent — the `href` carries the same `${OPENSHIFT_APPS_DOMAIN}` placeholder as the other manifests (the domain already includes the `apps.` prefix, so the URL is `https://mta-openshift-mta.${OPENSHIFT_APPS_DOMAIN}`) — and is applied with the usual envsubst pattern (applying with plain `oc apply -f -` would store the placeholder literally):
+
+    ```bash
+    cat console/console-link.yaml | envsubst | oc apply -f -
+    ```
+
+    The entry appears in the application launcher under the **Red Hat Applications** section and takes effect immediately (a console reload may be needed to pick it up). The `ConsoleLink` is cluster-scoped and shown to all console users; deleting the resource (`oc delete consolelink mta-ui`) removes the entry. Verify it with
+
+    ```bash
+    oc get consolelink mta-ui -o jsonpath='{.spec.href}'
+    ```
 
 #### Proxy settings for disconnected environments
 
