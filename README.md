@@ -672,6 +672,17 @@ MTA 8.3 provides automated analysis, assessment, and refactoring tooling for app
     ```bash
     oc get consolelink mta-ui -o jsonpath='{.spec.href}'
     ```
+- **Add a Gitea entry to the OpenShift console**: A second `ConsoleLink` puts a Gitea entry into the same application menu section, next to the MTA one, pointing at the Gitea web UI route (`https://git.${OPENSHIFT_APPS_DOMAIN}`):
+
+    ```bash
+    cat console/gitea-console-link.yaml | envsubst | oc apply -f -
+    ```
+
+    The manifest follows the same pattern — the icon is Gitea's own favicon (`assets/img/favicon.png` served by the Gitea route, fetched from the live deployment) inlined as a PNG data URI. One `envsubst` pitfall: `envsubst` only substitutes **exported** shell variables — sourcing an env file that sets `OPENSHIFT_APPS_DOMAIN` without `export` leaves the placeholder empty (the href becomes `https://git.`), so `export` the variable first or pipe through `envsubst '$OPENSHIFT_APPS_DOMAIN'` with it exported. Verify with
+
+    ```bash
+    oc get consolelink gitea -o jsonpath='{.spec.href}'
+    ```
 
 #### Proxy settings for disconnected environments
 
