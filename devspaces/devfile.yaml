@@ -133,7 +133,7 @@ commands:
         models:
           ${OPENAI_MODEL_NAME}: &active
             environment:
-              no_proxy: "sdp-ai-model.tmn.ote.gr"
+              no_proxy: "${OPENAI_HOST}"
               http_proxy: ""
               https_proxy: ""
               OPENAI_API_KEY: "${OPENAI_API_KEY}"
