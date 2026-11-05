@@ -10,6 +10,9 @@ kind: AgentWorkflow
 metadata:
   name: migiq
   namespace: openshift-mta
+  labels:
+    app.kubernetes.io/managed-by: agentic-controller-defaults
+    konveyor.io/managed: "true"
 spec:
   guide: >-
     End-to-end application migration orchestrated by MigIQ. The agent indexes

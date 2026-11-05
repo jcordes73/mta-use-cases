@@ -122,6 +122,28 @@ commands:
         jq -s '.[0] * .[1]' /checode/remote/data/Machine/settings.json /tmp/mta-settings.json > /tmp/mta-settings-merged.json \
           && mv /tmp/mta-settings-merged.json /checode/remote/data/Machine/settings.json
         rm -f /tmp/mta-settings.json
+        cat <<'EOF' > /checode/remote/data/User/globalStorage/redhat.mta-core/settings/provider-settings.yaml
+        environment:
+          no_proxy: "${OPENAI_HOST}"
+          http_proxy: ""
+          https_proxy: ""
+          ALWAYS_APPLIED_KEY: "envvar to be set regardless of which model is active"
+          ALLOW_INSECURE: "true"
+
+        models:
+          ${OPENAI_MODEL_NAME}: &active
+            environment:
+              no_proxy: "sdp-ai-model.tmn.ote.gr"
+              http_proxy: ""
+              https_proxy: ""
+              OPENAI_API_KEY: "${OPENAI_API_KEY}"
+            provider: ChatOpenAI
+            args:
+              model: ${OPENAI_MODEL_NAME}
+              configuration:
+                baseURL: "${OPENAI_BASE_URL}"
+        active: *active
+        EOF
   - id: clone-git
     exec:
       component: tools
