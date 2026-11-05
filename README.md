@@ -104,6 +104,7 @@ The versions below are what this PoC was validated against (OpenShift 4.22 sandb
 | Squid proxy (disconnected environments) | 5.5 (`rhel9/squid`, pinned) | `registry.redhat.io` |
 | MTA VS Code extensions | 8.3.1 (`redhat.mta-core`, `redhat.mta-java`) | Open VSX |
 | Dependency Analytics extension | 1.1.0 (`redhat.fabric8-analytics`) | Open VSX |
+| YAML / XML extensions | rolling (`redhat.vscode-yaml`, `redhat.vscode-xml`) | Open VSX |
 | OpenCode extension + CLI | `sst-dev.opencode` (latest) | Open VSX |
 
 ### Workstation Tooling
@@ -1540,10 +1541,13 @@ The MTA plugin is the [Migration Toolkit for Applications (MTA) Visual Studio Co
       --install-extension redhat.fabric8-analytics
     /checode/checode-linux-libc/ubi9/bin/che-code \
       --user-data-dir /checode/remote/data --extensions-dir /checode/remote/extensions \
+      --install-extension redhat.vscode-yaml --install-extension redhat.vscode-xml
+    /checode/checode-linux-libc/ubi9/bin/che-code \
+      --user-data-dir /checode/remote/data --extensions-dir /checode/remote/extensions \
       --install-extension sst-dev.opencode
     ```
 
-    The devfile installs the **MTA core extension** (`redhat.mta-core`, the extension that provides the analysis and migration features) and the **MTA Java analyzer plugin** (`redhat.mta-java`, the Java-specific analysis rules) directly instead of the `redhat.mta-vscode-extension` pack, which bundles `mta-go`, `mta-javascript`, and `mta-csharp` beyond the two needed here. The **Dependency Analytics extension** (`redhat.fabric8-analytics`) adds the dependency-analytics panel (Red Hat Dependency Analytics / Stack reporting — license and CVE checks against the Maven dependencies of the cloned quickstarts). All IDs were verified on the Open VSX registry (`mta-core`/`mta-java` are 8.3.1, `fabric8-analytics` is 1.1.0). Java language support (`redhat.java`) is preinstalled in the UDI image and needs no explicit install.
+    The devfile installs the **MTA core extension** (`redhat.mta-core`, the extension that provides the analysis and migration features) and the **MTA Java analyzer plugin** (`redhat.mta-java`, the Java-specific analysis rules) directly instead of the `redhat.mta-vscode-extension` pack, which bundles `mta-go`, `mta-javascript`, and `mta-csharp` beyond the two needed here. The **Dependency Analytics extension** (`redhat.fabric8-analytics`) adds the dependency-analytics panel (Red Hat Dependency Analytics / Stack reporting — license and CVE checks against the Maven dependencies of the cloned quickstarts). The **YAML** and **XML extensions** (`redhat.vscode-yaml`, `redhat.vscode-xml`) provide the YAML and XML language servers (schema validation, hover, formatting) — the quickstarts carry kustomize and OpenShift manifests (YAML) and `pom.xml`/descriptor files (XML). All IDs were verified on the Open VSX registry (`mta-core`/`mta-java` are 8.3.1, `fabric8-analytics` is 1.1.0; the YAML/XML extensions carry rolling date-based versions). Java language support (`redhat.java`) is preinstalled in the UDI image and needs no explicit install.
 
     As a fallback, a `.vscode/extensions.json` file in the **repository cloned as the project source** makes the editor recommend the extensions at startup (VS Code shows an install prompt, scanned at editor startup only — a file created by a `postStart` command takes effect on the next reload):
 
@@ -1553,6 +1557,8 @@ The MTA plugin is the [Migration Toolkit for Applications (MTA) Visual Studio Co
         "redhat.mta-core",
         "redhat.mta-java",
         "redhat.fabric8-analytics",
+        "redhat.vscode-yaml",
+        "redhat.vscode-xml",
         "sst-dev.opencode"
       ]
     }
@@ -1625,8 +1631,9 @@ After the clone/pull, the command adds the repository folder to the editor's wor
           # the CLI needs the bundled Node libs when run outside the editor entrypoint.
           # Installs the MTA core extension and the Java language support directly instead
           # of the redhat.mta-vscode-extension pack (which bundles additional extensions);
-          # redhat.fabric8-analytics adds the dependency-analytics panel. All IDs
-          # verified on the Open VSX registry.
+          # redhat.fabric8-analytics adds the dependency-analytics panel, and
+          # redhat.vscode-yaml / redhat.vscode-xml the YAML and XML language servers.
+          # All IDs verified on the Open VSX registry.
           commandLine: |
             export LD_LIBRARY_PATH=/checode/checode-linux-libc/ubi9/ld_libs/openssl:/checode/checode-linux-libc/ubi9/ld_libs/core:/usr/lib64
             /checode/checode-linux-libc/ubi9/bin/che-code \
@@ -1635,6 +1642,9 @@ After the clone/pull, the command adds the repository folder to the editor's wor
             /checode/checode-linux-libc/ubi9/bin/che-code \
               --user-data-dir /checode/remote/data --extensions-dir /checode/remote/extensions \
               --install-extension redhat.fabric8-analytics
+            /checode/checode-linux-libc/ubi9/bin/che-code \
+              --user-data-dir /checode/remote/data --extensions-dir /checode/remote/extensions \
+              --install-extension redhat.vscode-yaml --install-extension redhat.vscode-xml
             /checode/checode-linux-libc/ubi9/bin/che-code \
               --user-data-dir /checode/remote/data --extensions-dir /checode/remote/extensions \
               --install-extension sst-dev.opencode

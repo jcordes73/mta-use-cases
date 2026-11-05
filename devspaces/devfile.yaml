@@ -45,9 +45,12 @@ commands:
       # mta-javascript, and mta-csharp beyond the two needed here); both IDs
       # verified on the Open VSX registry. redhat.fabric8-analytics adds the
       # dependency-analytics panel (RHDA / Stack reporting against the Maven
-      # dependencies of the cloned quickstarts). Java language support
-      # (redhat.java) is preinstalled in the UDI image and needs no explicit
-      # install.
+      # dependencies of the cloned quickstarts). redhat.vscode-yaml and
+      # redhat.vscode-xml provide the YAML and XML language servers (schema
+      # validation, hover, formatting) - the quickstarts carry kustomize and
+      # OpenShift manifests (yaml) and pom.xml / *.xml descriptors (xml).
+      # Java language support (redhat.java) is preinstalled in the UDI image
+      # and needs no explicit install.
       commandLine: |
         export LD_LIBRARY_PATH=/checode/checode-linux-libc/ubi9/ld_libs/openssl:/checode/checode-linux-libc/ubi9/ld_libs/core:/usr/lib64
         /checode/checode-linux-libc/ubi9/bin/che-code \
@@ -56,6 +59,9 @@ commands:
         /checode/checode-linux-libc/ubi9/bin/che-code \
           --user-data-dir /checode/remote/data --extensions-dir /checode/remote/extensions \
           --install-extension redhat.fabric8-analytics
+        /checode/checode-linux-libc/ubi9/bin/che-code \
+          --user-data-dir /checode/remote/data --extensions-dir /checode/remote/extensions \
+          --install-extension redhat.vscode-yaml --install-extension redhat.vscode-xml
         /checode/checode-linux-libc/ubi9/bin/che-code \
           --user-data-dir /checode/remote/data --extensions-dir /checode/remote/extensions \
           --install-extension sst-dev.opencode
