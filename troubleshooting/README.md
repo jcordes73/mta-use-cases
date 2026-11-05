@@ -159,3 +159,81 @@ Two adjacent pitfalls hit while debugging:
   the root cause above), while a key that authenticates but lacks access to
   the repository returns `Repository does not exist or you do not have
   access` instead.
+
+## MTA: analyses and discovery tasks fail or never start
+
+Analyses in MTA are **on-demand** — no setup step triggers them automatically
+(only the automatic `language-discovery`/`tech-discovery` tasks are created
+per imported application). If neither the discovery tasks nor an explicitly
+triggered analysis ever completes, two independent pitfalls apply, both
+verified live:
+
+### 1. `mkdir /cache/m2: permission denied` — every task pod fails
+
+The task pods (analyzer `kantra`, `tech-discovery`, `tech-discovery` addons)
+create `/cache/m2` (the shared Maven cache) at startup. If the directory does
+not exist — or exists but is only writable by the creating pod's random UID —
+every task fails within seconds with `mkdir /cache/m2: permission denied`
+(`oc logs <task-pod> -c addon`). Note that `language-discovery` does not
+touch the cache, so it succeeds while everything else fails — a
+language-succeeds/tech-fails split is the tell-tale sign.
+
+Fix: create the directory world-writable via the
+`cache-pvc-inspector` deployment (the [MTA installation](../README.md#installation)
+step now does both):
+
+```bash
+echo "mkdir /cache/m2 && chmod 777 /cache/m2" | oc exec deployment/cache-pvc-inspector -n openshift-mta -i -t -- bash -il
+```
+
+A plain `mkdir` is not enough: the inspector pod runs as a random UID, so the
+directory it creates is owned by that UID and every other task pod (also a
+random UID) is denied.
+
+### 2. Dead task pods exhaust the scheduler's pod quota
+
+The hub's task scheduler enforces a pod limit (10 in this deployment) counted
+over **existing** task pods, including pods in `Error` or `Completed` state
+that have not been reaped. When the quota is exhausted the scheduler logs
+
+```
+[task-scheduler] Task pods created. capacity=1 created=0 quota=10/10 requested=118 scheduled=0
+```
+
+and **no task is ever scheduled again** — tasks pile up in `Ready`,
+`Postponed` (the `Rule:Unique` one-task-per-application policy) and
+`QuotaBlocked` states, and explicitly triggered analyses sit queued
+indefinitely. The failed task *records* show no error (`error: null`) because
+the pods died before reporting.
+
+Fix: delete the dead pods to free the quota — the scheduler immediately
+schedules fresh pods for the queued tasks:
+
+```bash
+oc get pods -n openshift-mta | grep -E '^task-' | awk '$3=="Error"{print $1}' | \
+  xargs -r oc delete pod -n openshift-mta
+```
+
+### 3. Retrying a failed task requires a new task, not a re-submit
+
+A task in `Failed` state cannot be re-queued: `PUT /tasks/:id/submit` returns
+204 but leaves the state untouched. Re-run it by creating a fresh task with
+the same `kind`, `application`, and `data` (fetch the shape from
+`GET /tasks/:id`) and submitting **with the task object as the PUT body** — an
+empty-body `PUT /tasks/:id/submit` (or `PUT /taskgroups/:id/submit` without
+the taskgroup object, as the UI sends it) fails silently or returns
+`400 EOF`:
+
+```bash
+curl -s "${MTA_URL}/hub/tasks" -u admin:admin | jq '.[] | select(.state=="Failed")'
+NEW=$(curl -s -X POST "${MTA_URL}/hub/tasks" -u admin:admin -H "Content-Type: application/json" \
+  -d '{"name": "<app>.<id>.tech-discovery", "kind": "tech-discovery", "priority": 1,
+       "application": {"id": <id>, "name": "<app>"}, "data": <data-from-the-failed-task>}')
+curl -s -X PUT "${MTA_URL}/hub/tasks/$(echo $NEW | jq -r .id)/submit" -u admin:admin \
+  -H "Content-Type: application/json" -d "$NEW"
+```
+
+Analyses are triggered the same way the UI's Analyze wizard does it: a
+taskgroup of `kind: analyzer` referencing the analysis profile
+(`data.profile`), submitted with `PUT /taskgroups/:id/submit` and the
+taskgroup object as body.

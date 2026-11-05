@@ -599,12 +599,12 @@ MTA 8.3 provides automated analysis, assessment, and refactoring tooling for app
     oc apply -f mta-ui/cache-pvc-inspector.yaml
     oc wait --for=create deployment cache-pvc-inspector -n openshift-mta --timeout=600s
     oc wait --for=jsonpath='{.status.readyReplicas}'=1 deployment cache-pvc-inspector -n openshift-mta --timeout=600s
-    echo "mkdir /cache/m2" | oc exec deployment/cache-pvc-inspector -n openshift-mta -i -t -- bash -il
+    echo "mkdir /cache/m2 && chmod 777 /cache/m2" | oc exec deployment/cache-pvc-inspector -n openshift-mta -i -t -- bash -il
     ```
-    To verify that the directory has been created run
+    To verify that the directory has been created (and is writable — the task pods run as random UIDs, so the directory **must** be world-writable, not just owned by the creating pod's UID) run
     ```
     oc exec deployment/cache-pvc-inspector -n openshift-mta -- \
-  bash -c "if [ -d /cache/m2 ]; then echo '/cache/m2 exists'; else echo '/cache/m2 does not exist'; fi"
+  bash -c "if [ -d /cache/m2 ] && [ -w /cache/m2 ]; then echo '/cache/m2 exists and is writable'; else echo '/cache/m2 missing or not writable'; fi"
     ```
     The expected output should be `/cache/m2 exists`.
 
