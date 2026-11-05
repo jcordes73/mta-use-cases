@@ -153,8 +153,8 @@ commands:
       # changing PROJECT_REPO_URL requires no command change. Idempotent:
       # clones on first start, checks out/pulls on restarts (/projects persists on
       # the per-user PVC).
-      # After the clone/pull, the repository folder is added to the editor's workspace
-      # (multi-root) via the che-code remote CLI: `--add` of an already-open folder is
+      # After the clone/pull, the application folder is added to the editor's
+      # workspace via the che-code remote CLI: `--add` of an already-open folder is
       # a no-op, so it effectively only adds the folder when it is not yet part of the
       # workspace. The CLI talks to the running editor over the /tmp/vscode-ipc-*.sock
       # IPC socket (VSCODE_IPC_HOOK_CLI) and exits 0 on success, 1 when no editor is
@@ -192,12 +192,26 @@ commands:
           WEB_BASE="${PROJECT_REPO_WEB_URL%/*}/"
           git -C "/projects/${REPO_NAME}" config url."${SSH_BASE}".pushInsteadOf "${WEB_BASE}"
         fi
+        # The folder added to the editor's workspace is the APPLICATION SUBFOLDER
+        # (PROJECT_REPO_PATH, the hub application records' repository path) when set,
+        # the repository root otherwise. The MTA extension supports a single workspace
+        # folder only - it uses workspaceFolders[0] for analysis and profile sync and
+        # warns that multi-root workspaces are unsupported. The profile sync matches
+        # hub applications by repository URL and then disambiguates by the workspace
+        # folder's path relative to the git repository root: with the repository root
+        # open and multiple hub applications carrying a repository path (the import
+        # template sets one per application), the sync fails with "Multiple Hub
+        # applications found for this repository, but workspace is at repository
+        # root" and no hub profiles download - with the application subfolder open,
+        # the relative path matches that application's repository path.
+        FOLDER="/projects/${REPO_NAME}"
+        [ -n "${PROJECT_REPO_PATH}" ] && FOLDER="${FOLDER}/${PROJECT_REPO_PATH}"
         (
           CODE_BIN=/checode/checode-linux-libc/ubi9/bin/remote-cli/code-oss
           export LD_LIBRARY_PATH=/checode/checode-linux-libc/ubi9/ld_libs/openssl:/checode/checode-linux-libc/ubi9/ld_libs/core:/usr/lib64
           for i in $(seq 1 30); do
             for sock in $(ls -t /tmp/vscode-ipc-*.sock 2>/dev/null); do
-              if VSCODE_IPC_HOOK_CLI="$sock" timeout 10 "$CODE_BIN" --add "/projects/${REPO_NAME}" >/dev/null 2>&1; then
+              if VSCODE_IPC_HOOK_CLI="$sock" timeout 10 "$CODE_BIN" --add "${FOLDER}" >/dev/null 2>&1; then
                 exit 0
               fi
             done

@@ -301,3 +301,21 @@ profile sync (no hub profiles in the IDE):
 The resolution is the URL split of fix 1: hub records and the workspace
 remote both read the HTTPS web URL; SSH remains the push transport via
 `pushInsteadOf`.
+
+3. **The workspace folder is the repository root, and multiple hub
+   applications carry a repository path.** After the URL matches, the
+   extension disambiguates by the workspace folder's path relative to the
+   git repository root and fails with `Multiple Hub applications found for
+   this repository, but workspace is at repository root` (the import
+   template sets a Repository Path per application, so 123 applications
+   match the quickstarts URL). The extension also supports a **single
+   workspace folder only** - it uses `workspaceFolders[0]` for analysis and
+   profile sync and warns that multi-root workspaces are unsupported, so
+   adding an application subfolder as a *second* folder does not help.
+   Fix: open the application subfolder (e.g. `/projects/jboss-quickstarts/
+   helloworld`) as the first workspace folder - its relative path
+   (`helloworld`) matches that application's repository path and the sync
+   downloads its hub profiles. The devfile's `clone-git` does this via the
+   `PROJECT_REPO_PATH` variable of the clone-config Secret (verified live:
+   with `helloworld` as the first folder the sync matches and profiles
+   download; with the repo root open it fails).
