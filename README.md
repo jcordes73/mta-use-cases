@@ -1942,6 +1942,8 @@ cat devspaces/hub-connection-secret.yaml | sed "s/<workspace-namespace>/${WORKSP
     - `mta-core.genai.enabled` enables the GenAI functionality (Solution Server) of the extension.
     - `mta-core.genai.agentMode` enables the experimental agentic flow for solutions, which requires automatic analysis (`mta-core.analysis.analyzeOnSave`, enabled by default).
 
+    No LLM credentials are configured in the extension: with the [Hub connection](#configure-the-connection-to-the-mta-hub) enabled, GenAI requests are served through the Solution Server's LLM proxy and the API key stays on the cluster (see the note under the Hub connection step). The extension's direct-LLM configuration (`provider-settings.yaml`, only consulted for analyses run with local profiles without a Hub connection) is deliberately not written — the devfile instead removes any stale copy from earlier revisions, so a local-profile analysis cannot silently fall back to a leftover direct-LLM configuration.
+
     > ⚠️ NOTE
     >
     > The command runs as a `postStart` event — after the workspace (and editor) has started. VS Code applies settings-file changes live, so the MTA extension reads them in the first session; if a setting is not picked up, reload the editor window. Alternatively, define the same settings via a `.vscode/settings.json` file in the repository cloned into the workspace (workspace-level settings, applied on clone).

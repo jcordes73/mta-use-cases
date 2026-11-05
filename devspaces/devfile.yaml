@@ -110,6 +110,15 @@ commands:
       # (/checode/remote/data/Machine/settings.json), which is persisted on the per-user
       # PVC and applies to all workspace folders. The existing settings (e.g.
       # git.defaultCloneDirectory, set by Dev Spaces) are merged, not overwritten.
+      #
+      # No LLM credentials are configured in the extension: the workspace connects to
+      # the MTA Hub, whose Solution Server fronts the cluster's LLM (Konveyor Gateway)
+      # behind its LLM proxy - the extension's GenAI requests go through the Hub and
+      # the API key never leaves the cluster. provider-settings.yaml (the direct-LLM
+      # configuration the extension reads for analyses run with local profiles, i.e.
+      # without a Hub connection) is intentionally not written - and any stale copy
+      # from an earlier devfile revision is removed so a local-profile analysis cannot
+      # silently fall back to a leftover direct-LLM configuration.
       commandLine: |
         mkdir -p /checode/remote/data/Machine
         [ -f /checode/remote/data/Machine/settings.json ] || echo '{}' > /checode/remote/data/Machine/settings.json
@@ -122,29 +131,7 @@ commands:
         jq -s '.[0] * .[1]' /checode/remote/data/Machine/settings.json /tmp/mta-settings.json > /tmp/mta-settings-merged.json \
           && mv /tmp/mta-settings-merged.json /checode/remote/data/Machine/settings.json
         rm -f /tmp/mta-settings.json
-        mkdir -p /checode/remote/data/User/globalStorage/redhat.mta-core/settings
-        cat <<EOF > /checode/remote/data/User/globalStorage/redhat.mta-core/settings/provider-settings.yaml
-        environment:
-          no_proxy: "${OPENAI_HOST}"
-          http_proxy: ""
-          https_proxy: ""
-          ALWAYS_APPLIED_KEY: "envvar to be set regardless of which model is active"
-          ALLOW_INSECURE: "true"
-
-        models:
-          ${OPENAI_MODEL_NAME}: &active
-            environment:
-              no_proxy: "${OPENAI_HOST}"
-              http_proxy: ""
-              https_proxy: ""
-              OPENAI_API_KEY: "${OPENAI_API_KEY}"
-            provider: ChatOpenAI
-            args:
-              model: ${OPENAI_MODEL_NAME}
-              configuration:
-                baseURL: "${OPENAI_BASE_URL}"
-        active: *active
-        EOF
+        rm -f /checode/remote/data/User/globalStorage/redhat.mta-core/settings/provider-settings.yaml
   - id: clone-git
     exec:
       component: tools
