@@ -1580,7 +1580,7 @@ cat devspaces/git-clone-secret.yaml | sed "s/<workspace-namespace>/${WORKSPACE_N
 
 The clone URL must use the `ssh://` form with port 443 (the TLS-passthrough Route, see [Git Authentication with SSH Keys](#git-authentication-with-ssh-keys)) — env variables are expanded in the `exec` `commandLine` because it runs via a shell, unlike the devfile `projects` remotes, which the DevWorkspace Operator resolves as literal arguments before any container exists. The branch matters: without `PROJECT_REPO_BRANCH` the clone lands on the repository's **default** branch — `8.1.x` for `jboss-quickstarts` — while the application records imported into MTA reference `7.4.x` (the [import template](#bulk-uploading-applications)); analyzing a different working tree than the MTA records would compare inconsistent sources. The command is idempotent: it clones (at the configured branch) on first start and checks out/pulls on restarts (the `/projects` directory persists on the per-user PVC). The clone itself uses SSH keys via the mounted `git-ssh-key` and `git-ssh-proxy` Secrets (see [Git Authentication with SSH Keys](#git-authentication-with-ssh-keys)) — without those Secrets, the command fails with a public-key error and the workspace reports a warning.
 
-After the clone/pull, the command adds the repository folder to the editor's workspace (multi-root) via the **che-code remote CLI** (`/checode/checode-linux-libc/ubi9/bin/remote-cli/code-oss --add <folder>`), so the cloned source appears in the Explorer without a manual `Add Folder to Workspace`. `--add` of an already-open folder is a no-op, so this effectively only adds the folder when it is not yet part of the workspace. The remote CLI talks to the **running editor** over the `/tmp/vscode-ipc-*.sock` IPC socket (selected via `VSCODE_IPC_HOOK_CLI`) — verified live: it exits `0` on success and `1` when no editor is reachable. Because the editor may still be starting when `postStart` commands run, the add step retries in the background for up to ~2 minutes without blocking or failing the `postStart` event.
+After the clone/pull, the command adds the repository folder to the editor's workspace (multi-root) via the **che-code remote CLI** (`/checode/checode-linux-libc/ubi9/bin/remote-cli/code-oss --add <folder>`), so the cloned source appears in the Explorer without a manual `Add Folder to Workspace`. `--add` of an already-open folder is a no-op, so this effectively only adds the folder when it is not yet part of the workspace. The remote CLI talks to the **running editor** over the `/tmp/vscode-ipc-*.sock` IPC socket (selected via `VSCODE_IPC_HOOK_CLI`) — verified live: it exits `0` on success and `1` when no editor is reachable. Because the editor may still be starting when `postStart` commands run, the add step retries in the background for up to ~5 minutes without blocking or failing the `postStart` event — verified live that on a cold start the editor can take longer than 2 minutes to become reachable, and a too-short retry loop leaves the cloned folder out of the workspace (the fix for a workspace where this already happened is running the `--add` from a terminal, or just restarting the workspace — the loop runs again on every start and the folder addition persists on the per-user PVC).
 - **Create a workspace with the MTA plugin enabled**: A ready-to-use `devfile.yaml` is available in this repository at `devspaces/devfile.yaml`. It installs both extensions via the che-code CLI, installs the OpenCode CLI, configures OpenCode, creates the MTA plugin settings, and clones the application source via the `clone-git` command — all via `postStart` commands:
 
     ```yaml
@@ -1713,7 +1713,9 @@ After the clone/pull, the command adds the repository folder to the editor's wor
           # the running editor over the /tmp/vscode-ipc-*.sock IPC socket and exits 0 on
           # success, 1 when no editor is reachable - the editor may still be starting
           # when postStart commands run, so the retry loop runs in the background for
-          # up to ~2 minutes without blocking or failing the postStart event.
+          # up to ~5 minutes without blocking or failing the postStart event (on a cold
+          # start the editor can take longer than 2 minutes to become reachable, and a
+          # too-short loop leaves the cloned folder out of the workspace).
           commandLine: |
             REPO_NAME=$(basename "${PROJECT_REPO_URL%/}" .git)
             if [ -d "/projects/${REPO_NAME}/.git" ]; then
@@ -1727,7 +1729,7 @@ After the clone/pull, the command adds the repository folder to the editor's wor
             (
               CODE_BIN=/checode/checode-linux-libc/ubi9/bin/remote-cli/code-oss
               export LD_LIBRARY_PATH=/checode/checode-linux-libc/ubi9/ld_libs/openssl:/checode/checode-linux-libc/ubi9/ld_libs/core:/usr/lib64
-              for i in $(seq 1 12); do
+              for i in $(seq 1 30); do
                 for sock in $(ls -t /tmp/vscode-ipc-*.sock 2>/dev/null); do
                   if VSCODE_IPC_HOOK_CLI="$sock" timeout 10 "$CODE_BIN" --add "/projects/${REPO_NAME}" >/dev/null 2>&1; then
                     exit 0

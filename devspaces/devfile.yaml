@@ -137,8 +137,10 @@ commands:
       # workspace. The CLI talks to the running editor over the /tmp/vscode-ipc-*.sock
       # IPC socket (VSCODE_IPC_HOOK_CLI) and exits 0 on success, 1 when no editor is
       # reachable - the editor may still be starting when postStart commands run, so
-      # the retry loop runs in the background for up to ~2 minutes without blocking
-      # or failing the postStart event.
+      # the retry loop runs in the background for up to ~5 minutes without blocking
+      # or failing the postStart event. Verified live: on a cold start the editor
+      # can take longer than 2 minutes to become reachable, and a too-short loop
+      # leaves the cloned folder out of the workspace.
       commandLine: |
         REPO_NAME=$(basename "${PROJECT_REPO_URL%/}" .git)
         if [ -d "/projects/${REPO_NAME}/.git" ]; then
@@ -152,7 +154,7 @@ commands:
         (
           CODE_BIN=/checode/checode-linux-libc/ubi9/bin/remote-cli/code-oss
           export LD_LIBRARY_PATH=/checode/checode-linux-libc/ubi9/ld_libs/openssl:/checode/checode-linux-libc/ubi9/ld_libs/core:/usr/lib64
-          for i in $(seq 1 12); do
+          for i in $(seq 1 30); do
             for sock in $(ls -t /tmp/vscode-ipc-*.sock 2>/dev/null); do
               if VSCODE_IPC_HOOK_CLI="$sock" timeout 10 "$CODE_BIN" --add "/projects/${REPO_NAME}" >/dev/null 2>&1; then
                 exit 0
