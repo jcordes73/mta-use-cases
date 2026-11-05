@@ -1,0 +1,37 @@
+# SkillCollection grouping the MigIQ + rgctl skills.
+#
+# Groups the eleven SkillCards created by migiq-skillcards.yaml (all backed by
+# the shared mta-migiq-agent image) so an Agent can reference the bundle as
+# one unit instead of listing eleven cards. Mirrors the structure of the
+# operator's java-migration-skills collection: an explicit list of card refs.
+---
+apiVersion: konveyor.io/v1alpha1
+kind: SkillCollection
+metadata:
+  name: migiq-skills
+  namespace: openshift-mta
+spec:
+  version: "0.2.3"
+  skills:
+    - name: migiq
+      skillCardRef: migiq
+    - name: mig-rgctl
+      skillCardRef: mig-rgctl
+    - name: mig-prompt-builder
+      skillCardRef: mig-prompt-builder
+    - name: mig-plan
+      skillCardRef: mig-plan
+    - name: mig-execute
+      skillCardRef: mig-execute
+    - name: mig-test-gen
+      skillCardRef: mig-test-gen
+    - name: mig-containerize
+      skillCardRef: mig-containerize
+    - name: mig-deploy
+      skillCardRef: mig-deploy
+    - name: mig-verify
+      skillCardRef: mig-verify
+    - name: rgctl
+      skillCardRef: rgctl
+    - name: rgctl-review
+      skillCardRef: rgctl-review

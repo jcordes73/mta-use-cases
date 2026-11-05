@@ -1413,12 +1413,14 @@ oc start-build mta-migiq-agent -n openshift-mta \
   --from-dir=mta-ui/agentic-workflow/migiq/agents --follow
 
 oc apply -f mta-ui/agentic-workflow/migiq/agents/skills/migiq-skillcards.yaml
+oc apply -f mta-ui/agentic-workflow/migiq/agents/skills/migiq-skillcollection.yaml
 ```
 
-The build takes ~10 minutes (it compiles `rgctl` with the Rust toolchain). The `SkillCard` manifest creates one card per skill (`migiq`, `mig-rgctl`, `mig-prompt-builder`, `mig-plan`, `mig-execute`, `mig-test-gen`, `mig-containerize`, `mig-deploy`, `mig-verify`, `rgctl`, `rgctl-review`), all referencing the same image `image-registry.openshift-image-registry.svc:5000/openshift-mta/mta-migiq-agent:latest` with `subPath` naming the skill's directory at the image root. Verify them as follows:
+The build takes ~10 minutes (it compiles `rgctl` with the Rust toolchain). The `SkillCard` manifest creates one card per skill (`migiq`, `mig-rgctl`, `mig-prompt-builder`, `mig-plan`, `mig-execute`, `mig-test-gen`, `mig-containerize`, `mig-deploy`, `mig-verify`, `rgctl`, `rgctl-review`), all referencing the same image `image-registry.openshift-image-registry.svc:5000/openshift-mta/mta-migiq-agent:latest` with `subPath` naming the skill's directory at the image root. The `SkillCollection` manifest groups the eleven cards as `migiq-skills`, so an `Agent` can reference the bundle as one unit instead of listing eleven cards. Verify them as follows:
 
 ```bash
 oc get skillcards -n openshift-mta | grep -E "migiq|rgctl|mig-"
+oc get skillcollection migiq-skills -n openshift-mta
 ```
 
 ## Developer-Infused Migration Using OpenShift Dev Spaces and the MTA Plugin
