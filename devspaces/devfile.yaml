@@ -123,7 +123,7 @@ commands:
           && mv /tmp/mta-settings-merged.json /checode/remote/data/Machine/settings.json
         rm -f /tmp/mta-settings.json
         mkdir -p /checode/remote/data/User/globalStorage/redhat.mta-core/settings
-        cat <<'EOF' > /checode/remote/data/User/globalStorage/redhat.mta-core/settings/provider-settings.yaml
+        cat <<EOF > /checode/remote/data/User/globalStorage/redhat.mta-core/settings/provider-settings.yaml
         environment:
           no_proxy: "${OPENAI_HOST}"
           http_proxy: ""
