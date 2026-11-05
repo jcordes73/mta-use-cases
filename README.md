@@ -995,7 +995,7 @@ Tickets are created from the MTA UI (e.g. from an application's issues or a migr
 
 ##### Define an Analysis Profile
 
-An analysis profile defines how an analysis is run: which rulesets are applied (selected by their labels), which packages are in scope, and whether dependencies are analyzed. Profiles can be managed in the `Analysis Profiles` view of the MTA UI, or via the REST API as shown below. The following example creates a profile for migrating JBoss EAP 7.4 to JBoss EAP 8: it applies the EAP 8 rulesets (`konveyor.io/target=eap8+` — the `eap8/eap7`, `eap81/eap8`, and `eap82/eap8` rulesets in the rule inventory), the Jakarta EE namespace migration (`konveyor.io/target=jakarta-ee9+`, covering Jakarta EE 10 which EAP 8 implements), and the Java SE 17 baseline (`konveyor.io/target=openjdk17+`, required by EAP 8), narrows the rules to those valid when coming from EAP 7 (`konveyor.io/source=eap7`), scopes the analysis to the application's own packages, includes dependencies in the analysis, and excludes the analysis of known libraries:
+An analysis profile defines how an analysis is run: which rulesets are applied (selected by their labels), which packages are in scope, and whether dependencies are analyzed. Profiles can be managed in the `Analysis Profiles` view of the MTA UI, or via the REST API as shown below. The following example creates the profile configured in this PoC (hub profile id 1, the one the validated helloworld analysis ran with) for migrating JBoss EAP 7.4 to JBoss EAP 8: it applies the rulesets targeting EAP 8 (`konveyor.io/target=eap8`), the OpenJDK 21 baseline (`konveyor.io/target=openjdk21` — EAP 8 runs on OpenJDK 21, so rules targeting Java versions up to 21 are in scope), narrows the rules to those valid when coming from EAP 7 (`konveyor.io/source=eap7`), and includes dependencies and known (open-source) libraries in the analysis:
 
 ```bash
 curl -s -X POST "${MTA_URL}/hub/analysis/profiles" \
@@ -1005,18 +1005,12 @@ curl -s -X POST "${MTA_URL}/hub/analysis/profiles" \
     "name": "JBoss EAP 7.4 to JBoss EAP 8",
     "description": "Analysis profile for migrating JBoss EAP 7.4 to JBoss EAP 8",
     "mode": { "withDeps": true },
-    "scope": {
-      "packages": {
-        "included": ["org.jboss.eap.quickstarts.*"]
-      },
-      "withKnownLibs": false
-    },
+    "scope": { "withKnownLibs": true },
     "rules": {
       "labels": {
         "included": [
-          "konveyor.io/target=eap8+",
-          "konveyor.io/target=jakarta-ee9+",
-          "konveyor.io/target=openjdk17+",
+          "konveyor.io/target=eap8",
+          "konveyor.io/target=openjdk21",
           "konveyor.io/source=eap7"
         ]
       }
@@ -1024,7 +1018,7 @@ curl -s -X POST "${MTA_URL}/hub/analysis/profiles" \
   }'
 ```
 
-No fields are strictly required (an empty profile is valid), but a useful one sets mode, scope, and rules. The `source=eap7` label narrows the rules to those valid when coming from EAP 7 — without it, rules aimed at other source platforms also run. Optionally add `konveyor.io/target=cloud-readiness` if the upgrade is part of a containerization push — it flags hard-coded IPs, filesystem assumptions, and the like, at the cost of additional findings.
+No fields are strictly required (an empty profile is valid), but a useful one sets mode, scope, and rules. The `source=eap7` label narrows the rules to those valid when coming from EAP 7 — without it, rules aimed at other source platforms also run. The label selector supports a `+` suffix meaning "this version or any later one" (e.g. `konveyor.io/target=openjdk17+` would match the OpenJDK 17 baseline and above, and `konveyor.io/target=eap8+` matches rulesets labeled with any EAP 8.x target), and `konveyor.io/target=jakarta-ee9+` adds the Jakarta EE namespace migration rules — the EAP 8 rules already carry the relevant Jakarta EE 10 targets. Scoping the analysis to the application's own packages (`scope.packages.included`, e.g. `org.jboss.eap.quickstarts.*`) narrows findings to the first-party code at the cost of skipping matching references inside dependencies; `scope.withKnownLibs=false` would exclude known open-source libraries from the analysis entirely. Optionally add `konveyor.io/target=cloud-readiness` if the upgrade is part of a containerization push — it flags hard-coded IPs, filesystem assumptions, and the like, at the cost of additional findings.
 
 ##### Create an Assessment Questionnaire
 
