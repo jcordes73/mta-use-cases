@@ -36,7 +36,7 @@ data:
     # (the Hub's tracker connector routes its Jira REST calls through this proxy)
     # $OPENAI_HOST is the OpenCode LLM endpoint host (rendered from the
     # llm-endpoint Secret)
-    acl allowed_domains dstdomain .github.com .open-vsx.org .githubusercontent.com .eclipsecontent.org .opencode.ai .developers.redhat.com access.cdn.redhat.com maven.repository.redhat.com repo.maven.apache.org .atlassian.net $OPENAI_HOST
+    acl allowed_domains dstdomain .github.com .open-vsx.org .githubusercontent.com .eclipsecontent.org .opencode.ai .developers.redhat.com access.cdn.redhat.com maven.repository.redhat.com repo.maven.apache.org .atlassian.net rhda.rhcloud.com $OPENAI_HOST
 
     http_access deny !Safe_ports
     http_access deny CONNECT !SSL_ports
