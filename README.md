@@ -645,7 +645,14 @@ MTA 8.3 provides automated analysis, assessment, and refactoring tooling for app
     cat console/console-link.yaml | envsubst | oc apply -f -
     ```
 
-    The entry appears in the application launcher under the **Red Hat Applications** section and takes effect immediately (a console reload may be needed to pick it up). The `ConsoleLink` is cluster-scoped and shown to all console users; deleting the resource (`oc delete consolelink mta-ui`) removes the entry. Verify it with
+    The entry appears in the application launcher under the **Red Hat Applications** section and takes effect immediately (a console reload may be needed to pick it up). The manifest embeds the MTA logo as a data URI in `spec.applicationMenu.imageURL` — the icon is the MTA UI's own favicon, fetched from the live deployment and inlined so the launcher renders it without any external URL; verify the embedded icon round-trips with
+
+    ```bash
+    oc get consolelink mta-ui -o jsonpath='{.spec.applicationMenu.imageURL}' | \
+      sed 's|^data:image/x-icon;base64,||' | base64 -d | file -
+    ```
+
+    Two field-name pitfalls, both verified live: the CRD field is `imageURL` (capital `URL`) — an `imageUrl` typo is **silently pruned** by the CRD validation while `oc apply` reports success, exactly like the CheCluster v2 pruning ([Devfile registry](#devfile-registry)); and the data URI mediatype for the `.ico` is `image/x-icon` (a `png`/`svg` label on icon bytes renders nothing). The `ConsoleLink` is cluster-scoped and shown to all console users; deleting the resource (`oc delete consolelink mta-ui`) removes the entry. Verify it with
 
     ```bash
     oc get consolelink mta-ui -o jsonpath='{.spec.href}'
