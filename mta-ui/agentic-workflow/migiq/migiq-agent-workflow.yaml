@@ -1,0 +1,43 @@
+# The MigIQ AgentWorkflow: a single-stage, end-to-end migration.
+#
+# Unlike ant-to-maven's three-stage workflow, MigIQ's own skill chains the
+# phases (rgctl analysis -> requirements -> planning -> execution ->
+# reporting) inside one session, so one stage invoking the migiq-agent
+# orchestrator carries the whole migration. The target stack is a workflow
+# parameter the AgentWorkflowRun supplies, referenced as $(workflow.target_stack).
+apiVersion: konveyor.io/v1alpha1
+kind: AgentWorkflow
+metadata:
+  name: migiq
+  namespace: openshift-mta
+spec:
+  guide: >-
+    End-to-end application migration orchestrated by MigIQ. The agent indexes
+    the application with the rgctl CLI, gathers migration requirements,
+    produces a migration plan, executes it, and reports the results - all
+    driven by the skills in the migiq-skills collection. The workspace is the
+    application's git worktree; commit migration artifacts so the results are
+    reviewable as git history.
+  params:
+    - name: target_stack
+      type: string
+      description: >-
+        The target technology stack to migrate the application to,
+        e.g. "Quarkus", "Spring Boot 3", "OpenShift (UBI 9 container)".
+      required: true
+  stages:
+    - name: migrate
+      agentRef: migiq-agent
+      instructions: >-
+        Load the migiq skill and follow its SKILL.md exactly.
+        Migrate the application in the workspace to $(workflow.target_stack).
+        Run the orchestrator's full phase sequence - rgctl codebase analysis
+        (mig-rgctl), requirements (mig-prompt-builder), planning (mig-plan),
+        execution (mig-execute) - and generate the final migration report
+        with the execution report from mig-execute-workspace/EXECUTION_REPORT.md.
+        The orchestrator pauses only when a phase fails; recover or report
+        the failure rather than skipping phases.
+        Write a summary of the migration (target stack, plan location,
+        execution outcome, test results) as a ## Migrate section in
+        .konveyor/handoff.md, and commit all migration artifacts so the
+        results persist as git history.

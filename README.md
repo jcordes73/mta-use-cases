@@ -1415,14 +1415,16 @@ oc start-build mta-migiq-agent -n openshift-mta \
 oc apply -f mta-ui/agentic-workflow/migiq/agents/skills/migiq-skillcards.yaml
 oc apply -f mta-ui/agentic-workflow/migiq/agents/skills/migiq-skillcollection.yaml
 oc apply -f mta-ui/agentic-workflow/migiq/agents/migiq-agent.yaml
+oc apply -f mta-ui/agentic-workflow/migiq/migiq-agent-workflow.yaml
 ```
 
-The build takes ~10 minutes (it compiles `rgctl` with the Rust toolchain). The `SkillCard` manifest creates one card per skill (`migiq`, `mig-rgctl`, `mig-prompt-builder`, `mig-plan`, `mig-execute`, `mig-test-gen`, `mig-containerize`, `mig-deploy`, `mig-verify`, `rgctl`, `rgctl-review`), all referencing the same image `image-registry.openshift-image-registry.svc:5000/openshift-mta/mta-migiq-agent:latest` with `subPath` naming the skill's directory at the image root. The `SkillCollection` manifest groups the eleven cards as `migiq-skills`, and the `Agent` manifest creates the single `migiq-agent` orchestrator (unlike ant-to-maven's plan/execute/verify agent trio, MigIQ chains the phases itself) running on the built image and referencing the collection — an `AgentRun` names the gateway to run it with. Verify them as follows:
+The build takes ~10 minutes (it compiles `rgctl` with the Rust toolchain). The `SkillCard` manifest creates one card per skill (`migiq`, `mig-rgctl`, `mig-prompt-builder`, `mig-plan`, `mig-execute`, `mig-test-gen`, `mig-containerize`, `mig-deploy`, `mig-verify`, `rgctl`, `rgctl-review`), all referencing the same image `image-registry.openshift-image-registry.svc:5000/openshift-mta/mta-migiq-agent:latest` with `subPath` naming the skill's directory at the image root. The `SkillCollection` manifest groups the eleven cards as `migiq-skills`, and the `Agent` manifest creates the single `migiq-agent` orchestrator (unlike ant-to-maven's plan/execute/verify agent trio, MigIQ chains the phases itself) running on the built image and referencing the collection. The `AgentWorkflow` manifest wraps the agent as a single-stage `migiq` workflow with a required `target_stack` parameter (the migration destination, referenced as `$(workflow.target_stack)` in the stage instructions and supplied by the `AgentWorkflowRun`) — an `AgentRun`/`AgentWorkflowRun` names the gateway to run it with. Verify them as follows:
 
 ```bash
 oc get skillcards -n openshift-mta | grep -E "migiq|rgctl|mig-"
 oc get skillcollection migiq-skills -n openshift-mta
 oc get agents.konveyor.io migiq-agent -n openshift-mta
+oc get agentworkflow migiq -n openshift-mta
 ```
 
 ## Developer-Infused Migration Using OpenShift Dev Spaces and the MTA Plugin
