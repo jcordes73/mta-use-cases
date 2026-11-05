@@ -186,6 +186,25 @@ commands:
         else
           git clone "${PROJECT_REPO_URL}" "/projects/${REPO_NAME}"
         fi
+        # Present the HTTPS web URL as the git remote while keeping SSH for
+        # pushes: the MTA IDE extension's profile sync matches the workspace
+        # repository against the MTA hub application records by URL, and those
+        # records carry the HTTPS web route (https://git.<domain>/...). Fetches
+        # work anonymously over HTTPS; pushes are rewritten to the authenticated
+        # SSH transport with url.<ssh-base>.pushInsteadOf (pushInsteadOf, unlike
+        # insteadOf, does not rewrite the fetch URL - a full insteadOf rewrite
+        # would also rewrite what the extension reads and break the match
+        # again). The SSH transport works through the git-ssh-key Secret's key
+        # files and the git-ssh-proxy Secret's openssl s_client ProxyCommand -
+        # a bare ssh:// connection cannot traverse the TLS-passthrough Route
+        # (the router selects it by the TLS SNI, which a bare SSH handshake
+        # does not send - the connection is closed by the router).
+        if [ -d "/projects/${REPO_NAME}/.git" ] && [ -n "${PROJECT_REPO_WEB_URL}" ]; then
+          git -C "/projects/${REPO_NAME}" remote set-url origin "${PROJECT_REPO_WEB_URL}"
+          SSH_BASE="${PROJECT_REPO_URL%/*}/"
+          WEB_BASE="${PROJECT_REPO_WEB_URL%/*}/"
+          git -C "/projects/${REPO_NAME}" config url."${SSH_BASE}".pushInsteadOf "${WEB_BASE}"
+        fi
         (
           CODE_BIN=/checode/checode-linux-libc/ubi9/bin/remote-cli/code-oss
           export LD_LIBRARY_PATH=/checode/checode-linux-libc/ubi9/ld_libs/openssl:/checode/checode-linux-libc/ubi9/ld_libs/core:/usr/lib64

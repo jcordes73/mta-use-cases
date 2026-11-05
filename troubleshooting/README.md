@@ -237,3 +237,67 @@ Analyses are triggered the same way the UI's Analyze wizard does it: a
 taskgroup of `kind: analyzer` referencing the analysis profile
 (`data.profile`), submitted with `PUT /taskgroups/:id/submit` and the
 taskgroup object as body.
+
+## Dev Spaces: MTA view shows "No analysis providers are registered"
+
+The MTA view's message means the **language extension has not registered its
+analysis provider** with the MTA core extension - not that anything is
+missing: `redhat.mta-java` (installed alongside `redhat.mta-core`) registers
+the provider only after the Java Language Server (JDT, `redhat.java`) has
+reached **Standard mode**, and it waits at most **3 minutes** for that
+(`JDTLS_READY_TIMEOUT_MS`, hardcoded in the extension). It does not retry.
+
+On a cold workspace start, JDT begins in Lightweight mode and imports the
+workspace's Maven projects before switching to Standard mode. The
+`jboss-quickstarts` repository alone carries ~123 Maven modules, so the
+first import takes longer than the 3-minute window: the extension's log
+(`Output → MTA`) shows `Java Language Server did not reach Standard mode
+within 180000ms`, the provider is never registered, and every later MTA
+view open shows the message - even though JDT finishes importing minutes
+later.
+
+Fix: wait for the Java import to finish (the Java language server log
+stops emitting diagnostics), then run **Developer: Reload Window**. On
+reload `mta-java` re-activates, sees the server already in Standard mode,
+and registers the provider immediately. This is a one-time event: the JDT
+workspace state persists on the per-user PVC, so subsequent workspace
+starts reach Standard mode well within the window.
+
+## Dev Spaces: MTA profile sync finds no matching hub application
+
+The MTA IDE extension matches the workspace repository against the hub
+application records **by repository URL** (it normalizes the git remote and
+compares it against each record, trying ~12 scheme/user/port variations).
+Two URL forms do not match, and both failure modes are silent - the
+extension just logs `No Hub applications match repository URL` and skips
+profile sync (no hub profiles in the IDE):
+
+1. **Hub records carry the HTTPS web route, the workspace remote is the
+   SSH clone URL.** The import template sets `https://git.<domain>/...`
+   while the workspace clones via `ssh://git@git-ssh.<domain>:443/...` -
+   different host names, no variation bridges them. Fix: the `clone-git`
+   devfile command rewrites the remote to `PROJECT_REPO_WEB_URL` (the
+   HTTPS form the hub records carry) and adds a
+   `url.<ssh-base>.pushInsteadOf <web-base>` git config so pushes still go
+   through the authenticated SSH transport. A full `insteadOf` rewrite
+   cannot be used: git applies it to `git remote -v` output as well, so
+   the extension would read the rewritten SSH URL again.
+
+2. **Hub records carry the SSH clone URL and the hub clones for its
+   analyses.** Setting the hub records to `ssh://git@git-ssh...:443/...`
+   (verified live with all 123 applications) breaks every hub-side clone:
+   the `gitea-ssh` Route is **TLS-passthrough on port 443**, and the
+   OpenShift router selects a passthrough route by the TLS SNI in the
+   ClientHello. A bare SSH handshake sends no ClientHello, so the router
+   cannot match the connection to any route and closes it
+   (`Connection closed by <ip> port 443` during the SSH banner exchange).
+   The Dev Spaces workspaces only work because their ssh_config mounts a
+   `ProxyCommand openssl s_client -quiet -connect %h:%p -servername %h`
+   (the `git-ssh-proxy` Secret), which wraps the SSH stream in a TLS
+   ClientHello carrying the SNI. The hub's clone addon has no such
+   wrapper, so hub records must stay on the HTTPS web route (which also
+   clones anonymously).
+
+The resolution is the URL split of fix 1: hub records and the workspace
+remote both read the HTTPS web URL; SSH remains the push transport via
+`pushInsteadOf`.
