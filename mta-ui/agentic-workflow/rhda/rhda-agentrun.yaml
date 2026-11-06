@@ -42,6 +42,8 @@ spec:
       value: konveyor/rhda-scan-helloworld
   instructions: >-
     Use the rhda-cve-scan skill to scan this project's Maven dependencies
-    for CVEs and audit its declared licenses. Write the consolidated
-    report to rhda-cve-report.md at the repository root. Do not modify
-    any pom.xml - report only.
+    for CVEs and audit its declared licenses. The application's source is
+    located at "helloworld" within the cloned repository workspace - scope
+    the entire scan to that directory and analyze nothing outside it.
+    Write the consolidated report to rhda-cve-report.md at the repository
+    root. Do not modify any pom.xml - report only.

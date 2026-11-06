@@ -21,18 +21,36 @@ spec:
     pom.xml manifests for CVEs (whole dependency stack), translates the
     declared licenses to the SPDX identifiers RHDA supports, reconciles
     them against the licenses the backend resolves per dependency, and
-    writes a consolidated rhda-cve-report.md. The scan is read-only.
+    writes a consolidated rhda-cve-report.md. The scan is read-only and
+    strictly scoped to the application's own source: the Hub record
+    determines the git repository the sandbox clones; the path parameter
+    selects the application directory inside that repository, and the
+    agent must not analyze anything outside it.
+  params:
+    - name: path
+      type: string
+      description: >-
+        The repository-relative path of the application's source (the
+        repository path of the MTA application record, e.g. "helloworld"
+        for a quickstart imported from a multi-module repository). Leave
+        empty only when the application IS the repository root.
+      required: false
   stages:
     - name: scan
       agentRef: rhda-agent
       instructions: >-
         Load the rhda-cve-scan skill and follow its SKILL.md exactly.
-        Scan the application in the workspace: analyze every pom.xml
-        manifest with the rhda MCP tools, run the license check with the
-        SPDX translation, and write the consolidated report to
-        rhda-cve-report.md at the repository root. Report only - do not
-        modify any pom.xml or other source file. Write a summary of the
-        scan (manifests scanned, CVE counts by severity, license
-        compatibility findings, report location) as a ## Scan section in
+        The application's source is located at "$(workflow.path)" within
+        the cloned repository workspace (an empty path means the
+        repository root). Scope the ENTIRE scan to that directory:
+        enumerate and analyze only the pom.xml manifests under it with
+        the rhda MCP tools, and never read or analyze any file outside
+        it - the workspace may contain other applications from the same
+        repository. Run the license check with the SPDX translation, and
+        write the consolidated report to rhda-cve-report.md at the
+        repository root. Report only - do not modify any pom.xml or other
+        source file. Write a summary of the scan (application path,
+        manifests scanned, CVE counts by severity, license compatibility
+        findings, report location) as a ## Scan section in
         .konveyor/handoff.md, and commit the report so the results
         persist as git history.
