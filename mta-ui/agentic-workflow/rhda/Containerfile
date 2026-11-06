@@ -10,6 +10,12 @@ USER root
 # rhda-skillcards SkillCards select them via subPath - same layout as the
 # migiq agent image).
 COPY skills/rhda-cve-scan /rhda-cve-scan
+COPY skills/app-dependency-map /app-dependency-map
+# The app-dependency-map skill's deterministic mapper/writer (enumerates Hub
+# applications, matches Maven coordinates across their poms, reconciles the
+# Hub's application-dependency graph).
+COPY skills/app-dependency-map/app-dependency-map.py /usr/local/bin/app-dependency-map.py
+RUN chmod 0755 /usr/local/bin/app-dependency-map.py
 # MCP servers for the goose harness: goose reads its "extensions" from
 # $XDG_CONFIG_HOME/goose/config.yaml at startup. The migration harness only
 # sets provider/model env vars and never writes this file, so image-baked

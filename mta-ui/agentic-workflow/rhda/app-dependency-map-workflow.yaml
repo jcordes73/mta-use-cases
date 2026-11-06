@@ -1,0 +1,61 @@
+# The app-dependency-map AgentWorkflow: a single-stage portfolio mapping.
+#
+# Maps inter-application dependencies across the whole MTA portfolio and
+# records them in the Hub's application-dependency graph. Runs on the
+# rhda-agent (the mta-rhda-agent image carries the deterministic
+# app-dependency-map.py mapper plus the entrypoint-provisioned Hub
+# credentials). Launch it from the MTA UI on an application whose
+# repository is the monorepo holding the portfolio's sources (e.g. the
+# quickstarts): the sandbox then clones every application's source, and
+# the skill maps all applications whose repository.path resolves in the
+# workspace.
+#
+# Prudent by default: the first stage pass runs the mapper dry-run,
+# sanity-checks the edges, then applies them; stale edges are only ever
+# pruned on explicit user request (the skill enforces this).
+apiVersion: konveyor.io/v1alpha1
+kind: AgentWorkflow
+metadata:
+  name: app-dependency-map
+  namespace: openshift-mta
+  labels:
+    app.kubernetes.io/managed-by: agentic-controller-defaults
+    konveyor.io/managed: "true"
+spec:
+  guide: >-
+    Portfolio-wide application interdependency mapping for MTA. The agent
+    enumerates every application registered in the MTA Hub, resolves each
+    application's Maven coordinates from its sources in the workspace,
+    matches dependencies between applications (EAR aggregators and their
+    modules fall out naturally), and records the discovered edges in the
+    Hub's application-dependency graph. The mapping itself is computed by
+    the deterministic app-dependency-map.py script; the agent
+    sanity-checks its output, applies the map, and reports coverage and
+    reconciliation results.
+  params:
+    - name: dry-run
+      type: string
+      description: >-
+        Set to "true" to run the mapper in dry-run mode only: the
+        dependency map is computed and reported, but no edges are written
+        to the Hub.
+      required: false
+  stages:
+    - name: map
+      agentRef: rhda-agent
+      instructions: >-
+        Load the app-dependency-map skill and follow its SKILL.md exactly.
+        The workspace contains the sources of the portfolio's monorepo -
+        every Hub application whose repository.path resolves under the
+        workspace root is in scope. Run the mapper in dry-run mode first
+        and sanity-check the discovered edges as the skill prescribes.
+        "$(workflow.dry-run)" resolves to "true" only when the user
+        explicitly requested a dry run - in that case stop after the
+        report and write nothing to the Hub. Otherwise apply the map
+        (create the missing dependency edges) with --apply, never with
+        --prune unless the user explicitly asked for stale edges to be
+        removed. Write the consolidated report to app-dependency-map.md
+        at the repository root, write a ## Dependency map summary
+        (applications mapped, edges found, hub writes applied) in
+        .konveyor/handoff.md, and commit the report so it persists as
+        git history.
