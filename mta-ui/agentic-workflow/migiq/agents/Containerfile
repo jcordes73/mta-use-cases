@@ -37,34 +37,6 @@ COPY skills/mig-deploy /mig-deploy
 COPY skills/mig-verify /mig-verify
 COPY skills/rgctl /rgctl
 COPY skills/rgctl-review /rgctl-review
-# MCP servers for the goose harness: goose reads its "extensions" from
-# $XDG_CONFIG_HOME/goose/config.yaml at startup. The migration harness only
-# sets provider/model env vars and never writes this file, so image-baked
-# extensions load in every AgentRun using this image. XDG_CONFIG_HOME is
-# pinned because uid 1001's HOME depends on the base image's passwd entry.
-ENV XDG_CONFIG_HOME=/opt/goose-config
-COPY goose-config.yaml /opt/goose-config/goose/config.yaml
-RUN chmod 0644 /opt/goose-config/goose/config.yaml
-# rhda-mcp-server: stdio MCP server wrapping the RHDA (Red Hat Dependency
-# Analytics / Trustify) backend - dependency vulnerability analysis and
-# remediation planning as agent tools. Not published to npm (private
-# package), so clone and install at build time; runs on tsx, which ships
-# as a devDependency (npm install includes dev deps by default). The
-# extension command in goose-config.yaml addresses the tsx launcher via
-# its node_modules path because goose spawns commands with the sandbox
-# workdir as cwd. ARG RHDA_MCP_REF pins the upstream revision - the repo
-# is a personal repository without release tags at draft time, so use a
-# commit SHA for reproducible builds.
-RUN dnf install -y nodejs npm && dnf clean all
-ARG RHDA_MCP_REF=main
-RUN set -eux; \
-    git clone https://github.com/ruromero/rhda-mcp-server.git /opt/rhda-mcp-server; \
-    cd /opt/rhda-mcp-server; \
-    git fetch --depth 1 origin "${RHDA_MCP_REF}"; \
-    git checkout --detach FETCH_HEAD; \
-    npm install; \
-    test -x node_modules/.bin/tsx; \
-    node_modules/.bin/tsx --version
 USER 1001
 ENTRYPOINT ["migration-harness"]
 CMD ["run"]

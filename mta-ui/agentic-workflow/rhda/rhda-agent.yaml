@@ -1,0 +1,24 @@
+# The RHDA agent: exposes the Red Hat Dependency Analytics MCP tools
+# (analyze_dependency_vulnerabilities, explain_vulnerability,
+# generate_remediation_plan, suppress_dependency_vulnerability) to the
+# agentic platform. DRAFT - the image is not yet built, and the Agent CR
+# is the minimal declaration (no skill collections, no gateways - the
+# AgentRun names the gateway).
+#
+# Build the image first (the documented binary-build pattern, as for
+# mta-migiq-agent):
+#   oc new-build --name mta-rhda-agent --strategy=docker --binary -n openshift-mta
+#   oc patch bc mta-rhda-agent -n openshift-mta --type=json \
+#     -p='[{"op":"add","path":"/spec/strategy/dockerStrategy/dockerfilePath","value":"Containerfile"}]'
+#   oc start-build mta-rhda-agent -n openshift-mta \
+#     --from-dir=mta-ui/agentic-workflow/rhda --follow
+#   oc apply -f mta-ui/agentic-workflow/rhda/rhda-agent.yaml
+apiVersion: konveyor.io/v1alpha1
+kind: Agent
+metadata:
+  name: rhda-agent
+  namespace: openshift-mta
+spec:
+  image: image-registry.openshift-image-registry.svc:5000/openshift-mta/mta-rhda-agent:latest
+  execution:
+    maxTurns: 200
