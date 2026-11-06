@@ -33,16 +33,21 @@ if [ -n "${HUB_BASE_URL:-}" ] && [ -n "${APP_ID:-}" ] && [ -n "${HUB_TOKEN:-}" ]
      && (umask 077 && printf '%s' "$HUB_TOKEN" > "$DIR/token"); then
   # App metadata: best-effort - the scan works without it (falls back to
   # the task instructions' path), only reporting and auto-scoping want it.
+  # The repository path goes to its own app-path file: the skill reads it
+  # as the authoritative scan scope.
   APP_JSON=$(curl -sf -H "Authorization: Bearer $HUB_TOKEN" \
     "${HUB_BASE_URL%/}/applications/${APP_ID}" 2>/dev/null || true)
   if [ -n "$APP_JSON" ]; then
-    printf '%s' "$APP_JSON" | python3 -c '
-import json, sys
+    printf '%s' "$APP_JSON" | DIR="$DIR" python3 -c '
+import json, os, sys
 app = json.load(sys.stdin)
-print(app.get("name", ""), end="")
 repo = app.get("repository") or {}
-print("\n" + (repo.get("path") or ""), end="")
-' > "$DIR/app-name" 2>/dev/null || true
+d = os.environ["DIR"]
+with open(os.path.join(d, "app-name"), "w") as fh:
+    fh.write(app.get("name", ""))
+with open(os.path.join(d, "app-path"), "w") as fh:
+    fh.write(repo.get("path") or "")
+' 2>/dev/null || true
   fi
     echo "hub-report: provisioned $(ls "$DIR" | tr '\n' ' ')"
   else
