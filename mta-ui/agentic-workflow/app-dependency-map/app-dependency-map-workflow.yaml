@@ -33,7 +33,7 @@ spec:
     sanity-checks its output, applies the map, and reports coverage and
     reconciliation results.
   params:
-    - name: dry-run
+    - name: dry_run
       type: string
       description: >-
         Set to "true" to run the mapper in dry-run mode only: the
@@ -49,7 +49,7 @@ spec:
         every Hub application whose repository.path resolves under the
         workspace root is in scope. Run the mapper in dry-run mode first
         and sanity-check the discovered edges as the skill prescribes.
-        "$(workflow.dry-run)" resolves to "true" only when the user
+        "$(workflow.dry_run)" resolves to "true" only when the user
         explicitly requested a dry run - in that case stop after the
         report and write nothing to the Hub. Otherwise apply the map
         (create the missing dependency edges) with --apply, never with
