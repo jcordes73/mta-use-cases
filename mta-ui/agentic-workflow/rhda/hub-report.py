@@ -44,40 +44,47 @@ def build_manifest(findings, app_path):
     lines += [BEGIN_MAIN, "mode: hub-report", "provider: rhda", END_MAIN]
 
     # INSIGHTS: one Insight per CVE finding, one incident per manifest.
+    # The hub decodes each section as a stream of YAML documents (one
+    # resource per `---`-separated document, hub reads with Decode until
+    # EOF) - NOT a YAML list.
     lines.append(BEGIN_INSIGHTS)
+    first = True
     for f in findings:
         missing = [k for k in REQUIRED if not f.get(k)]
         if missing:
             print(f"skipping malformed finding (missing {missing}): {f}", file=sys.stderr)
             continue
+        if not first:
+            lines.append("---")
+        first = False
         cve = f["cve"]
         severity = str(f.get("severity", "medium")).lower()
         effort = EFFORT.get(severity, 3)
         gav = f.get("gav", "")
         name = f.get("name") or f"CVE {cve} in {gav}" if gav else f"CVE {cve}"
-        lines.append("- ruleset: rhda")
-        lines.append(f"  rule: {yaml_str('cve-' + cve)}")
-        lines.append(f"  name: {yaml_str(name)}")
+        lines.append("ruleset: rhda")
+        lines.append(f"rule: {yaml_str('cve-' + cve)}")
+        lines.append(f"name: {yaml_str(name)}")
         desc = f.get("description") or (
             f"Red Hat Dependency Analytics identified {cve} ({severity}) "
             f"in dependency {gav}."
         )
-        lines.append(f"  description: {yaml_str(desc)}")
-        lines.append("  category: potential")
-        lines.append(f"  effort: {effort}")
-        lines.append("  labels:")
+        lines.append(f"description: {yaml_str(desc)}")
+        lines.append("category: potential")
+        lines.append(f"effort: {effort}")
+        lines.append("labels:")
         for label in ["rhda", "cve", f"severity/{severity}"]:
-            lines.append(f"    - {label}")
+            lines.append(f"  - {label}")
         if f.get("link"):
-            lines.append("  links:")
-            lines.append(f"    - url: {yaml_str(f['link'])}")
-            lines.append(f"      title: {yaml_str(cve + ' advisory')}")
-        lines.append("  incidents:")
-        lines.append(f"    - file: {yaml_str(f['manifest'])}")
+            lines.append("links:")
+            lines.append(f"  - url: {yaml_str(f['link'])}")
+            lines.append(f"    title: {yaml_str(cve + ' advisory')}")
+        lines.append("incidents:")
+        lines.append(f"  - file: {yaml_str(f['manifest'])}")
         msg = f"{gav + ': ' if gav else ''}{cve} ({severity})"
         if f.get("fixed_in"):
             msg += f" - fixed in {f['fixed_in']}"
-        lines.append(f"      message: {yaml_str(msg)}")
+        lines.append(f"    message: {yaml_str(msg)}")
     lines.append(END_INSIGHTS)
 
     # DEPS: one TechDependency per unique GAV across findings.
@@ -88,14 +95,16 @@ def build_manifest(findings, app_path):
             deps[gav] = f.get("version", "")
     if deps:
         lines.append(BEGIN_DEPS)
-        for gav, version in sorted(deps.items()):
-            lines.append("- provider: maven")
-            lines.append(f"  name: {yaml_str(gav)}")
+        for i, (gav, version) in enumerate(sorted(deps.items())):
+            if i:
+                lines.append("---")
+            lines.append("provider: maven")
+            lines.append(f"name: {yaml_str(gav)}")
             if version:
-                lines.append(f"  version: {yaml_str(version)}")
-            lines.append("  indirect: true")
-            lines.append("  labels:")
-            lines.append("    - rhda")
+                lines.append(f"version: {yaml_str(version)}")
+            lines.append("indirect: true")
+            lines.append("labels:")
+            lines.append("  - rhda")
         lines.append(END_DEPS)
 
     return "\n".join(lines) + "\n"
@@ -134,8 +143,8 @@ def main():
         token = fh.read().strip()
 
     manifest = build_manifest(findings, None)
-    n_insights = manifest.count("- ruleset: rhda")
-    n_deps = manifest.count("- provider: maven")
+    n_insights = manifest.count("ruleset: rhda")
+    n_deps = manifest.count("provider: maven")
     print(f"reporting {n_insights} insights, {n_deps} dependencies "
           f"to {args.hub_url}/applications/{args.app_id}/analyses")
 

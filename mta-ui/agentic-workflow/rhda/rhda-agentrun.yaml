@@ -13,7 +13,8 @@
 # whose spec carries an envFrom secretRef created by the UI) - launching
 # the rhda workflow from the UI is the simplest path. For a standalone
 # run, add an envFrom secretRef carrying HUB_TOKEN and HUB_TOKEN_ID (a
-# hub token minted via POST /auth/tokens with a federated Keycloak JWT).
+# hub PAT minted with hub Basic auth: POST /auth/tokens -u admin:admin
+# (the hub is its own OIDC provider and does NOT accept Keycloak JWTs).
 #
 # Modeled on the spec of the successful migiq AgentWorkflowRun (ui-r8hfr):
 # the controller injects HUB_BASE_URL / APP_ID / TARGET_BRANCH into the
