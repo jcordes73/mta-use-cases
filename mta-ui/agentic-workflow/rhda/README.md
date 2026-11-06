@@ -40,7 +40,7 @@ scoped by two layers:
   path, e.g. `helloworld`), bound into the stage instructions;
 - the image entrypoint, which (while the `HUB_*` env is still set) fetches
   the application record from the Hub and writes its `repository.path` to
-  `/run/konveyor/hub-report/app-path` - the **authoritative** source,
+  `/tmp/konveyor/hub-report/app-path` - the **authoritative** source,
   overriding whatever the instructions say.
 
 ## Hub reporting
@@ -56,7 +56,7 @@ credential isolation (`hub.ClearEnv()` strips `HUB_BASE_URL`/`HUB_TOKEN`/
 
 - **`entrypoint-wrapper.sh`** (the image ENTRYPOINT, wrapping
   `migration-harness`): runs while the Hub env is still set and provisions
-  `/run/konveyor/hub-report/{hub-url,app-id,token,app-name,app-path}` -
+  `/tmp/konveyor/hub-report/{hub-url,app-id,token,app-name,app-path}` -
   the token as a 0600 file, revoked by the harness at run end as usual.
 - **`hub-report.py`** (installed as `/usr/local/bin/rhda-hub-report.py`):
   deterministic converter from a findings JSON (schema documented in the
@@ -66,7 +66,7 @@ credential isolation (`hub.ClearEnv()` strips `HUB_BASE_URL`/`HUB_TOKEN`/
   records - and POST of that manifest. The agent never hand-writes the
   YAML; the model only transcribes the MCP scan results into JSON.
 
-If `/run/konveyor/hub-report/token` does not exist (standalone runs without
+If `/tmp/konveyor/hub-report/token` does not exist (standalone runs without
 Hub credentials), the reporting step is skipped.
 
 ## How the baking works

@@ -1476,7 +1476,7 @@ every other application. Scoping is therefore enforced at two layers:
   path, e.g. `helloworld`), bound into the stage instructions;
 - the image ENTRYPOINT (`entrypoint-wrapper.sh`, wrapping `migration-harness`):
   while the `HUB_*` env is still set it provisions
-  `/run/konveyor/hub-report/{hub-url,app-id,token,app-name,app-path}` — the
+  `/tmp/konveyor/hub-report/{hub-url,app-id,token,app-name,app-path}` — the
   token as a 0600 file — and `app-path` (from the Hub record) is the
   authoritative scope, overriding the instructions.
 

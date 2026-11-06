@@ -41,9 +41,11 @@ RUN set -eux; \
     node_modules/.bin/tsx --version
 # Hub reporting: the entrypoint wrapper provisions the Hub credentials and
 # application metadata (hub URL, app id, bearer token, application name and
-# repository path) as files under /run/konveyor/hub-report/ while the HUB_*
+# repository path) as files under /tmp/konveyor/hub-report/ while the HUB_*
 # env is still set - the migration harness clears that env before the agent
-# starts. rhda-hub-report.py then converts the scan's findings JSON into the
+# starts. (/run/konveyor is mounted READ-ONLY in the sandbox - it carries
+# the harness's stage infrastructure - so the directory lives under /tmp.)
+# rhda-hub-report.py then converts the scan's findings JSON into the
 # hub's GS-delimited analysis manifest and POSTs it, making the CVEs appear
 # in the application's Issues/Reports views.
 COPY hub-report.py /usr/local/bin/rhda-hub-report.py

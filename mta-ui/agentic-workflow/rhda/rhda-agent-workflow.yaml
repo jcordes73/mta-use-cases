@@ -49,7 +49,7 @@ spec:
         repository. Run the license check with the SPDX translation, and
         write the consolidated report to rhda-cve-report.md at the
         repository root. Report only - do not modify any pom.xml or other
-        source file. If /run/konveyor/hub-report/token exists, follow the
+        source file. If /tmp/konveyor/hub-report/token exists, follow the
         skill's step 7 and report the CVE findings to the MTA Hub with
         rhda-hub-report.py so they appear in the application's
         Issues/Reports views; include the returned analysis id in the
