@@ -1,0 +1,36 @@
+# A standalone AgentRun of the rhda agent: CVE + license scan of the
+# helloworld application's dependencies via the RHDA MCP tools.
+#
+# DRAFT - review before applying. The run creates an Agent Sandbox pod and
+# spends LLM tokens via the named Gateway.
+#
+# Modeled on the spec of the successful migiq AgentWorkflowRun (ui-r8hfr):
+# the controller injects HUB_BASE_URL / APP_ID / TARGET_BRANCH into the
+# sandbox, where the migration harness uses them for the Hub context; the
+# Gateway supplies the provider/model/key (the openai Gateway, verified
+# Ready). rhda-agent declares no gateways, so any Ready Gateway may be
+# named. No params: the Agent declares none (the controller forwards only
+# declared params).
+#
+#   oc apply -f mta-ui/agentic-workflow/rhda/rhda-agentrun.yaml
+#   oc get agentrun -n openshift-mta -w
+apiVersion: konveyor.io/v1alpha1
+kind: AgentRun
+metadata:
+  name: rhda-scan-helloworld
+  namespace: openshift-mta
+spec:
+  agentRef: rhda-agent
+  gateway: openai
+  env:
+    - name: APP_ID
+      value: "1"
+    - name: HUB_BASE_URL
+      value: http://mta-hub.openshift-mta.svc:8080
+    - name: TARGET_BRANCH
+      value: konveyor/rhda-scan-helloworld
+  instructions: >-
+    Use the rhda-cve-scan skill to scan this project's Maven dependencies
+    for CVEs and audit its declared licenses. Write the consolidated
+    report to rhda-cve-report.md at the repository root. Do not modify
+    any pom.xml - report only.
