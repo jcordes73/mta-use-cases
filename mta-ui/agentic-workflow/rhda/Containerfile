@@ -6,6 +6,10 @@ ARG BASE_IMAGE=quay.io/konveyor/agent-java:latest
 
 FROM ${BASE_IMAGE}
 USER root
+# The RHDA skills (one directory per skill at the image root; the
+# rhda-skillcards SkillCards select them via subPath - same layout as the
+# migiq agent image).
+COPY skills/rhda-cve-scan /rhda-cve-scan
 # MCP servers for the goose harness: goose reads its "extensions" from
 # $XDG_CONFIG_HOME/goose/config.yaml at startup. The migration harness only
 # sets provider/model env vars and never writes this file, so image-baked

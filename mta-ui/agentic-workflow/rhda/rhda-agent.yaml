@@ -12,6 +12,8 @@
 #     -p='[{"op":"add","path":"/spec/strategy/dockerStrategy/dockerfilePath","value":"Containerfile"}]'
 #   oc start-build mta-rhda-agent -n openshift-mta \
 #     --from-dir=mta-ui/agentic-workflow/rhda --follow
+#   oc apply -f mta-ui/agentic-workflow/rhda/skills/rhda-skillcards.yaml
+#   oc apply -f mta-ui/agentic-workflow/rhda/skills/rhda-skillcollection.yaml
 #   oc apply -f mta-ui/agentic-workflow/rhda/rhda-agent.yaml
 apiVersion: konveyor.io/v1alpha1
 kind: Agent
@@ -20,5 +22,7 @@ metadata:
   namespace: openshift-mta
 spec:
   image: image-registry.openshift-image-registry.svc:5000/openshift-mta/mta-rhda-agent:latest
+  skillCollections:
+    - ref: rhda-skills
   execution:
     maxTurns: 200

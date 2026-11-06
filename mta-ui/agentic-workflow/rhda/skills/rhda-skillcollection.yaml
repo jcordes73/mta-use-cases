@@ -1,0 +1,16 @@
+# SkillCollection grouping the RHDA skills.
+#
+# Groups the SkillCards created by rhda-skillcards.yaml (all backed by the
+# shared mta-rhda-agent image) so the Agent can reference the bundle as one
+# unit - mirrors the migiq-skills collection structure.
+---
+apiVersion: konveyor.io/v1alpha1
+kind: SkillCollection
+metadata:
+  name: rhda-skills
+  namespace: openshift-mta
+spec:
+  version: "0.1.0"
+  skills:
+    - name: rhda-cve-scan
+      skillCardRef: rhda-cve-scan

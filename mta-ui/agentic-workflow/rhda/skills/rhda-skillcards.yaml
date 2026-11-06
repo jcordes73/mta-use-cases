@@ -1,0 +1,24 @@
+# SkillCards for the RHDA agent.
+#
+# One SkillCard per skill in the mta-rhda-agent image (each skill is one
+# directory at the image root; a SkillCard is always one skill, so subPath
+# selects which - same layout as the migiq skillcards). Built and pushed by
+# the mta-rhda-agent BuildConfig (see the folder Containerfile).
+---
+apiVersion: konveyor.io/v1alpha1
+kind: SkillCard
+metadata:
+  name: rhda-cve-scan
+  namespace: openshift-mta
+spec:
+  image: image-registry.openshift-image-registry.svc:5000/openshift-mta/mta-rhda-agent:latest
+  displayName: RHDA Skill - rhda-cve-scan
+  version: "0.1.0"
+  description: "Detects CVEs and vulnerable dependencies in a Maven-based Java project by scanning pom.xml files with Red Hat Dependency Analytics (RHDA). Use when the user asks to scan dependencies for vulnerabilities, find CVEs, check dependency security, or assess whether the project's Maven dependencies are affected by known vulnerabilities. Triggers on phrases like \\\"scan for CVEs\\\", \\\"check dependencies for vulnerabilities\\\", \\\"security scan\\\", \\\"which CVEs affect this project\\\", \\\"vulnerable dependencies\\\", or any mention of CVEs in the context of Maven/pom.xml. Requires the rhda MCP tools (analyze_dependency_vulnerabilities, explain_vulnerability, generate_remediation_plan, suppress_dependency_vulnerability)."
+  type: skill
+  subPath: rhda-cve-scan
+  tags:
+    - security
+    - rhda
+    - maven
+    - cve
