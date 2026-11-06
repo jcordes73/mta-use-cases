@@ -49,8 +49,12 @@ spec:
         repository. Run the license check with the SPDX translation, and
         write the consolidated report to rhda-cve-report.md at the
         repository root. Report only - do not modify any pom.xml or other
-        source file. Write a summary of the scan (application path,
+        source file. If /run/konveyor/hub-report/token exists, follow the
+        skill's step 7 and report the CVE findings to the MTA Hub with
+        rhda-hub-report.py so they appear in the application's
+        Issues/Reports views; include the returned analysis id in the
+        handoff. Write a summary of the scan (application path,
         manifests scanned, CVE counts by severity, license compatibility
-        findings, report location) as a ## Scan section in
-        .konveyor/handoff.md, and commit the report so the results
+        findings, report location, hub analysis id) as a ## Scan section
+        in .konveyor/handoff.md, and commit the report so the results
         persist as git history.

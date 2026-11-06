@@ -27,6 +27,47 @@ aggregators), runs `analyze_dependency_vulnerabilities` per manifest,
 writes a consolidated `rhda-cve-report.md`, and gates the
 remediation/suppression tools behind user confirmation (remediation plans
 are presented, never auto-applied; suppression only on explicit request).
+The scan is strictly scoped to the application's repository path, and the
+findings are reported back to the MTA Hub (see below).
+
+## Scan scope
+
+The harness clones the ENTIRE repository of the application's Hub record -
+the record's `repository.path` is never used by the clone. The scan is
+scoped by two layers:
+
+- the workflow's optional **`path`** parameter (the Hub record's repository
+  path, e.g. `helloworld`), bound into the stage instructions;
+- the image entrypoint, which (while the `HUB_*` env is still set) fetches
+  the application record from the Hub and writes its `repository.path` to
+  `/run/konveyor/hub-report/app-path` - the **authoritative** source,
+  overriding whatever the instructions say.
+
+## Hub reporting
+
+CVEs identified during a scan are reported back to the MTA Hub, where they
+appear as first-class issues in the application's Issues/Reports views -
+ingested through the same path the static analyzer uses,
+`POST /applications/:id/analyses`.
+
+Two image components make this work around the harness's deliberate
+credential isolation (`hub.ClearEnv()` strips `HUB_BASE_URL`/`HUB_TOKEN`/
+`HUB_TOKEN_ID`/`APP_ID` before the agent starts):
+
+- **`entrypoint-wrapper.sh`** (the image ENTRYPOINT, wrapping
+  `migration-harness`): runs while the Hub env is still set and provisions
+  `/run/konveyor/hub-report/{hub-url,app-id,token,app-name,app-path}` -
+  the token as a 0600 file, revoked by the harness at run end as usual.
+- **`hub-report.py`** (installed as `/usr/local/bin/rhda-hub-report.py`):
+  deterministic converter from a findings JSON (schema documented in the
+  skill's step 7) to the hub's GS-delimited (`\x1D`) analysis manifest -
+  one Insight per CVE (`ruleset: rhda`, incident on the pom manifest,
+  severity-mapped effort, links to the advisory) plus TechDependency
+  records - and POST of that manifest. The agent never hand-writes the
+  YAML; the model only transcribes the MCP scan results into JSON.
+
+If `/run/konveyor/hub-report/token` does not exist (standalone runs without
+Hub credentials), the reporting step is skipped.
 
 ## How the baking works
 
@@ -41,16 +82,16 @@ is not published to npm - `tsx` runs it from source).
 ## Workflows vs. standalone runs
 
 - **`rhda-agent-workflow.yaml`** wraps the agent as the UI-launchable
-  **`rhda`** workflow (single `scan` stage, no parameters - the scan needs
-  no input beyond the application). Launch it from the MTA UI: the UI
-  provisions the Hub credentials the sandbox needs (the Hub requires
-  authentication since Keycloak was provisioned).
+  **`rhda`** workflow (single `scan` stage, optional `path` parameter -
+  the application's repository path, e.g. `helloworld`). Launch it from
+  the MTA UI: the UI provisions the Hub credentials the sandbox needs
+  (the Hub requires authentication since Keycloak was provisioned).
 - **`rhda-agentrun.yaml`** is a standalone `AgentRun` draft. It must carry
   an `envFrom` secret with `HUB_TOKEN`/`HUB_TOKEN_ID` (a hub token minted
   via `POST /auth/tokens` with a federated Keycloak JWT) or the run fails
   at hub resolution with `Token [] not-authenticated`.
 
-## Build and run (draft - not yet built)
+## Build and run
 
 ```bash
 oc new-build --name mta-rhda-agent --strategy=docker --binary -n openshift-mta
