@@ -38,6 +38,18 @@ base image's `/etc/passwd` entry), copies `goose-config.yaml`, installs
 Node.js, and clones + installs the server under `/opt/rhda-mcp-server` (it
 is not published to npm - `tsx` runs it from source).
 
+## Workflows vs. standalone runs
+
+- **`rhda-agent-workflow.yaml`** wraps the agent as the UI-launchable
+  **`rhda`** workflow (single `scan` stage, no parameters - the scan needs
+  no input beyond the application). Launch it from the MTA UI: the UI
+  provisions the Hub credentials the sandbox needs (the Hub requires
+  authentication since Keycloak was provisioned).
+- **`rhda-agentrun.yaml`** is a standalone `AgentRun` draft. It must carry
+  an `envFrom` secret with `HUB_TOKEN`/`HUB_TOKEN_ID` (a hub token minted
+  via `POST /auth/tokens` with a federated Keycloak JWT) or the run fails
+  at hub resolution with `Token [] not-authenticated`.
+
 ## Build and run (draft - not yet built)
 
 ```bash
@@ -49,6 +61,7 @@ oc start-build mta-rhda-agent -n openshift-mta \
 oc apply -f mta-ui/agentic-workflow/rhda/skills/rhda-skillcards.yaml
 oc apply -f mta-ui/agentic-workflow/rhda/skills/rhda-skillcollection.yaml
 oc apply -f mta-ui/agentic-workflow/rhda/rhda-agent.yaml
+oc apply -f mta-ui/agentic-workflow/rhda/rhda-agent-workflow.yaml
 ```
 
 Verify by firing a test `AgentRun` that asks the agent to list its tools,

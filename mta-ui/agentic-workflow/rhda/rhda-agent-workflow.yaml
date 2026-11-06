@@ -1,0 +1,38 @@
+# The RHDA AgentWorkflow: a single-stage dependency security scan.
+#
+# Wraps the rhda-agent (which carries the RHDA MCP server and the
+# rhda-cve-scan skill) as a UI-launchable workflow, mirroring the migiq
+# single-stage pattern: the stage instructions drive the skill directly.
+# Unlike migiq (an end-to-end migration), this workflow is read-only -
+# the agent reports CVEs and license findings and does not modify the
+# application source; the rhda-cve-scan SKILL.md enforces the same rule.
+apiVersion: konveyor.io/v1alpha1
+kind: AgentWorkflow
+metadata:
+  name: rhda
+  namespace: openshift-mta
+  labels:
+    app.kubernetes.io/managed-by: agentic-controller-defaults
+    konveyor.io/managed: "true"
+spec:
+  guide: >-
+    Dependency security and license audit for a Maven-based application
+    using Red Hat Dependency Analytics. The agent scans the application's
+    pom.xml manifests for CVEs (whole dependency stack), translates the
+    declared licenses to the SPDX identifiers RHDA supports, reconciles
+    them against the licenses the backend resolves per dependency, and
+    writes a consolidated rhda-cve-report.md. The scan is read-only.
+  stages:
+    - name: scan
+      agentRef: rhda-agent
+      instructions: >-
+        Load the rhda-cve-scan skill and follow its SKILL.md exactly.
+        Scan the application in the workspace: analyze every pom.xml
+        manifest with the rhda MCP tools, run the license check with the
+        SPDX translation, and write the consolidated report to
+        rhda-cve-report.md at the repository root. Report only - do not
+        modify any pom.xml or other source file. Write a summary of the
+        scan (manifests scanned, CVE counts by severity, license
+        compatibility findings, report location) as a ## Scan section in
+        .konveyor/handoff.md, and commit the report so the results
+        persist as git history.

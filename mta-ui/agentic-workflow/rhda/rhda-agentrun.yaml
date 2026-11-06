@@ -4,6 +4,17 @@
 # DRAFT - review before applying. The run creates an Agent Sandbox pod and
 # spends LLM tokens via the named Gateway.
 #
+# NOTE - the Hub requires authentication since Keycloak was provisioned:
+# a standalone AgentRun must carry hub credentials or the run fails at
+# hub resolution ("Token [] not-authenticated: missing credentials") -
+# the migration harness resolves the application from the Hub first.
+# Workflow runs launched from the MTA UI get HUB_TOKEN/HUB_TOKEN_ID
+# provisioned by the UI itself (see the successful migiq run ui-r8hfr,
+# whose spec carries an envFrom secretRef created by the UI) - launching
+# the rhda workflow from the UI is the simplest path. For a standalone
+# run, add an envFrom secretRef carrying HUB_TOKEN and HUB_TOKEN_ID (a
+# hub token minted via POST /auth/tokens with a federated Keycloak JWT).
+#
 # Modeled on the spec of the successful migiq AgentWorkflowRun (ui-r8hfr):
 # the controller injects HUB_BASE_URL / APP_ID / TARGET_BRANCH into the
 # sandbox, where the migration harness uses them for the Hub context; the
