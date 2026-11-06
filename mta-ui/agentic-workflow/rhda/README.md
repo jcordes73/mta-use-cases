@@ -19,30 +19,20 @@ configuration, so every `AgentRun` of this image gets the tools:
 
 ## Skills
 
-The image hosts **two skills** (both registered via the `rhda-skillcards`
-SkillCards and grouped in the `rhda-skills` SkillCollection):
+The image ships the **`rhda-cve-scan`** skill (`skills/rhda-cve-scan/SKILL.md`,
+registered via the `rhda-skillcards` SkillCard and grouped in the
+`rhda-skills` SkillCollection): a guided workflow for CVE-scanning Maven
+projects - it enumerates the project's `pom.xml` manifests (including
+multi-module aggregators), runs `analyze_dependency_vulnerabilities` per
+manifest, writes a consolidated `rhda-cve-report.md`, and gates the
+remediation/suppression tools behind user confirmation (remediation plans
+are presented, never auto-applied; suppression only on explicit request).
+The scan is strictly scoped to the application's repository path, and the
+findings are reported back to the MTA Hub (see below).
 
-- **`rhda-cve-scan`** (`skills/rhda-cve-scan/SKILL.md`): a guided workflow
-  for CVE-scanning Maven projects - it enumerates the project's `pom.xml`
-  manifests (including multi-module aggregators), runs
-  `analyze_dependency_vulnerabilities` per manifest, writes a consolidated
-  `rhda-cve-report.md`, and gates the remediation/suppression tools behind
-  user confirmation (remediation plans are presented, never auto-applied;
-  suppression only on explicit request). The scan is strictly scoped to
-  the application's repository path, and the findings are reported back
-  to the MTA Hub (see below).
-- **`app-dependency-map`** (`skills/app-dependency-map/SKILL.md`): a
-  portfolio-wide interdependency mapper - it enumerates every Hub
-  application, resolves Maven coordinates from the workspace sources,
-  matches dependencies between applications via the deterministic
-  `app-dependency-map.py` (baked to `/usr/local/bin/`; EAR aggregators and
-  their modules fall out naturally), and reconciles the Hub's
-  application-dependency graph (`POST /dependencies {"from": ...,"to":...}`).
-  Dry-run first, idempotent on apply; stale edges are only ever pruned on
-  explicit user request, and only those created by the same Hub user.
-  Launch the `app-dependency-map` workflow (`app-dependency-map-workflow.yaml`)
-  from the MTA UI on an application whose repository is the monorepo
-  holding the portfolio's sources.
+Portfolio-wide application interdependency mapping lives in its own
+agent/workflow: see `../app-dependency-map/` (its own image, built from
+its own folder).
 
 ## Scan scope
 

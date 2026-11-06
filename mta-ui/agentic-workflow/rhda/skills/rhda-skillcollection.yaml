@@ -14,5 +14,3 @@ spec:
   skills:
     - name: rhda-cve-scan
       skillCardRef: rhda-cve-scan
-    - name: app-dependency-map
-      skillCardRef: app-dependency-map

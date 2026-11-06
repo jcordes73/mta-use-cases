@@ -1,0 +1,28 @@
+# app-dependency-map agent image: Konveyor agent-java + the portfolio
+# application dependency mapper. A standalone image - separate from the
+# rhda agent image (no MCP servers needed here: the mapping is done by the
+# deterministic app-dependency-map.py script and Hub REST calls).
+ARG BASE_IMAGE=quay.io/konveyor/agent-java:latest
+
+FROM ${BASE_IMAGE}
+USER root
+# The skills (one directory per skill at the image root; the SkillCards
+# select them via subPath - same layout as the migiq/rhda agent images).
+COPY skills/app-dependency-map /app-dependency-map
+# The skill's deterministic mapper/writer (enumerates Hub applications,
+# matches Maven coordinates across their poms, reconciles the Hub's
+# application-dependency graph).
+COPY skills/app-dependency-map/app-dependency-map.py /usr/local/bin/app-dependency-map.py
+RUN chmod 0755 /usr/local/bin/app-dependency-map.py
+# Hub credential provisioning: the entrypoint wrapper provisions the Hub
+# credentials and application metadata (hub URL, app id, bearer token,
+# application name and repository path) as files under
+# /tmp/konveyor/hub-report/ while the HUB_* env is still set - the
+# migration harness clears that env before the agent starts
+# (/run/konveyor is mounted READ-ONLY in the sandbox, so the directory
+# lives under /tmp). This skill reads hub-url and token from there.
+COPY entrypoint-wrapper.sh /usr/local/bin/entrypoint-wrapper.sh
+RUN chmod 0755 /usr/local/bin/entrypoint-wrapper.sh
+USER 1001
+ENTRYPOINT ["/usr/local/bin/entrypoint-wrapper.sh", "migration-harness"]
+CMD ["run"]

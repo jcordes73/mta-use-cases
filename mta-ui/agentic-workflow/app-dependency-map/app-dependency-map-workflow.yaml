@@ -2,13 +2,13 @@
 #
 # Maps inter-application dependencies across the whole MTA portfolio and
 # records them in the Hub's application-dependency graph. Runs on the
-# rhda-agent (the mta-rhda-agent image carries the deterministic
-# app-dependency-map.py mapper plus the entrypoint-provisioned Hub
-# credentials). Launch it from the MTA UI on an application whose
-# repository is the monorepo holding the portfolio's sources (e.g. the
-# quickstarts): the sandbox then clones every application's source, and
-# the skill maps all applications whose repository.path resolves in the
-# workspace.
+# app-dependency-map-agent (the mta-app-dependency-map-agent image carries
+# the deterministic app-dependency-map.py mapper plus the
+# entrypoint-provisioned Hub credentials). Launch it from the MTA UI on an
+# application whose repository is the monorepo holding the portfolio's
+# sources (e.g. the quickstarts): the sandbox then clones every
+# application's source, and the skill maps all applications whose
+# repository.path resolves in the workspace.
 #
 # Prudent by default: the first stage pass runs the mapper dry-run,
 # sanity-checks the edges, then applies them; stale edges are only ever
@@ -42,7 +42,7 @@ spec:
       required: false
   stages:
     - name: map
-      agentRef: rhda-agent
+      agentRef: app-dependency-map-agent
       instructions: >-
         Load the app-dependency-map skill and follow its SKILL.md exactly.
         The workspace contains the sources of the portfolio's monorepo -

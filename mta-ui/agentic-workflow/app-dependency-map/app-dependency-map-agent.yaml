@@ -1,0 +1,28 @@
+# The app-dependency-map agent: runs the portfolio application
+# interdependency mapper (the app-dependency-map skill and its
+# deterministic app-dependency-map.py script) on the mta-app-dependency-map
+# agent image. No MCP servers - the skill works through Hub REST and the
+# workspace sources.
+#
+# Build the image first (the documented binary-build pattern, as for
+# mta-rhda-agent):
+#   oc new-build --name mta-app-dependency-map-agent --strategy=docker --binary -n openshift-mta
+#   oc patch bc mta-app-dependency-map-agent -n openshift-mta --type=json \
+#     -p='[{"op":"add","path":"/spec/strategy/dockerStrategy/dockerfilePath","value":"Containerfile"}]'
+#   oc start-build mta-app-dependency-map-agent -n openshift-mta \
+#     --from-dir=mta-ui/agentic-workflow/app-dependency-map --follow
+#   oc apply -f mta-ui/agentic-workflow/app-dependency-map/skills/app-dependency-map-skillcards.yaml
+#   oc apply -f mta-ui/agentic-workflow/app-dependency-map/skills/app-dependency-map-skillcollection.yaml
+#   oc apply -f mta-ui/agentic-workflow/app-dependency-map/app-dependency-map-agent.yaml
+#   oc apply -f mta-ui/agentic-workflow/app-dependency-map/app-dependency-map-workflow.yaml
+apiVersion: konveyor.io/v1alpha1
+kind: Agent
+metadata:
+  name: app-dependency-map-agent
+  namespace: openshift-mta
+spec:
+  image: image-registry.openshift-image-registry.svc:5000/openshift-mta/mta-app-dependency-map-agent:latest
+  skillCollections:
+    - ref: app-dependency-map-skills
+  execution:
+    maxTurns: 100

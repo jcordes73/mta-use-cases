@@ -1,0 +1,17 @@
+# SkillCollection grouping the app-dependency-map skills.
+#
+# Groups the SkillCards created by app-dependency-map-skillcards.yaml (all
+# backed by the shared mta-app-dependency-map-agent image) so the Agent can
+# reference the bundle as one unit - mirrors the migiq-skills/rhda-skills
+# collection structure.
+---
+apiVersion: konveyor.io/v1alpha1
+kind: SkillCollection
+metadata:
+  name: app-dependency-map-skills
+  namespace: openshift-mta
+spec:
+  version: "0.1.0"
+  skills:
+    - name: app-dependency-map
+      skillCardRef: app-dependency-map

@@ -1,0 +1,25 @@
+# SkillCards for the app-dependency-map agent.
+#
+# One SkillCard per skill in the mta-app-dependency-map-agent image (each
+# skill is one directory at the image root; a SkillCard is always one
+# skill, so subPath selects which - same layout as the migiq/rhda
+# skillcards). Built and pushed by the mta-app-dependency-map-agent
+# BuildConfig (see the folder Containerfile).
+---
+apiVersion: konveyor.io/v1alpha1
+kind: SkillCard
+metadata:
+  name: app-dependency-map
+  namespace: openshift-mta
+spec:
+  image: image-registry.openshift-image-registry.svc:5000/openshift-mta/mta-app-dependency-map-agent:latest
+  displayName: MTA Skill - app-dependency-map
+  version: "0.1.0"
+  description: "Discovers inter-application dependencies across the whole MTA application portfolio and records them in the MTA Hub's application-dependency graph. Use when the user asks to map application interdependencies, find which applications depend on each other, build an application dependency graph, update application dependencies in MTA, or detect interconnected applications (e.g. EAR aggregators and their modules). Requires Hub access (the image entrypoint provisions the token) and the application sources in the workspace."
+  type: skill
+  subPath: app-dependency-map
+  tags:
+    - dependencies
+    - portfolio
+    - maven
+    - hub
