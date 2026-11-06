@@ -1,0 +1,29 @@
+# MCP servers ("extensions") for the goose harness, baked into the agent image.
+#
+# The migration harness starts `goose serve` with provider/model env vars only
+# and never writes goose's config file, so extensions shipped in
+# $XDG_CONFIG_HOME/goose/config.yaml (see the Containerfile's XDG_CONFIG_HOME
+# ENV) load in every AgentRun using this image. stdio servers run inside the
+# sandbox pod: their binaries and Node dependencies ship in this image (see
+# the Containerfile's rhda-mcp-server build stage).
+extensions:
+  rhda:
+    type: stdio
+    name: rhda
+    enabled: true
+    # Absolute paths: goose spawns the command with the sandbox workdir as
+    # cwd, so the tsx launcher must be addressed via its node_modules path.
+    # index.ts requires --backend-url (RHDA/Trustify Dependency Analytics
+    # backend; rhda.rhcloud.com is the production endpoint the MTA IDE
+    # extension uses too) and --intel-server-url (Trustify Intel server for
+    # remediation planning; no production instance is publicly documented,
+    # the stage instance is the documented example).
+    cmd: /opt/rhda-mcp-server/node_modules/.bin/tsx
+    args:
+      - /opt/rhda-mcp-server/index.ts
+      - --backend-url
+      - https://rhda.rhcloud.com
+      - --intel-server-url
+      - https://intel.stage.devshift.net
+    envs: {}
+    timeout: 300
