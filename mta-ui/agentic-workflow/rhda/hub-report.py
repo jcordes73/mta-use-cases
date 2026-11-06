@@ -11,13 +11,15 @@ the application's Issues and Reports views.
 Deterministic by design: the YAML encoding, the GS markers and the
 request format live here, not in the agent's model-generated text.
 
-Usage:
-  rhda-hub-report.py --findings findings.json \\
-    --hub-url http://mta-hub... --app-id 1 --token-file TOKENFILE
+Usage (the skill always runs it with just --findings; the hub-url/app-id/
+token defaults come from the entrypoint-provisioned files, and the script
+exits 0 without POSTing when the run is not provisioned or has no findings):
+  rhda-hub-report.py --findings findings.json
 """
 
 import argparse
 import json
+import os
 import sys
 import urllib.request
 
@@ -127,28 +129,53 @@ def post_analysis(hub_url, app_id, token, manifest):
         return resp.status, body
 
 
+HUB_REPORT_DIR = "/tmp/konveyor/hub-report"
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--findings", required=True, help="findings JSON path")
-    ap.add_argument("--hub-url", required=True)
-    ap.add_argument("--app-id", required=True)
-    ap.add_argument("--token-file", required=True, help="file holding the hub bearer token")
+    ap.add_argument("--hub-url", default=None,
+                    help=f"Hub base URL (default: {HUB_REPORT_DIR}/hub-url)")
+    ap.add_argument("--app-id", default=None,
+                    help=f"application ID (default: {HUB_REPORT_DIR}/app-id)")
+    ap.add_argument("--token-file", default=None,
+                    help=f"file holding the hub bearer token (default: {HUB_REPORT_DIR}/token)")
     args = ap.parse_args()
 
+    # The existence decision lives HERE, not in the agent: the skill always
+    # runs this script and the script no-ops when the run was not provisioned
+    # for Hub reporting (standalone mode) or when there is nothing to report.
+    token_file = args.token_file or os.path.join(HUB_REPORT_DIR, "token")
+    if not os.path.isfile(token_file):
+        print("hub-report: no token file - not provisioned for Hub reporting, "
+              "skipping (exit 0)")
+        return
     with open(args.findings) as fh:
         findings = json.load(fh)
     if isinstance(findings, dict):
         findings = findings.get("findings", [])
-    with open(args.token_file) as fh:
+    if not findings:
+        print("hub-report: no CVE findings - nothing to report (exit 0)")
+        return
+    with open(token_file) as fh:
         token = fh.read().strip()
+    hub_url = args.hub_url
+    app_id = args.app_id
+    if not hub_url:
+        with open(os.path.join(HUB_REPORT_DIR, "hub-url")) as fh:
+            hub_url = fh.read().strip()
+    if not app_id:
+        with open(os.path.join(HUB_REPORT_DIR, "app-id")) as fh:
+            app_id = fh.read().strip()
 
     manifest = build_manifest(findings, None)
     n_insights = manifest.count("ruleset: rhda")
     n_deps = manifest.count("provider: maven")
     print(f"reporting {n_insights} insights, {n_deps} dependencies "
-          f"to {args.hub_url}/applications/{args.app_id}/analyses")
+          f"to {hub_url}/applications/{app_id}/analyses")
 
-    status, body = post_analysis(args.hub_url, args.app_id, token, manifest)
+    status, body = post_analysis(hub_url, app_id, token, manifest)
     if status not in (200, 201):
         print(f"hub rejected the analysis: HTTP {status}: {body[:300]}", file=sys.stderr)
         sys.exit(1)
