@@ -1432,6 +1432,76 @@ oc get agents.konveyor.io migiq-agent -n openshift-mta
 oc get agentworkflow migiq -n openshift-mta
 ```
 
+#### RHDA (dependency CVE/license scanner with Hub reporting)
+
+The `rhda` workflow is a **standalone agent image** (separate from the migiq
+image) that bakes the [`ruromero/rhda-mcp-server`](https://github.com/ruromero/rhda-mcp-server)
+stdio MCP server into the goose harness configuration (`$XDG_CONFIG_HOME/goose/config.yaml`,
+pinned via `XDG_CONFIG_HOME` because uid 1001's `HOME` depends on the base
+image), exposing Red Hat Dependency Analytics (RHDA) as agent tools:
+`analyze_dependency_vulnerabilities`, `explain_vulnerability`,
+`generate_remediation_plan`, and `suppress_dependency_vulnerability`. The
+server is not published to npm, so the Containerfile clones it and runs it
+with `tsx` from source (pinned by the `RHDA_MCP_REF` build arg):
+
+```bash
+oc new-build --name mta-rhda-agent --strategy=docker --binary -n openshift-mta
+
+oc patch bc mta-rhda-agent -n openshift-mta --type=json \
+-p='[{"op":"add","path":"/spec/strategy/dockerStrategy/dockerfilePath","value":"Containerfile"}]'
+
+oc start-build mta-rhda-agent -n openshift-mta \
+  --from-dir=mta-ui/agentic-workflow/rhda --follow
+
+oc apply -f mta-ui/agentic-workflow/rhda/skills/rhda-skillcards.yaml
+oc apply -f mta-ui/agentic-workflow/rhda/skills/rhda-skillcollection.yaml
+oc apply -f mta-ui/agentic-workflow/rhda/rhda-agent.yaml
+oc apply -f mta-ui/agentic-workflow/rhda/rhda-agent-workflow.yaml
+```
+
+The image also ships the **`rhda-cve-scan`** skill (selected by the
+`rhda-skillcards` SkillCard / `rhda-skills` SkillCollection): it enumerates
+the Maven manifests, analyzes each with the RHDA backend, translates the
+poms' declared licenses to SPDX identifiers and reconciles them against the
+licenses the backend resolves, writes a consolidated `rhda-cve-report.md`,
+and gates remediation/suppression behind user confirmation.
+
+**Scan scope**: the sandbox harness clones the ENTIRE repository of the
+application's Hub record and never exposes the record's `repository.path`,
+and it clears the `HUB_*` env before the agent starts — in a monorepo like
+the jboss quickstarts (123 applications) an unscoped scan would analyze
+every other application. Scoping is therefore enforced at two layers:
+
+- the workflow's optional **`path`** parameter (the Hub record's repository
+  path, e.g. `helloworld`), bound into the stage instructions;
+- the image ENTRYPOINT (`entrypoint-wrapper.sh`, wrapping `migration-harness`):
+  while the `HUB_*` env is still set it provisions
+  `/run/konveyor/hub-report/{hub-url,app-id,token,app-name,app-path}` — the
+  token as a 0600 file — and `app-path` (from the Hub record) is the
+  authoritative scope, overriding the instructions.
+
+**Hub reporting**: CVEs found during a scan are ingested through the same
+path the static analyzer uses — `POST /applications/:id/analyses` accepts a
+GS-delimited (`\x1D`) manifest of Analysis / Insight / TechDependency
+resources (sections are YAML **document streams**, one resource per
+`---`-separated document), and the ingested insights appear as first-class
+issues in the application's Issues/Reports views. No new hub endpoints are
+needed. The skill's final step transcribes the MCP scan results into a
+findings-JSON schema and runs the deterministic
+`/usr/local/bin/rhda-hub-report.py` — the model never hand-writes the
+manifest YAML. Reporting is skipped when no token file was provisioned
+(standalone runs). Hub tokens are minted with hub **Basic auth**
+(`POST /auth/tokens -u admin:admin`) — the hub is its own OIDC provider and
+rejects Keycloak JWTs. Launch the workflow from the MTA UI with the
+application's repository path in the `path` parameter; verify with:
+
+```bash
+oc get agentworkflow rhda -n openshift-mta
+# after a run - the analysis with ruleset rhda insights:
+oc exec deploy/mta-ui -n openshift-mta -- curl -s -u admin:admin \
+  "http://mta-hub.openshift-mta.svc:8080/applications/<app-id>/analyses" | jq .
+```
+
 ## Developer-Infused Migration Using OpenShift Dev Spaces and the MTA Plugin
 
 While the [MTA UI](#automated-migration-using-the-mta-ui) covers the automated, portfolio-wide migration, developers can drive the migration of their individual applications themselves from within their IDE. **OpenShift Dev Spaces** provides Kubernetes-based cloud development environments and is installed on the OpenShift Container Platform using the OpenShift Dev Spaces Operator via OperatorHub. The **MTA plugin** (Visual Studio Code extension) then brings inline analysis, remediation hints, and AI-assisted code refactoring (Developer Lightspeed) into the editor, backed by the MTA Hub and Solution Server deployed in the [automated migration](#automated-migration-using-the-mta-ui) part.
