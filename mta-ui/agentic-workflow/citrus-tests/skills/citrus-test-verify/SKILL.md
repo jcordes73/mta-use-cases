@@ -37,7 +37,28 @@ diagnosing anything else.
 
 ### 2. Run the suite from clean, under the JaCoCo agent
 
-Run the plan's verification command from the application path with the
+Run the plan's verification command from the application path.
+
+**Container lane** (`test_kind: it` in the plan): the command is
+`mvn verify -Pcitrus-container-tests` (the plan's exact command). This
+provisions a real JBoss EAP server, boots it, deploys the application
+WAR, runs the planned `*IT` classes via failsafe, shuts the server
+down, and writes the server-side coverage to
+`target/site/jacoco-it/jacoco.csv` — all in one invocation. Confirm
+from the output that: the server provisioned and booted
+(`WFLYSRV0025: JBoss EAP ... started`), the WAR deployed
+(`WFLYSRV0010: Deployed "..."`), and the failsafe reports list every
+planned `*IT` class with passing counts (failsafe reports live in
+`target/failsafe-reports/`, not surefire's). A skipped provision step
+(e.g. the profile not active) means the tests did not run against a
+container — that is not verified. A first run provisions the server
+from Maven (minutes of downloads); a resolution failure is not a test
+failure — check the repositories/channels guidance in the author
+skill before diagnosing further, and retry with `-U` if a previous
+failed resolution was cached.
+
+**In-JVM lane** (`test_kind: test`, default): run the plan's
+verification command with the
 JaCoCo agent attached - via command-line goals, so **no pom change is
 needed** (goal order matters: prepare-agent before test, report after):
 
@@ -58,7 +79,8 @@ Confirm from the surefire output that:
 - existing tests still pass (no regressions);
 - the build is green overall.
 
-This single run yields both the surefire proof and the coverage data.
+Each lane yields both the test-execution proof and the coverage data in
+one run.
 
 ### 3. Fix test-side defects if needed
 
@@ -79,7 +101,10 @@ honest suite is the goal, not a maximal one.
 
 The run in step 2 produced `target/site/jacoco/jacoco.csv` (one row per
 application class: `PACKAGE`, `CLASS`, `INSTRUCTION_MISSED/COVERED`,
-`BRANCH_MISSED/COVERED`, ...). Parse it and aggregate:
+`BRANCH_MISSED/COVERED`, ...). Parse it and aggregate. In the container
+lane the file is `target/site/jacoco-it/jacoco.csv` (the server-JVM
+agent's report) and a class absent from it means it never executed in
+the server — check the deployment, not the test.
 
 - **per-package and per-class instruction and branch coverage** of the
   application classes under test (this is what the new tests exercised);
@@ -94,7 +119,11 @@ application class: `PACKAGE`, `CLASS`, `INSTRUCTION_MISSED/COVERED`,
   When the module had no prior tests, this baseline is 0% and the
   report reads "new tests brought coverage from 0% to X%" - the
   helloworld-rs validation case. When tests existed, report both
-  numbers so the delta is the new tests' contribution.
+  numbers so the delta is the new tests' contribution. (Container
+  lane: exclude via failsafe instead, e.g.
+  `-Dit.test='!HelloWorldResourceIT'`; the helloworld-rs container
+  validation measured the same 0% → 100% instruction coverage of the
+  deployed application, agent on the provisioned server JVM.)
 
 The report is quantitative context for the verdict, **not** a pass/fail
 gate: low coverage of elements the plan marked out-of-scope (container-

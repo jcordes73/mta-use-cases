@@ -39,6 +39,36 @@ application path. Record:
 
 ### 2. Choose the Citrus version line
 
+Before the version, choose the **lane** — record it in the plan as
+`test_kind`, with the reason:
+
+- **`test_kind: test` (default) — in-JVM lane.** Tests named `*Test`,
+  run by surefire under plain `mvn test`; application code exercised
+  in-JVM (embedded deployment). Works everywhere, runs in seconds, and
+  is what the verify stage's JaCoCo command-line recipe expects. Choose
+  it unless the container lane's trigger conditions apply.
+- **`test_kind: it` — container lane.** Tests named `*IT`, run by
+  failsafe under `mvn verify -Pcitrus-container-tests` against a real
+  JBoss EAP server the build provisions from the EAP Galleon feature
+  pack (`wildfly-maven-plugin` provision → start → deploy → failsafe →
+  shutdown — the author stage owns the profile recipe). Choose it when
+  the plan must prove **deployment-time behavior** the embedded lane
+  cannot honor: container-managed wiring (the container's own JAX-RS
+  scanning and `@ApplicationPath` handling, servlet mappings,
+  datasources), or the user explicitly asked for in-container /
+  integration tests. Constraints: the application must be deployable
+  from its pom alone (WAR/JAR, no external services beyond the server);
+  the build needs network access to the Red Hat Maven repositories; the
+  run is slower (first provisioning of a server is minutes, not
+  seconds). Elements needing infrastructure beyond a single EAP server
+  (external brokers, cluster topology) remain out of scope with a
+  reason — the lane provisions exactly one server.
+- The lanes coexist: an application may end up with both `*Test`
+  (in-JVM) and `*IT` (container) suites — plan them as separate
+  inventories with separate verification commands.
+
+Then choose the Citrus version line.
+
 From the Java baseline:
 
 - Java 17 or newer → **Citrus 5.x** (GA, e.g. `5.1.0`); the MCP server's
@@ -108,9 +138,16 @@ services, nothing beyond localhost):
   reason.
 
 Every test must be deterministic and side-effect free. Tests live in
-`src/test/java` following the application's existing package convention,
-named `*Test` (surefire picks them up; do not touch existing `*IT`
-Arquillian tests).
+`src/test/java` following the application's existing package convention.
+Naming follows the lane: `test_kind: test` → `*Test` classes (surefire
+picks them up; do not touch existing `*IT` Arquillian tests);
+`test_kind: it` → `*IT` classes (failsafe picks them up; do not touch
+existing `*Test` classes or other `*IT` machinery such as
+`RESTEndPointIT`). For the container lane, the plan's Dependencies
+section must also include the `citrus-container-tests` Maven profile the
+author stage will create (see the author skill for the verified
+recipe) and the verification command
+`mvn verify -Pcitrus-container-tests`.
 
 ### 5. Write the plan
 

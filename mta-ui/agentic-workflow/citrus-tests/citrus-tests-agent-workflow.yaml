@@ -18,16 +18,20 @@ metadata:
 spec:
   guide: >-
     Add Citrus framework tests to a JEE application. Stage 1 (plan)
-    inventories the application's testable JEE surface, selects the Citrus
-    version compatible with the application's Java baseline, consults the
-    Citrus MCP server's test-action and endpoint catalogs, and writes a
-    structured test plan. Stage 2 (author) adds the test dependencies and
-    implements the planned test classes (in-JVM embedded deployments and
-    Citrus endpoint configurations only - everything must run green under
-    plain mvn test), iterating until green. Stage 3 (verify) re-runs the
-    suite in a fresh sandbox against the committed branch state, confirms
-    the new tests actually executed, and records the verdict. All changes
-    are committed to the run's target branch; src/main is never modified.
+    inventories the application's testable JEE surface, chooses the test
+    lane (in-JVM surefire by default, or a container lane running *IT
+    tests against a JBoss EAP server provisioned from Maven when
+    deployment-time behavior must be proven), selects the Citrus version
+    compatible with the application's Java baseline, consults the Citrus
+    MCP server's test-action and endpoint catalogs, and writes a
+    structured test plan. Stage 2 (author) adds the test dependencies
+    and implements the planned test classes (in-JVM embedded deployments
+    or the container profile - everything must run green), iterating
+    until green. Stage 3 (verify) re-runs the suite in a fresh sandbox
+    against the committed branch state, confirms the new tests actually
+    executed, records the verdict and a JaCoCo coverage report
+    quantifying the coverage the new tests add. All changes are
+    committed to the run's target branch; src/main is never modified.
   params:
     - name: path
       type: string
@@ -47,6 +51,17 @@ spec:
         baked version; other lines are validated by the Maven build, not
         the catalog.
       required: false
+    - name: test_kind
+      type: string
+      description: >-
+        The test lane: "test" (default) for the in-JVM lane (surefire,
+        *Test classes, green under plain mvn test) or "it" for the
+        container lane (failsafe, *IT classes against a JBoss EAP server
+        provisioned from the EAP Galleon feature pack under
+        mvn verify -Pcitrus-container-tests). When empty, the plan stage
+        chooses the lane from the application surface and the task and
+        records the choice with its reason in the plan.
+      required: false
   stages:
     - name: plan
       agentRef: citrus-tests-plan-agent
@@ -58,7 +73,10 @@ spec:
         plan to docs/citrus-test-plan.md at the repository root, grounded in
         the Citrus MCP server's catalog tools. Use the citrus_version
         workflow parameter when set; otherwise derive the version from the
-        application's Java baseline. If the MAVEN_SETTINGS_XML environment
+        application's Java baseline. Use the test_kind workflow parameter
+        ("test" = in-JVM lane, "it" = container lane) when set; otherwise
+        choose the lane per the skill and record the choice with its
+        reason in the plan. If the MAVEN_SETTINGS_XML environment
         variable is set, write its value to /home/harness/.m2/settings.xml
         so Maven uses the custom settings for any build this stage runs.
         Commit the plan and the handoff.
@@ -70,7 +88,9 @@ spec:
         the cloned repository workspace (an empty path means the repository
         root). Implement the tests from docs/citrus-test-plan.md, grounded
         in the Citrus MCP server's catalog and schema tools, and iterate
-        mvn test until the new suite is green. Modify test-side files only
+        the suite until it is green (in-JVM lane: mvn test; container
+        lane: mvn verify -Pcitrus-container-tests, using the skill's
+        verified profile recipe). Modify test-side files only
         (src/test and test-scoped pom changes) - never src/main. If the
         MAVEN_SETTINGS_XML environment variable is set, write its value to
         /home/harness/.m2/settings.xml so Maven uses the custom settings
@@ -81,8 +101,10 @@ spec:
         Load the citrus-test-verify skill and follow its SKILL.md exactly.
         The application's source is located at "$(workflow.path)" within
         the cloned repository workspace (an empty path means the repository
-        root). Run the suite from clean against the committed state,
-        confirm the new tests actually executed (not skipped), fix
+        root). Run the suite from clean against the committed state
+        (in-JVM lane: mvn test with the JaCoCo agent; container lane:
+        mvn verify -Pcitrus-container-tests), confirm the new tests
+        actually executed (not skipped), fix
         test-side defects only, and record the verdict in the ## Verify
         section of .konveyor/handoff.md. If the MAVEN_SETTINGS_XML
         environment variable is set, write its value to

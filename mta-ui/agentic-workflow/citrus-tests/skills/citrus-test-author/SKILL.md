@@ -144,7 +144,180 @@ your target version differs:
   mapping, not the context path) - mirroring the application's
   `@ApplicationPath`.
 
-### 5. Verify and iterate
+### 5. Container lane (`test_kind: it`): the `citrus-container-tests` profile
+
+When the plan chose the container lane, create a
+`citrus-container-tests` Maven profile (test-side pom change) that
+provisions a real JBoss EAP server, deploys the application, and runs
+the planned `*IT` classes via failsafe. The following recipe is
+**verified live end-to-end** (helloworld-rs against EAP 8.1 Update 9.0,
+2/2 ITs green, server-side JaCoCo 100%) — follow it closely; five
+defects were found and fixed during validation:
+
+```xml
+<profile>
+    <id>citrus-container-tests</id>
+    <dependencies>
+        <dependency> <!-- JaCoCo agent jar for the -javaagent opt below -->
+            <groupId>org.jacoco</groupId>
+            <artifactId>org.jacoco.agent</artifactId>
+            <version>0.8.12</version>
+            <classifier>runtime</classifier>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.wildfly.plugins</groupId>
+                <artifactId>wildfly-maven-plugin</artifactId>
+                <!-- reuse the application's managed version; MUST be >= 5.x
+                     (4.x cannot parse the EAP 8.x feature-pack schema 3.0) -->
+                <configuration>
+                    <jbossHome>${project.build.directory}/eap-server</jbossHome>
+                    <channels>
+                        <channel>
+                            <manifest>
+                                <groupId>org.jboss.eap.channels</groupId>
+                                <artifactId>eap-8.1</artifactId> <!-- match the app's EAP BOM line -->
+                            </manifest>
+                        </channel>
+                    </channels>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>provision-server</id>
+                        <phase>pre-integration-test</phase>
+                        <goals><goal>provision</goal></goals>
+                        <configuration>
+                            <!-- provision ignores jbossHome; point it at the
+                                 same dir start/deploy/shutdown read -->
+                            <provisioning-dir>${project.build.directory}/eap-server</provisioning-dir>
+                            <feature-packs>
+                                <feature-pack>
+                                    <location>org.jboss.eap:wildfly-ee-galleon-pack</location>
+                                </feature-pack>
+                            </feature-packs>
+                            <galleon-options>
+                                <jboss-fork-embedded>true</jboss-fork-embedded>
+                            </galleon-options>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>start-server</id>
+                        <phase>pre-integration-test</phase>
+                        <goals><goal>start</goal></goals>
+                        <configuration>
+                            <!-- coverage of the deployed app: the classes run in
+                                 the SERVER JVM, so the agent rides on the server -->
+                            <javaOpts>
+                                <javaOpt>-javaagent:${settings.localRepository}/org/jacoco/org.jacoco.agent/0.8.12/org.jacoco.agent-0.8.12-runtime.jar=destfile=${project.build.directory}/jacoco-it.exec,output=file,append=false</javaOpt>
+                            </javaOpts>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>deploy-app</id>
+                        <phase>pre-integration-test</phase>
+                        <goals><goal>deploy</goal></goals>
+                    </execution>
+                    <execution>
+                        <id>shutdown-server</id>
+                        <phase>post-integration-test</phase>
+                        <goals><goal>shutdown</goal></goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin> <!-- server-side coverage report, verify phase -->
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.12</version>
+                <executions>
+                    <execution>
+                        <id>report-it-coverage</id>
+                        <phase>verify</phase>
+                        <goals><goal>report</goal></goals>
+                        <configuration>
+                            <dataFile>${project.build.directory}/jacoco-it.exec</dataFile>
+                            <outputDirectory>${project.build.directory}/site/jacoco-it</outputDirectory>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <configuration>
+                    <includes> <!-- exactly the planned IT classes -->
+                        <include>**/HelloWorldResourceIT</include>
+                    </includes>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals><goal>integration-test</goal><goal>verify</goal></goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+    <pluginRepositories>
+        <!-- Galleon resolves EAP feature-pack artifacts as PLUGIN dependencies,
+             which do NOT inherit the project's <repositories> -->
+        <pluginRepository>
+            <id>redhat-ga-maven-plugin-repository</id>
+            <url>https://maven.repository.redhat.com/ga/</url>
+            <releases><enabled>true</enabled><updatePolicy>never</updatePolicy></releases>
+            <snapshots><enabled>false</enabled></snapshots>
+        </pluginRepository>
+        <pluginRepository>
+            <id>jboss-public-maven-plugin-repository</id>
+            <url>https://repository.jboss.org/nexus/content/groups/public/</url>
+            <releases><enabled>true</enabled><updatePolicy>never</updatePolicy></releases>
+            <snapshots><enabled>false</enabled></snapshots>
+        </pluginRepository>
+    </pluginRepositories>
+</profile>
+```
+
+The verified pitfalls, in the order they bite:
+
+- **Plugin version ≥ 5.x** — 4.x fails provisioning with
+  `Failed to parse /feature-pack.xml ... unexpected content: element
+  start{urn:jboss:galleon:feature-pack:3.0}`. Prefer the application's
+  managed `wildfly-maven-plugin` version (the EAP quickstarts manage
+  5.1.x); do not pin your own.
+- **`<channels>` is the resolver** — EAP 8.x artifacts are not all on
+  `redhat-ga` (e.g. `org.wildfly.core:wildfly-elytron-tool-wrapper`
+  404s); the channel manifest
+  (`org.jboss.eap.channels:eap-8.1`, matching the application's EAP BOM
+  line) tells Galleon where every artifact lives. Mirror the
+  application's own `eap-maven-plugin` channel config if present.
+- **`<pluginRepositories>` in the profile** — without them, resolution
+  fails with `Could not find artifact ... in central`.
+- **`provisioning-dir` mirrors `jbossHome`** — the `provision` goal
+  ignores `jbossHome` and defaults to `target/server`, leaving
+  `start` with `JBOSS_HOME ... is not a valid directory`.
+- **Failed resolutions are cached** (`*.lastUpdated` markers) — after
+  fixing a repository problem, re-run with `-U` or the build keeps
+  failing from cache.
+
+IT-class mechanics for this lane (differ from the in-JVM lane):
+
+- the test class owns **no server lifecycle** — no embedded deployment,
+  no `@BeforeAll` server start; the profile did provision/start/deploy.
+  Drive the deployed application with a Citrus `http` client at
+  `http://localhost:8080/<finalName>` (make the base URL a
+  `server.url` system property with a default);
+- the context path is the WAR `finalName` (default: artifactId) plus
+  the `@ApplicationPath` prefix;
+- activating the profile explicitly (`mvn verify
+  -Pcitrus-container-tests`) deactivates the quickstarts'
+  `activeByDefault` `provisioned-server` profile automatically — do
+  not try to neutralize it another way;
+- keep failsafe `<includes>` exactly the planned `*IT` classes; the
+  quickstarts' pre-existing `RESTEndPointIT` (JUnit 4, needs
+  SERVER_HOST env and an external server) must not be picked up.
+
+### 6. Verify and iterate
 
 Run the plan's verification command (e.g. `mvn -pl <module> test`) from
 the application path. Iterate until the new tests pass:
@@ -160,7 +333,7 @@ the application path. Iterate until the new tests pass:
   classes; existing tests keep passing (if a new test breaks an existing
   one, the new test is wrong - fix or drop it).
 
-### 6. Hand off
+### 7. Hand off
 
 Append an `## Author` section to `.konveyor/handoff.md`: tests added
 (class list), dependencies added, `mvn test` result (counts), deviations

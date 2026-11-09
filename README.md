@@ -1724,6 +1724,42 @@ instruction coverage of the application classes. Coverage is reported,
 not gated: the workflow's gap accounting stays element-based (the plan's
 inventory), with JaCoCo as the quantitative fifth net.
 
+### The container lane: in-container tests against JBoss EAP
+
+Beyond the default in-JVM lane, the workflow supports a **container
+lane** (`test_kind: it`): the author stage creates a
+`citrus-container-tests` Maven profile that provisions a **real JBoss
+EAP server from the EAP Galleon feature pack**
+(`wildfly-maven-plugin` provision → start → deploy around failsafe,
+server shutdown in `post-integration-test`), and the planned `*IT`
+classes drive the deployed application with Citrus `http` clients. The
+verify stage runs `mvn verify -Pcitrus-container-tests` and reads the
+failsafe reports. Choose the lane when the plan must prove
+deployment-time behavior an embedded deployment cannot honor
+(container-managed `@ApplicationPath` handling, servlet mappings,
+container services); the lane provisions exactly one server, so
+anything needing infrastructure beyond it remains out of scope with a
+reason.
+
+The container-lane recipe was validated live end-to-end on
+`helloworld-rs` against **EAP 8.1 Update 9.0** (provisioned from
+`org.jboss.eap:wildfly-ee-galleon-pack` via the
+`org.jboss.eap.channels:eap-8.1` channel manifest): 2/2 Citrus ITs
+green, server-side JaCoCo reporting 100% instruction coverage of the
+deployed application. Five defects surfaced and are encoded in the
+author skill: wildfly-maven-plugin must be ≥ 5.x (4.x cannot parse the
+EAP feature-pack schema 3.0); Galleon resolves feature-pack artifacts
+as *plugin* dependencies, so the profile needs its own
+`<pluginRepositories>`; the EAP channel manifest is the real artifact
+resolver (several EAP artifacts are not on `redhat-ga`); the `provision`
+goal ignores `jbossHome` (mirror it with `provisioning-dir`); and Maven
+caches failed resolutions, so retries after a repository fix need `-U`.
+Coverage in this lane works differently: the JaCoCo agent rides on the
+**server's** JVM (`-javaagent` via the `start` goal), the exec file is
+flushed on server shutdown, and `jacoco:report` runs in the `verify`
+phase — the verify skill documents the lane-specific report path and
+baseline exclusion.
+
 Two lessons from the validated run (a full plan → author → verify cycle on
 `helloworld-rs`, 3/3 tests green, re-verified in a local dry run of the
 same skills):
