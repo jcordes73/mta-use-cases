@@ -278,6 +278,39 @@ during validation, so follow the pattern closely:
    (`import.sql`-style fixtures load at EMF creation) in a
    `@BeforeEach`/startup step, or the "empty list" test sees other tests'
    rows.
+9. **Weld 5 API and bootstrap mechanics** (all found live in a fresh
+   sandbox):
+   - `addAlternative(...)` alone is NOT enough under `disableDiscovery()`
+     — it only marks the class as an enabled alternative; the class must
+     ALSO be registered via `addPackage`/`addBeanClasses`, or its
+     producers stay invisible (`WELD-001408` on Logger/EntityManager);
+   - `WeldContainer.instance()` is gone in Weld 5 — use
+     `(WeldContainer) CDI.current()`;
+   - RESTEasy 6.2 moved `ResteasyDeploymentImpl` to
+     `org.jboss.resteasy.core` (the `org.jboss.resteasy.spi` import is
+     the 5.x location);
+   - **client-proxy laziness**: a bean obtained via
+     `container.select(...).get()` returns the client proxy without
+     running its `@PostConstruct` — if the test's EMF bootstrap lives in
+     a `@PostConstruct`, the persistence unit is never created and the
+     first query dies with `Table ... not found`. Force an eager probe
+     invocation on the bean in `@BeforeAll` (e.g. call an `isReady()`
+     method) or bootstrap the EMF from a static initializer.
+10. **`hibernate-core` scope vs `hibernate-jpamodelgen`** (found live in
+   a fresh sandbox; the quickstarts carry the jpamodelgen annotation
+   processor at provided scope): declaring `org.hibernate.orm:
+   hibernate-core` test-scoped wins Maven nearest-wins mediation over the
+   *provided-scope transitive* from `hibernate-jpamodelgen` — which
+   removes hibernate-core from the **main-compile** classpath and crashes
+   the processor with `NoClassDefFoundError:
+   ...ArrayHelper` in `HibernateProcessor.init`. The failure is
+   **cold-compile only** — a warm `target/classes` masks it, so it looks
+   transient. Do NOT declare hibernate-core test-scoped in these repos:
+   rely on the provided transitive (provided scope is test-classpath-
+   visible, so tests see it). Related rule for the fast inner loop:
+   after touching provided/transitive dependencies, run one **clean**
+   compile before trusting a green incremental loop. The doctor's
+   `deps` mode checks this pom shape.
 
 ### 5. Container lane (`test_kind: it`): the `citrus-container-tests` profile
 

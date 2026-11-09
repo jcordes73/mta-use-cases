@@ -80,6 +80,12 @@ deviations):
 - Container lane: plugin-version floor, pluginRepositories, channel
   manifest, `provisioning-dir` mirror, failed-resolution caching
   (five defects in one dry run)
+- Data-backed REST cluster run (`citrus-kitchensink-gc492`, verified,
+  6/6, 0% → 53.3% instruction): jpamodelgen/hibernate-core
+  nearest-wins scope crash (cold compiles only — now a doctor `deps`
+  check + recipe), Weld 5 client-proxy laziness vs `@PostConstruct` PU
+  bootstrap, `addAlternative()` needing `addBeanClasses()` (three
+  defects the local warm run could not surface)
 
 The pattern: a skill edit is only trustworthy once a dry run executed
 the edited text end-to-end. Never rebuild the image from unedited

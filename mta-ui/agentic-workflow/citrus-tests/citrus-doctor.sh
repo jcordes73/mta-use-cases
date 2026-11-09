@@ -163,7 +163,18 @@ if [ "$mode" = "deps" ]; then
         else
             PASS "jackson-annotations ${ja_resolved:-<none>} compatible with Citrus 5"
         fi
-        # 8. JUnit 5 engine for the Citrus Jupiter runtime
+    # 7b. hibernate-core declared test-scoped while hibernate-jpamodelgen is
+    #     provided: nearest-wins removes hibernate-core from the MAIN-compile
+    #     classpath and crashes the annotation processor on COLD compiles
+    #     (NoClassDefFoundError ArrayHelper) - warm target/classes masks it.
+    if printf '%s\n' "$deps" | grep -q "org\.hibernate\.orm:hibernate-jpamodelgen" && \
+       grep -A4 "<artifactId>hibernate-core</artifactId>" $poms 2>/dev/null | grep -q "<scope>test</scope>"; then
+        FAIL "hibernate-core declared test-scoped while hibernate-jpamodelgen is provided - nearest-wins mediation removes hibernate-core from the main-compile classpath and crashes HibernateProcessor on cold compiles (NoClassDefFoundError ArrayHelper); drop the test-scoped declaration and rely on the provided transitive (visible on the test classpath)"
+    else
+        PASS "hibernate-core/jpamodelgen scope shape OK"
+    fi
+
+    # 8. JUnit 5 engine for the Citrus Jupiter runtime
         if printf '%s\n' "$deps" | grep -q "junit-jupiter-engine"; then
             PASS "junit-jupiter-engine on the test classpath"
         else

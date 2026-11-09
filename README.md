@@ -1827,6 +1827,21 @@ inside JSON payloads must be asserted with JSON-path validation
 (`citrus-validation-json`; the element-wise JSON validator ignores
 plain-text matchers on whole payloads).
 
+The recipe then survived its first **autonomous** cluster run
+(`citrus-kitchensink-gc492`, plan 34m / author 30m / verify 10m —
+`Verdict: verified`, 6/6 tests, 0% → 53.3% instruction / 71.4% branch
+coverage, repository + service layers at 100%). The run's new
+`Iterations`/`Pitfalls hit` handoff fields measured the loop (12 mvn
+runs, 6 failed — all cleanly diagnosed) and surfaced three pitfalls the
+warm local dry run could not: the jpamodelgen/hibernate-core nearest-
+wins scope crash (now a doctor `deps` check + recipe item), Weld 5
+client-proxy laziness (`container.select(...).get()` never runs
+`@PostConstruct` — the test PU must be bootstrapped eagerly), and
+`addAlternative()` requiring an explicit `addBeanClasses()` under
+`disableDiscovery()`. The doctor's pre-flight also fired in every
+sandbox (dead Squid proxy) and its `deps` mode caught the jandex and
+jackson conflicts before any test boot.
+
 ## Developer-Infused Migration Using OpenShift Dev Spaces and the MTA Plugin
 
 While the [MTA UI](#automated-migration-using-the-mta-ui) covers the automated, portfolio-wide migration, developers can drive the migration of their individual applications themselves from within their IDE. **OpenShift Dev Spaces** provides Kubernetes-based cloud development environments and is installed on the OpenShift Container Platform using the OpenShift Dev Spaces Operator via OperatorHub. The **MTA plugin** (Visual Studio Code extension) then brings inline analysis, remediation hints, and AI-assisted code refactoring (Developer Lightspeed) into the editor, backed by the MTA Hub and Solution Server deployed in the [automated migration](#automated-migration-using-the-mta-ui) part.
