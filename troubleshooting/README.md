@@ -35,7 +35,67 @@ re-applied after a cluster rebuild.
 
 To check the current configuration, query the Admin REST API from the
 `mta-ui` pod (the Keycloak pod has no `curl`, and `kcadm.sh --insecure` does
-not bypass the PKIX trust check for the self-signed serving cert):
+not bypass the PKIX trust check for the self-signed serving cert). Note that
+at the point of the guide where this fix is needed (right after the Keycloak
+realm import) the MTA stack is not deployed yet — there is no `mta-ui`
+deployment to exec into. Run the same calls from a throwaway helper pod in
+the namespace instead (either variant below works; the Keycloak service DNS
+name is reachable from any pod in the cluster):
+
+```bash
+KC_PASS=$(oc get secret mta-keycloak-rhbk -n openshift-mta -o jsonpath='{.data.password}' | base64 -d)
+oc delete pod kc-profile-fix -n openshift-mta --ignore-not-found
+oc run kc-profile-fix --rm -i --restart=Never -n openshift-mta \
+  --env="KC_PASS=$KC_PASS" \
+  --image=curlimages/curl:latest --command -- sh -c '
+TOKEN=$(curl -sk https://mta-rhbk-service.openshift-mta.svc:8443/auth/realms/master/protocol/openid-connect/token \
+  -d grant_type=password -d client_id=admin-cli -d username=admin -d password="$KC_PASS" \
+  | sed -n "s/.*\"access_token\":\"\([^\"]*\)\".*/\1/p")
+curl -sk -H "Authorization: Bearer $TOKEN" \
+  "https://mta-rhbk-service.openshift-mta.svc:8443/auth/admin/realms/mta/users/profile"'
+```
+
+```bash
+KC_PASS=$(oc get secret mta-keycloak-rhbk -n openshift-mta -o jsonpath='{.data.password}' | base64 -d)
+oc delete pod kc-profile-fix -n openshift-mta --ignore-not-found
+oc run kc-profile-fix --rm -i --restart=Never -n openshift-mta \
+  --env="KC_PASS=$KC_PASS" \
+  --image=quay.io/konveyor/agent-java:latest --command -- python3 -c '
+import json, os, ssl, urllib.request
+CTX = ssl.create_default_context(); CTX.check_hostname=False; CTX.verify_mode=ssl.CERT_NONE
+KC = "https://mta-rhbk-service.openshift-mta.svc:8443/auth"
+
+def token():
+    data = "&".join(f"{k}={v}" for k, v in dict(grant_type="password", client_id="admin-cli",
+        username="admin", password=os.environ["KC_PASS"]).items()).encode()
+    with urllib.request.urlopen(KC + "/realms/master/protocol/openid-connect/token", data=data, context=CTX) as r:
+        return json.loads(r.read())["access_token"]
+
+t = token()
+req = urllib.request.Request(KC + "/admin/realms/mta/users/profile", headers={"Authorization": "Bearer " + t})
+with urllib.request.urlopen(req, context=CTX) as r:
+    profile = json.loads(r.read())
+
+for a in profile["attributes"]:
+    if a["name"] in ("firstName", "lastName") and "required" in a:
+        del a["required"]
+
+req = urllib.request.Request(KC + "/admin/realms/mta/users/profile", method="PUT",
+    data=json.dumps(profile).encode(),
+    headers={"Authorization": "Bearer " + t, "Content-Type": "application/json"})
+with urllib.request.urlopen(req, context=CTX) as r:
+    print("PUT:", r.status)
+' 2>&1 | grep -vE "^(pod|If you don|Warning)"
+```
+
+Once the MTA stack is deployed (`deploy/mta-ui` exists), the exec-based
+variant below does the same without a helper pod. Beware of hand-rolled
+`sed` rewrites of the profile JSON: the field order in the response puts
+`required` after `validations`/`permissions`, so a pattern anchored to
+`"name":"firstName","required"` silently matches nothing and the `PUT`
+writes the config back unchanged (observed live) — parse it properly with
+`jq`/`python` as below. To check the current configuration from the
+`mta-ui` pod:
 
 ```bash
 KC_PASS=$(oc get secret mta-keycloak-rhbk -n openshift-mta -o jsonpath='{.data.password}' | base64 -d)

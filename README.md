@@ -559,13 +559,14 @@ MTA 8.3 provides automated analysis, assessment, and refactoring tooling for app
     oc get infrastructure cluster -o jsonpath='{.status.platformStatus.type}{"\n"}'
     ```
 
-    On **AWS** the shipped manifests work as-is (3 OSDs × 512Gi on `gp3-csi`, portable across the worker nodes). Label the workers so the ODF scheduler can place Ceph on them, install the pinned ODF operator, create the StorageCluster, and wait for the storage class to appear (~15-20 minutes):
+    On **AWS** the shipped manifests work as-is (3 OSDs × 512Gi on `gp3-csi`, portable across the worker nodes). Label the workers so the ODF scheduler can place Ceph on them, install the pinned ODF operator, create the StorageCluster, and wait for the storage class to appear (~15-20 minutes). Note that the first `oc apply` of the StorageCluster can fail with `error: unable to recognize ... ensure CRDs are installed first` — the `odf-operator` CSV only finishes installing the OCS CRDs (including `storageclusters.ocs.openshift.io`) after it reports `Succeeded`, and the apply can race against that. Verify the CRD exists and re-apply if needed:
 
     ```bash
     oc label nodes -l node-role.kubernetes.io/worker cluster.ocs.openshift.io/openshift-storage="" --overwrite
     oc apply -f storage/odf-subscription.yaml
     oc wait --for=create csv odf-operator.v4.22.7-rhodf -n openshift-storage --timeout=900s
     oc wait --for=jsonpath='{.status.phase}'=Succeeded csv odf-operator.v4.22.7-rhodf -n openshift-storage --timeout=900s
+    until oc get crd storageclusters.ocs.openshift.io > /dev/null 2>&1; do sleep 10; done
     oc apply -f storage/storage-cluster.yaml
     oc wait --for=create sc ocs-storagecluster-cephfs --timeout=1800s
     export STORAGECLASS_RWX=ocs-storagecluster-cephfs
@@ -1049,7 +1050,7 @@ To use it, create an assessment for an application or archetype in the `Assessme
 
 ##### Create an Archetype
 
-An **archetype** groups applications that share common characteristics — determined by *criteria tags* the applications must carry — and lets you configure the group once instead of per application: analyses and assessments can be created for the archetype and apply to all its member applications, the archetype links stakeholders and stakeholder groups (which assessments inherit), its *target profiles* reference the analysis profiles that apply to the group, and its *review* (the recorded migration decision) is inherited by all member applications. The following example creates an archetype for the EAP 7 → 8 migration, with the `JBoss EAP` tag (id 427, applied to every quickstart during analysis) as the criteria tag, the existing stakeholder and stakeholder group, and a target profile referencing the analysis profile from [Define an Analysis Profile](#define-an-analysis-profile):
+An **archetype** groups applications that share common characteristics — determined by *criteria tags* the applications must carry — and lets you configure the group once instead of per application: analyses and assessments can be created for the archetype and apply to all its member applications, the archetype links stakeholders and stakeholder groups (which assessments inherit), its *target profiles* reference the analysis profiles that apply to the group, and its *review* (the recorded migration decision) is inherited by all member applications. The following example creates an archetype for the EAP 7 → 8 migration, with the `JBoss EAP` tag (id 427) as the criteria tag, the existing stakeholder and stakeholder group, and a target profile referencing the analysis profile from [Define an Analysis Profile](#define-an-analysis-profile). On this portfolio the tag exists already because the application import carries it: the CSV's `Tag 2` column (`Runtime` category) creates the `JBoss EAP` tag and applies it to all 123 applications during the import (verify the id with `curl -s "${MTA_URL}/hub/tags" -u admin:admin | jq '.[] | select(.name=="JBoss EAP") | .id'` and substitute it) — applications can also pick the tag up from analysis findings, which is what the archetype description below anticipates:
 
 ```bash
 curl -s -X POST "${MTA_URL}/hub/archetypes" \
@@ -1066,7 +1067,7 @@ curl -s -X POST "${MTA_URL}/hub/archetypes" \
   }'
 ```
 
-The POST returns `201 Created` with the archetype — note that the response's `applications` array already lists every application matching the criteria tags (all 123 here), and re-running the POST creates a second copy rather than a conflict, so check for an existing copy first. Verify with `GET /hub/archetypes`:
+The POST returns `201 Created` with the archetype — note that the response's `applications` array already lists every application matching the criteria tags (all 123 here, via the tags the import created), and re-running the POST creates a second copy rather than a conflict, so check for an existing copy first. Verify with `GET /hub/archetypes`:
 
 ```bash
 curl -s "${MTA_URL}/hub/archetypes" -u admin:admin | jq -r '.[] | "\(.id): \(.name) — criteria: \([.criteria[].name] | join(", ")) — \(.applications | length) applications"'
@@ -1171,28 +1172,31 @@ curl -s -X POST "${MTA_URL}/hub/migrationwaves" \
   }'
 ```
 
-The POST returns `201 Created` with the wave (id 1 here). Assign applications via a full-object `PUT /hub/migrationwaves/{id}` — the Hub sets each application's `migrationWave` back-link automatically:
+The POST returns `201 Created` with the wave (id 1 here). Assign applications via a full-object `PUT /hub/migrationwaves/{id}` — the Hub sets each application's `migrationWave` back-link automatically. The application id is DB-generated and differs per cluster (on a fresh import `helloworld` is id 1), so look it up by name instead of hardcoding it:
 
 ```bash
+APP_ID=$(curl -s "${MTA_URL}/hub/applications" -u admin:admin \
+  | jq -r '.[] | select(.name=="helloworld") | .id')
+
 curl -s -X PUT "${MTA_URL}/hub/migrationwaves/1" \
   -H "Content-Type: application/json" \
   -u admin:admin \
-  -d '{
-    "id": 1,
-    "name": "EAP 8 Wave 1",
-    "startDate": "2026-11-02T00:00:00Z",
-    "endDate": "2026-12-18T00:00:00Z",
-    "stakeholders": [{"id": 1, "name": "John Doe"}],
-    "stakeholderGroups": [{"id": 1, "name": "JBoss EAP Quickstarts"}],
-    "applications": [{"id": 124, "name": "helloworld"}]
-  }'
+  -d "{
+    \"id\": 1,
+    \"name\": \"EAP 8 Wave 1\",
+    \"startDate\": \"2026-11-02T00:00:00Z\",
+    \"endDate\": \"2026-12-18T00:00:00Z\",
+    \"stakeholders\": [{\"id\": 1, \"name\": \"John Doe\"}],
+    \"stakeholderGroups\": [{\"id\": 1, \"name\": \"JBoss EAP Quickstarts\"}],
+    \"applications\": [{\"id\": ${APP_ID}, \"name\": \"helloworld\"}]
+  }"
 ```
 
 Verify that the application is linked:
 
 ```bash
-curl -s "${MTA_URL}/hub/applications/124" -u admin:admin | jq -c '{id, name, migrationWave}'
-# {"id":124,"name":"helloworld","migrationWave":{"id":1,"name":"EAP 8 Wave 1"}}
+curl -s "${MTA_URL}/hub/applications/${APP_ID}" -u admin:admin | jq -c '{id, name, migrationWave}'
+# {"id":1,"name":"helloworld","migrationWave":{"id":1,"name":"EAP 8 Wave 1"}}
 ```
 
 Applications can also be assigned in bulk: retrieve the ids to add (e.g. via `GET /hub/applications` filtered by the archetype's criteria tags) and send them all in the wave's `applications` array. `DELETE /hub/migrationwaves/{id}` removes the wave and clears the assigned applications' `migrationWave` links.
@@ -1370,6 +1374,8 @@ Unlike the git push credentials, which the harness resolves from the application
 
 #### Spring Boot to Quarkus
 
+> The `new-build --dockerfile="-"` pattern below reads the Containerfile from stdin and auto-triggers a first build that **fails** (`DockerBuildFailed`) because it has no binary input yet — that build can be ignored (or deleted with `oc delete build <name>-1`); the subsequent `oc start-build --from-dir` (build 2) is the one that produces the image.
+
 ```bash
 oc new-build --name mta-spring-boot-to-quarkus-skills -n openshift-mta \
   --dockerfile="-" < mta-ui/agentic-workflow/spring-boot-to-quarkus/agents/skills/spring-boot-to-quarkus/Containerfile
@@ -1388,6 +1394,8 @@ oc apply -f mta-ui/agentic-workflow/spring-boot-to-quarkus/spring-boot-to-quarku
 
 #### Apache Ant to Apache Maven
 
+> As with [Spring Boot to Quarkus](#spring-boot-to-quarkus), the auto-triggered first build fails and is superseded by the `oc start-build` build.
+
 ```bash
 oc new-build --name mta-ant-to-maven-skills -n openshift-mta \
   --dockerfile="-" < mta-ui/agentic-workflow/ant-to-maven/agents/skills/ant-to-maven/Containerfile
@@ -1398,8 +1406,8 @@ oc start-build mta-ant-to-maven-skills -n openshift-mta \
 oc apply -f mta-ui/agentic-workflow/ant-to-maven/agents/skills/ant-to-maven/ant-to-maven-skillcard.yaml
 
 oc apply -f mta-ui/agentic-workflow/ant-to-maven/agents/ant-to-maven-plan-agent.yaml
-oc apply -f mta-ui/agentic-workflow/ant-to-maven/ant-to-maven-execute-agent.yaml
-oc apply -f mta-ui/agentic-workflow/ant-to-maven/ant-to-maven-verify-agent.yaml
+oc apply -f mta-ui/agentic-workflow/ant-to-maven/agents/ant-to-maven-execute-agent.yaml
+oc apply -f mta-ui/agentic-workflow/ant-to-maven/agents/ant-to-maven-verify-agent.yaml
 
 oc apply -f mta-ui/agentic-workflow/ant-to-maven/ant-to-maven-agent-workflow.yaml
 ```
@@ -1502,6 +1510,47 @@ oc exec deploy/mta-ui -n openshift-mta -- curl -s -u admin:admin \
   "http://mta-hub.openshift-mta.svc:8080/applications/<app-id>/analyses" | jq .
 ```
 
+#### Application dependency map (portfolio interdependencies)
+
+The `app-dependency-map` workflow maps **inter-application dependencies
+across the whole portfolio** and records them in the Hub's
+application-dependency graph (`POST /dependencies {"from": {"id": A},
+"to": {"id": B}}` — the model the UI's application dependency views and
+migration-wave planning use). It is a standalone agent/workflow pair in
+`mta-ui/agentic-workflow/app-dependency-map/` (own image
+`mta-app-dependency-map-agent`, no MCP servers — the mapping is
+deterministic code plus Hub REST):
+
+```bash
+oc new-build --name mta-app-dependency-map-agent --strategy=docker --binary -n openshift-mta
+oc patch bc mta-app-dependency-map-agent -n openshift-mta --type=json \
+  -p='[{"op":"add","path":"/spec/strategy/dockerStrategy/dockerfilePath","value":"Containerfile"}]'
+oc start-build mta-app-dependency-map-agent -n openshift-mta \
+  --from-dir=mta-ui/agentic-workflow/app-dependency-map --follow
+oc apply -f mta-ui/agentic-workflow/app-dependency-map/skills/app-dependency-map-skillcards.yaml
+oc apply -f mta-ui/agentic-workflow/app-dependency-map/skills/app-dependency-map-skillcollection.yaml
+oc apply -f mta-ui/agentic-workflow/app-dependency-map/app-dependency-map-agent.yaml
+oc apply -f mta-ui/agentic-workflow/app-dependency-map/app-dependency-map-workflow.yaml
+```
+
+The `app-dependency-map.py` mapper (baked to `/usr/local/bin/`) enumerates
+the Hub's applications (`GET /applications`), resolves each application's
+Maven coordinates from its `pom.xml` in the workspace (located via the
+Hub record's `repository.path`), matches every pom's `<dependencies>`
+against the other applications' coordinates (EAR aggregators and their
+modules fall out naturally), and reconciles the Hub's dependency graph:
+create missing edges (`--apply`), keep existing ones (idempotent — the
+static analyzer may already have created edges), and only prune stale
+edges on explicit user request, and only those created by the same Hub
+user (`GET /auth/self`). The model orchestrates and sanity-checks
+(aggregator-pom tooling dependencies are the known false-positive class)
+but never hand-writes edges. Launch the workflow from the MTA UI on an
+application whose repository is the monorepo holding the portfolio's
+sources (e.g. the quickstarts) — the optional `dry-run` parameter
+computes and reports the map without writing to the Hub. Applications
+whose sources are not in the workspace are skipped and reported as the
+map's coverage boundary.
+
 ## Developer-Infused Migration Using OpenShift Dev Spaces and the MTA Plugin
 
 While the [MTA UI](#automated-migration-using-the-mta-ui) covers the automated, portfolio-wide migration, developers can drive the migration of their individual applications themselves from within their IDE. **OpenShift Dev Spaces** provides Kubernetes-based cloud development environments and is installed on the OpenShift Container Platform using the OpenShift Dev Spaces Operator via OperatorHub. The **MTA plugin** (Visual Studio Code extension) then brings inline analysis, remediation hints, and AI-assisted code refactoring (Developer Lightspeed) into the editor, backed by the MTA Hub and Solution Server deployed in the [automated migration](#automated-migration-using-the-mta-ui) part.
@@ -1541,9 +1590,9 @@ While the [MTA UI](#automated-migration-using-the-mta-ui) covers the automated, 
 
 #### Extension marketplace configuration
 
-The editor's extension gallery (the `Extensions` view used to install the MTA plugin) is served from an **Open VSX registry** — by default the **embedded instance** in the `plugin-registry` pod, which contains only a curated subset of the extensions published on the public `open-vsx.org` registry (chosen to support air-gapped and proxy-restricted environments). Note that the Microsoft VS Code Marketplace is not supported in Dev Spaces due to Microsoft's Terms of Use — Open VSX is the supported gallery.
+The editor's extension gallery (the `Extensions` view used to install the MTA plugin) is served from an **Open VSX registry** — the embedded instance contains only a curated subset of the extensions published on the public `open-vsx.org` registry (chosen to support air-gapped and proxy-restricted environments; on Dev Spaces 3.31 the embedded registry is no longer deployed as a separate `plugin-registry` pod, so with the default configuration the gallery has no entries until it is switched to the public registry below). Note that the Microsoft VS Code Marketplace is not supported in Dev Spaces due to Microsoft's Terms of Use — Open VSX is the supported gallery.
 
-The deployed configuration switches the gallery to the **public Open VSX registry** via the `pluginRegistry.openVSXURL` field of the CheCluster custom resource (see `devspaces/che-cluster.yaml`) — the pod restarts and serves extensions from `open-vsx.org` instead of the curated subset:
+The deployed configuration switches the gallery to the **public Open VSX registry** via the `pluginRegistry.openVSXURL` field of the CheCluster custom resource (see `devspaces/che-cluster.yaml`), so extensions install from `open-vsx.org`:
 
 ```yaml
 spec:
@@ -1552,7 +1601,7 @@ spec:
       openVSXURL: https://open-vsx.org
 ```
 
-Set `openVSXURL: ''` to switch back to the embedded curated registry. The editor queries exactly **one** Open VSX endpoint at a time, so this is either/or — the embedded registry stays deployed but is no longer the gallery. In the disconnected environment the `open-vsx.org` traffic goes through the Squid proxy, which already allowlists it. Two caveats: the gallery's extension installs are fetched by the **workspaces** (whose proxy environment variables must cover `open-vsx.org` — the [Squid allowlist](#squid-proxy-deployment-disconnected-environments) does), and the [factory devfile fetch](#squid-proxy-deployment-disconnected-environments) additionally needs `raw.githubusercontent.com`. If full control over the catalog is required instead (strictly air-gapped), a standalone Open VSX registry can be deployed in-cluster via `spec.components.openVSXRegistry.enable: true` and extensions published manually from `.vsix` files.
+Set `openVSXURL: ''` to switch back to the embedded curated registry. The editor queries exactly **one** Open VSX endpoint at a time, so this is either/or. In the disconnected environment the `open-vsx.org` traffic goes through the Squid proxy, which already allowlists it. Two caveats: the gallery's extension installs are fetched by the **workspaces** (whose proxy environment variables must cover `open-vsx.org` — the [Squid allowlist](#squid-proxy-deployment-disconnected-environments) does), and the [factory devfile fetch](#squid-proxy-deployment-disconnected-environments) additionally needs `raw.githubusercontent.com`. If full control over the catalog is required instead (strictly air-gapped), a standalone Open VSX registry can be deployed in-cluster via `spec.components.openVSXRegistry.enable: true` and extensions published manually from `.vsix` files.
 
 #### Devfile registry
 
