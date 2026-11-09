@@ -188,6 +188,24 @@ services, nothing beyond localhost):
   servlet filters) - do not fake them; list them as out of scope with the
   reason.
 
+**Validation contract (mandatory per test row)** - a Citrus `receive`
+without message validation passes on *any* response, and a simulation
+that responds without validating the incoming request accepts anything:
+a green suite with such actions proves nothing. Every inventory row must
+therefore name its validation points explicitly:
+
+- for **client-side tests**: the request aspects sent (method, path,
+  body, `Accept`/`Content-Type`) and the response aspects **validated**
+  - status, body value or fragment, `Content-Type`, other headers. The
+  author stage may validate more than planned, never less;
+- for **simulations**: the request aspects the simulation
+  **validates on receipt** before responding (the point of the
+  simulation is to assert what the application actually sends);
+- mark deliberately-loose validations as such (e.g.
+  `@contains('...')@` for a body with volatile fields, `@ignore()` for
+  timestamps) with the reason - looseness is a plan decision, not an
+  author shortcut.
+
 Every test must be deterministic and side-effect free. Tests live in
 `src/test/java` following the application's existing package convention.
 Naming follows the lane: `test_kind: test` → `*Test` classes (surefire

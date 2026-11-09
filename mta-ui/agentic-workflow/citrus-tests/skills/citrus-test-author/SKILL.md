@@ -116,7 +116,17 @@ For each row of the plan's test inventory:
 - keep the application code under test executing **in-process** (in-JVM
   deployment, as here): the verify stage measures coverage with the
   JaCoCo agent attached to the surefire JVM, so code exercised in a
-  forked JVM or external server is invisible to the report.
+  forked JVM or external server is invisible to the report;
+- **validate what the plan's validation contract names - never less**:
+  every `receive` action MUST carry a `.message()` block with at least
+  the planned status, body and header validations. A `receive` without
+  a `.message()` block passes on *any* response - it is not a test and
+  must not be committed. Likewise a simulation server MUST validate the
+  incoming request (body/headers per plan) in its `receive` before
+  `send`ing the scripted response - responding unconditionally proves
+  nothing about what the application sends. You may validate more than
+  planned; weakening below the plan is the verify stage's definition of
+  a defect.
 
 DSL mechanics verified live on Citrus 5.1.0 - check the catalog/docs when
 your target version differs:

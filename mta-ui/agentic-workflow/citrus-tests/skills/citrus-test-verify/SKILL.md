@@ -23,9 +23,18 @@ modify `src/main/`.
 Read `docs/citrus-test-plan.md` and the `## Plan` / `## Author` sections of
 `.konveyor/handoff.md`. Diff the committed state against the plan's test
 inventory: every planned test class present? dependencies added as
-planned? If the author stage deviated, treat the handoff's reasons as
-authoritative unless they contradict the plan's invariants (deterministic,
-green, surefire-run).
+planned? **validation points implemented as contracted?** - check the
+committed test sources for the plan's validation contract: every
+`receive` action carries a `.message()` block with the planned status,
+body and header validations, and simulation servers validate the
+incoming request before responding. A `receive` without message
+validation passes on any response - a green suite built on such actions
+is **vacuous**, and vacuous-green is treated exactly like a failing
+test: fix it (restore the planned validations, test-side) or record it
+as an exception in the verdict. If the author stage deviated, treat the
+handoff's reasons as authoritative unless they contradict the plan's
+invariants (deterministic, green, surefire-run) or weaken a planned
+validation.
 
 If the `MAVEN_SETTINGS_XML` environment variable is set, write its value
 to `/home/harness/.m2/settings.xml` before any Maven call. If it is unset,
