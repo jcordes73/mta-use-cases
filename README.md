@@ -1501,7 +1501,41 @@ manifest YAML. Reporting is skipped when no token file was provisioned
 (standalone runs). Hub tokens are minted with hub **Basic auth**
 (`POST /auth/tokens -u admin:admin`) — the hub is its own OIDC provider and
 rejects Keycloak JWTs. Launch the workflow from the MTA UI with the
-application's repository path in the `path` parameter; verify with:
+application's repository path in the `path` parameter, or via the Hub REST
+API as with the migration workflow — note that the harness requires the
+`APP_ID` and `TARGET_BRANCH` environment variables on every run (the UI
+supplies `TARGET_BRANCH` from its `konveyor/migration-<timestamp>` default,
+a REST launch must set both explicitly), and workflow parameters travel as
+the `params` array of `{name, value}` objects (verified live: a run without
+`TARGET_BRANCH` fails with `config: required env var TARGET_BRANCH is not
+set`, and one without `APP_ID` fails the same way before any stage starts):
+
+```bash
+APP_ID=$(curl -s "${MTA_URL}/hub/applications" -u admin:admin \
+  | jq -r '.[] | select(.name=="helloworld") | .id')
+
+curl -s -X POST "${MTA_URL}/hub/agentic/workflowruns" \
+  -u admin:admin -H "Content-Type: application/json" \
+  --data @- <<EOF
+{
+  "metadata": {
+    "generateName": "api-rhda-",
+    "labels": {"konveyor.io/application": "${APP_ID}"}
+  },
+  "spec": {
+    "workflowRef": "rhda",
+    "gateway": "openai",
+    "params": [{"name": "path", "value": "helloworld"}],
+    "env": [
+      {"name": "APP_ID", "value": "${APP_ID}"},
+      {"name": "TARGET_BRANCH", "value": "konveyor/rhda-scan-$(date +%s)"}
+    ]
+  }
+}
+EOF
+```
+
+Verify the run with:
 
 ```bash
 oc get agentworkflow rhda -n openshift-mta
@@ -1546,10 +1580,49 @@ user (`GET /auth/self`). The model orchestrates and sanity-checks
 (aggregator-pom tooling dependencies are the known false-positive class)
 but never hand-writes edges. Launch the workflow from the MTA UI on an
 application whose repository is the monorepo holding the portfolio's
-sources (e.g. the quickstarts) — the optional `dry-run` parameter
+sources (e.g. the quickstarts) — the optional `dry_run` parameter
 computes and reports the map without writing to the Hub. Applications
 whose sources are not in the workspace are skipped and reported as the
-map's coverage boundary.
+map's coverage boundary. Known limitation, observed live on the
+quickstarts dry-run: module poms inheriting their coordinates via
+Maven properties (`${project.groupId}`-style parent refs) are not
+resolved by the deterministic matcher, so genuine EAR→module edges can
+be invisible to it — in that run the mapper reported 0 edges, the model
+sanity-checked the implausible result against the repository and the
+Hub's import-created edges, and correctly reported the ~19 genuine
+EAR→module edges as runtime-coupling candidates for manual review
+rather than writing a wrong map (the map and the analysis are committed
+to the target branch as `app-dependency-map.md` and the
+`.konveyor/handoff.md` summary). Via the Hub REST API the same launch
+looks like this — as with every run, the harness requires the `APP_ID`
+and `TARGET_BRANCH` environment variables, and the parameter travels as
+the `params` array (the CRD's `params` is a list of `{name, value}`
+objects, not a map):
+
+```bash
+APP_ID=$(curl -s "${MTA_URL}/hub/applications" -u admin:admin \
+  | jq -r '.[] | select(.name=="helloworld") | .id')
+
+curl -s -X POST "${MTA_URL}/hub/agentic/workflowruns" \
+  -u admin:admin -H "Content-Type: application/json" \
+  --data @- <<EOF
+{
+  "metadata": {
+    "generateName": "api-depmap-",
+    "labels": {"konveyor.io/application": "${APP_ID}"}
+  },
+  "spec": {
+    "workflowRef": "app-dependency-map",
+    "gateway": "openai",
+    "params": [{"name": "dry_run", "value": "true"}],
+    "env": [
+      {"name": "APP_ID", "value": "${APP_ID}"},
+      {"name": "TARGET_BRANCH", "value": "konveyor/depmap-$(date +%s)"}
+    ]
+  }
+}
+EOF
+```
 
 ## Developer-Infused Migration Using OpenShift Dev Spaces and the MTA Plugin
 
