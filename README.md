@@ -1713,8 +1713,21 @@ EOF
 
 The run's deliverable is the target branch: the plan document, the
 committed test classes, and the handoff (`## Plan`/`## Author`/
-`## Verify` sections) reviewing the outcome. The verify stage also
-quantifies the coverage the new tests add: it runs the suite under the
+`## Verify` sections, fixed-format per the plan skill's template,
+ending in exactly one of the two legal verdict lines).
+
+> **Editing the workflow requires two deployments, not one.** The
+> skills ride in the agent image (rebuild via `oc start-build
+> mta-citrus-tests-agent ...`), but the **workflow CR itself is a
+> cluster resource** — after changing
+> `citrus-tests-agent-workflow.yaml` (params, stage instructions,
+> guide text), re-apply it (`oc apply -f citrus-tests-agent-workflow.yaml
+> -n openshift-mta`) or runs launched against the old CR silently
+> ignore new parameters (observed live: a `test_kind: "it"` launch
+> against the stale CR ran the in-JVM lane — the plan stage never saw
+> the parameter because the live CR's `spec.params` lacked it).
+
+The verify stage also quantifies the coverage the new tests add: it runs the suite under the
 JaCoCo agent (command-line goals, no pom change), parses
 `target/site/jacoco/jacoco.csv`, and records per-package/per-class
 instruction and branch coverage in the `## Verify` section together with

@@ -129,7 +129,15 @@ the server — check the deployment, not the test.
   When the module had no prior tests, this baseline is 0% and the
   report reads "new tests brought coverage from 0% to X%" - the
   helloworld-rs validation case. When tests existed, report both
-  numbers so the delta is the new tests' contribution. (Container
+  numbers so the delta is the new tests' contribution. **Baseline
+  command caveat (observed live)**: a `-Dtest='!NewTest'` filter
+  overrides surefire's default includes - the run may pick up other,
+  foreign tests (e.g. a JUnit 4 failsafe `*IT`) that then fail against
+  absent infrastructure. Exclude every non-planned test class
+  explicitly (`-Dtest='!NewTest,!OtherTest,...' -DfailIfNoTests=false`),
+  and when the new tests are the module's only surefire tests the
+  baseline run executes nothing and produces no jacoco data - that
+  absence IS the 0% baseline. (Container
   lane: exclude via failsafe instead, e.g.
   `-Dit.test='!HelloWorldResourceIT'` - documented from the failsafe
   conventions, not yet validated live; if the exclusion misbehaves,
