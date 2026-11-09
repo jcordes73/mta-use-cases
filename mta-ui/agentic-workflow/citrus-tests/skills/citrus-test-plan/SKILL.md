@@ -51,18 +51,28 @@ cover. The `citrus_catalog_endpoints` tool is the ground truth for the
 exact endpoint list - query it (with no filter) before finalizing the
 classification.
 
-**Validation status of this map**: the HTTP/REST rows (both lanes) and
-the JMS row are validated end-to-end. The remaining rows are derived
-from the live catalog and Citrus's architecture - **catalog-derived,
-not yet validated end-to-end**; when a plan relies on one, treat the
-author stage's Maven build as the validator and record deviations in
-the handoff so the row gets validated or corrected.
+**Validation status of this map**: the HTTP/REST rows (both lanes,
+including the data-backed REST+JPA recipe), and the JMS row are
+validated end-to-end. The remaining rows are derived from the live
+catalog and Citrus's architecture - **catalog-derived, not yet
+validated end-to-end**; when a plan relies on one, treat the author
+stage's Maven build as the validator and record deviations in the
+handoff so the row gets validated or corrected.
 
 The verified shape of the coverage map:
 
 - **Jakarta REST / any HTTP entry point** → Citrus `http` client; the
   application side is an in-JVM embedded deployment (in-JVM lane) or
   the container-provisioned EAP (container lane).
+  - REST resources that are **data-backed** (inject CDI beans which
+    reach JPA) are also in-JVM-coverable with the validated
+    data-backed REST recipe (Weld SE bootstrap + test-scoped H2
+    persistence unit replacing the container datasource, plus the
+    request-context/transaction filter) — see the author skill's
+    recipe for the exact pattern. Not in-JVM-coverable: resources
+    that inject what no SE bootstrap can supply and no test alternative
+    can reasonably replace (e.g. FacesContext, remote EJBs) — plan
+    those for the container lane or mark out of scope with the reason.
 - **Outbound HTTP calls the application makes** → Citrus `http-server`
   endpoint simulating the external service on localhost.
 - **SOAP** → `soap-client` / `soap-server` (citrus-ws).
@@ -94,21 +104,13 @@ The verified shape of the coverage map:
   behavior by driving the deployed application, but direct
   method-level testing with container-managed transactions/security
   is Arquillian territory - out of scope with that reason.
-- **JPA/persistence** → not a Citrus target; cover via conventional
-  test-scoped-datasource tests if the plan wants it, or leave to the
-  application's existing test stack.
-- **Plain CDI beans / POJOs** → testable in-JVM (Citrus `direct`
-  endpoints if orchestration is wanted), but conventional unit tests
-  are usually the better fit - say so explicitly in the plan rather
-  than forcing Citrus.
-- **EJBs with container services, MDBs, servlet filters** → not
-  in-JVM-testable. The container lane can prove deployment-time
-  behavior by driving the deployed application, but direct
-  method-level testing with container-managed transactions/security
-  is Arquillian territory - out of scope with that reason.
-- **JPA/persistence** → not a Citrus target; cover via conventional
-  test-scoped-datasource tests if the plan wants it, or leave to the
-  application's existing test stack.
+- **JPA/persistence** → not a Citrus target *per se*, but REST
+  resources that persist through JPA ARE coverable in the in-JVM lane
+  via the data-backed REST recipe (test persistence unit over H2,
+  `@Alternative` producer replacing the container's `@PersistenceContext`
+  EntityManager). The tests then validate the REST contract *and* the
+  persistence wiring; container-managed transactions (CMT) remain a
+  known limit (the filter supplies resource-local transactions).
 
 Record the verdict per element in the inventory (coverable-in-JVM /
 coverable-container-lane / better-as-unit-test / out-of-scope with
@@ -212,6 +214,18 @@ services, nothing beyond localhost):
   Jakarta REST container (test-scoped dependency, e.g. the server stack's
   embedded-server artifact) and exercise them with the Citrus `http`
   client (`send`/`receive` with JSON payload and status-code validation).
+  For **data-backed resources** (resource → CDI → JPA), plan the
+  data-backed REST recipe: the test must additionally provide what the
+  container normally supplies - a test persistence unit over embedded H2,
+  a `@Alternative` CDI producer replacing the container's
+  `@PersistenceContext` EntityManager, a per-request filter that
+  activates the CDI request context and commits a resource-local
+  transaction, and a CDI-integrated RESTEasy deployment. The author
+  skill owns the validated recipe; the plan just names the elements to
+  replace (which beans inject the EntityManager, which beans cannot
+  live without a container runtime and must be vetoed or covered by the
+  container lane) and the test datasource (H2 unless the schema needs
+  vendor specifics).
 - **Applications consuming external endpoints** - a provider-side Citrus
   simulation: start Citrus endpoint servers (http/jms) that stand in for
   the external system, and drive the application's client code against

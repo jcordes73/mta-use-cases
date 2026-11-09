@@ -48,7 +48,9 @@ minutes per artifact and can burn the stage's turn budget.
 Per the plan: import the Citrus BOM (`org.citrusframework:citrus-bom` at
 the plan's version) in the pom's `dependencyManagement`, and add the
 test-scoped artifacts the plan names (typically `citrus-junit-jupiter` —
-the JUnit 5 runtime module — and the endpoint modules, e.g. `citrus-http`).
+the JUnit 5 runtime module — the endpoint modules, e.g. `citrus-http`,
+and `citrus-validation-json` when the plan validates values inside JSON
+payloads via JSON-path).
 Keep versions in one place (BOM or properties). Do not upgrade or touch any
 existing (non-test) dependency.
 
@@ -159,6 +161,99 @@ your target version differs:
   `DeploymentInfo.setContextPath(...)` (the prefix argument is the servlet
   mapping, not the context path) - mirroring the application's
   `@ApplicationPath`.
+
+**Data-backed REST recipe (REST + CDI + JPA in-JVM)** — validated live
+end-to-end on kitchensink (REST resource → `@Inject` CDI service →
+Hibernate over H2; 4/4 tests green in plain `mvn test`). Use it whenever
+the planned resource is data-backed; seven defects were found and fixed
+during validation, so follow the pattern closely:
+
+1. **CDI bootstrap — explicit registration, never classpath discovery.**
+   `new Weld().disableDiscovery().addPackage(false, <resource-or-bean
+   class>)...` . Full classpath discovery (`new Weld().initialize()`) is
+   unreliable in a surefire JVM: archives without a `beans.xml` may be
+   skipped entirely, the resource silently ends up a non-bean, and
+   RESTEasy's `CdiInjectorFactory` falls back to plain construction
+   (symptom: `NullPointerException` on an injected field). Register every
+   package the REST surface reaches, plus:
+   - `@Stateless`/`@Singleton` EJB beans: NOT bean-defining in an SE
+     bootstrap — `addBeanClasses(...)` them explicitly;
+   - `addAlternative(...)` for the test producer (below);
+   - `addExtension(new ResteasyCdiExtension())` — with `disableDiscovery()`
+     the services-file registration of resteasy-cdi's own extension is
+     skipped and `CdiInjectorFactory` fails with `RESTEASY010615: Unable
+     to obtain ResteasyCdiExtension instance`;
+   - a test CDI extension vetoing application beans that inject container
+     runtime objects with no SE substitute (e.g. a JSF controller
+     injecting `FacesContext`) — otherwise the bootstrap fails with
+     `WELD-001408: Unsatisfied dependencies` before any test runs.
+2. **Test resources via `@Alternative` producer** (`@ApplicationScoped
+   @Alternative` test class, selected via `addAlternative`): replace the
+   container-provided beans the application injects —
+   `@Produces` a request-scoped `EntityManager` (see 3), the
+   `jakarta.validation.Validator` (`Validation.buildDefaultValidatorFactory()`,
+   with `hibernate-validator` + an EL implementation like `expressly`
+   test-scoped for message interpolation), and a `Logger` producer (copy
+   the application's if it has one). Add a **test-only persistence unit**
+   (`src/test/resources/META-INF/persistence.xml`, name distinct from the
+   app's, `RESOURCE_LOCAL`, `jdbc:h2:mem:<name>;DB_CLOSE_DELAY=-1`,
+   `schema-generation.database.action=drop-and-create`) so the main PU
+   (JNDI datasource) is never bootstrapped.
+3. **Request context + transactions via one servlet filter.** A Weld SE
+   bootstrap does not manage web scopes or transactions against servlet
+   requests, so a `@RequestScoped` resource dies with
+   `WELD-001303: No active contexts for scope type RequestScoped`. Register
+   a test filter on the embedded deployment (`Servlets.filter(...)` +
+   `addFilterUrlMapping("/*", REQUEST)`) that, per request: activates the
+   request context (built-in `jakarta.enterprise.context.control.
+   RequestContextController` bean — note **Weld 5 removed
+   `ContextControl`**), selects the request-scoped `EntityManager`
+   (produce it `@Produces @RequestScoped` so the filter and the resource
+   share ONE instance), `begin()`s a resource-local transaction, commits
+   after the chain (rollback on RuntimeException), closes the EM,
+   deactivates. The transaction is what makes writes persist: **Hibernate
+   silently skips writes outside a transaction** even with
+   `hibernate.allow_update_outside_transaction=true` (the property only
+   silences the check) — symptom: POST returns 200 but the row never lands.
+4. **RESTEasy-CDI integration.** Construct
+   `deployment.setInjectorFactory(new CdiInjectorFactory(cdi.getBeanManager()))`
+   — presetting the *instance* bypasses the no-arg factory's BeanManager
+   lookup (JNDI → `CDI.current()` → servlet attribute), which is
+   unreliable in this setup. Register the JSON-B provider explicitly
+   (`getActualProviderClasses().add(JsonBindingProvider.class)`;
+   resteasy-json-binding-provider test-scoped — embedded deployments do
+   not auto-discover providers).
+5. **Dependency conflicts to expect** (all found live):
+   - `resteasy-core` drags in the pre-3.x `org.jboss:jandex`, which
+     shadows `io.smallrye:jandex` 3.x on the test classpath and Weld 5
+     blows up with `NoSuchMethodError: Indexer.indexWithSummary` —
+     exclude `org.jboss:jandex` and add `io.smallrye:jandex` test-scoped;
+   - Citrus 5.1.0 needs the Jackson-annotations line matching its Jackson
+     version — the EAP BOM pins an older one; add the newer version
+     test-scoped if validation fails with Jackson errors;
+   - checkstyle runs on test sources in the quickstarts — match the
+     ruleset (no redundant/unused imports) or the build dies before tests.
+6. **HTTP client details**: send actions must set an explicit
+   `.contentType("application/json")` on POSTs with bodies — Citrus sends
+   no Content-Type by default and the resource's `@Consumes` match
+   returns 415. Request paths carry the `@ApplicationPath` prefix
+   (context path mirrors it).
+7. **JSON content assertions**: the message validator is selected by the
+   response's `Content-Type` (a JSON response is validated by the JSON
+   validator element-wise, regardless of a `MessageType.PLAINTEXT` you
+   declare). For values inside JSON payloads use **JSON-path
+   validation** (`citrus-validation-json` test-scoped):
+   `.message().type(MessageType.JSON).validate(jsonPath().expression("$[0].email", "jane@example.org"))`
+   — expected values support validation matchers
+   (`@contains('well-formed email')@`). The `jsonPath()` static lives in
+   `org.citrusframework.json.dsl.JsonPathSupport`, NOT
+   `org.citrusframework.validation.json`. Exact-body element-wise
+   comparison still works for small deterministic payloads.
+8. **Test isolation**: the in-memory H2 lives for the whole JVM — wipe
+   rows between tests (`@AfterEach`) and clear seed data
+   (`import.sql`-style fixtures load at EMF creation) in a
+   `@BeforeEach`/startup step, or the "empty list" test sees other tests'
+   rows.
 
 ### 5. Container lane (`test_kind: it`): the `citrus-container-tests` profile
 

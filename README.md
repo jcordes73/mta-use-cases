@@ -1800,6 +1800,33 @@ same skills):
   settings identity instead (the Squid allowlist must then cover every
   repository the application builds from, e.g. `repository.jboss.org`).
 
+**Gap closed — data-backed REST in the in-JVM lane** (validated live on
+`kitchensink`, 4/4 tests green in plain `mvn test`): REST resources that
+reach JPA through CDI no longer need the container lane. The validated
+recipe — now encoded in the plan and author skills — bootstraps the
+application's CDI beans with **Weld SE using explicit registration**
+(`disableDiscovery()` + `addPackage`/`addBeanClasses`; classpath
+discovery is unreliable in a surefire JVM — archives without `beans.xml`
+may be skipped, leaving the resource a non-bean), replaces the
+container-provided resources with a test `@Alternative` producer
+(request-scoped `EntityManager` over a test-only H2 persistence unit,
+Validator, Logger), vetoes beans that inject what no SE bootstrap can
+supply (a JSF controller injecting `FacesContext`), and registers one
+test filter on the embedded RESTEasy deployment that per request
+activates the CDI request context (built-in `RequestContextController`
+— Weld 5 removed `ContextControl`) and commits a resource-local
+transaction (CMT is inactive in-JVM, and Hibernate silently skips
+writes outside a transaction). Integration defects found and encoded:
+resteasy-cdi's `ResteasyCdiExtension` must be added programmatically
+under `disableDiscovery()`; `CdiInjectorFactory` is preset by instance
+(`setInjectorFactory(new CdiInjectorFactory(beanManager))`); RESTEasy's
+transitive `org.jboss:jandex` 2.x shadows the `io.smallrye:jandex` 3.x
+Weld 5 needs (`NoSuchMethodError: Indexer.indexWithSummary`); POSTs
+need an explicit `Content-Type` (Citrus sends none — 415); and values
+inside JSON payloads must be asserted with JSON-path validation
+(`citrus-validation-json`; the element-wise JSON validator ignores
+plain-text matchers on whole payloads).
+
 ## Developer-Infused Migration Using OpenShift Dev Spaces and the MTA Plugin
 
 While the [MTA UI](#automated-migration-using-the-mta-ui) covers the automated, portfolio-wide migration, developers can drive the migration of their individual applications themselves from within their IDE. **OpenShift Dev Spaces** provides Kubernetes-based cloud development environments and is installed on the OpenShift Container Platform using the OpenShift Dev Spaces Operator via OperatorHub. The **MTA plugin** (Visual Studio Code extension) then brings inline analysis, remediation hints, and AI-assisted code refactoring (Developer Lightspeed) into the editor, backed by the MTA Hub and Solution Server deployed in the [automated migration](#automated-migration-using-the-mta-ui) part.
