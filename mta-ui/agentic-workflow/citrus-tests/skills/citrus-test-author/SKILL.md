@@ -52,18 +52,34 @@ the JUnit 5 runtime module — and the endpoint modules, e.g. `citrus-http`).
 Keep versions in one place (BOM or properties). Do not upgrade or touch any
 existing (non-test) dependency.
 
-**Jackson 3 pitfall (verified live)**: Citrus 5.x uses **Jackson 3**
-(`tools.jackson` groupId), whose annotations artifact is still
-`com.fasterxml.jackson.core:jackson-annotations` but from the
-Jackson-3-compatible `2.2x` line (e.g. `2.22` for Citrus 5.1.0). Application
-BOMs typically manage the old Jackson 2 annotations (e.g. the EAP BOM pins
-`2.18.4`), which break every Citrus test at runtime with
-`Could not initialize class tools.jackson.databind.json.JsonMapper$Builder`
-or `NoClassDefFoundError com/fasterxml/jackson/annotation/JsonSerializeAs` —
-compilation succeeds, so the failure only appears when the tests run. When
-the application's BOM manages `jackson-annotations`, add a test-scoped pin
-of the Jackson-3-compatible version (2.22 or newer within 2.2x) and note it
-in the handoff.
+**BOM conflicts (general rule, verified live)**: prefer the versions the
+application's BOM manages; when a BOM-managed version is incompatible
+with what the tests need, pin test-scoped and document the pin in the
+handoff. Two known instances on the EAP quickstarts:
+
+- **Jackson 3 pitfall**: Citrus 5.x uses **Jackson 3**
+  (`tools.jackson` groupId), whose annotations artifact is still
+  `com.fasterxml.jackson.core:jackson-annotations` but from the
+  Jackson-3-compatible `2.2x` line (e.g. `2.22` for Citrus 5.1.0). The EAP
+  BOM pins the Jackson 2 line (`2.18.4`), which breaks every Citrus test
+  at runtime with `Could not initialize class
+  tools.jackson.databind.json.JsonMapper$Builder` or
+  `NoClassDefFoundError com/fasterxml/jackson/annotation/JsonSerializeAs` —
+  compilation succeeds, so the failure only appears when the tests run.
+- **Embedded container artifacts**: the EAP BOM manages RESTEasy
+  (`6.2.12.Final-redhat-00001`), but `resteasy-undertow` is not
+  BOM-managed — declare it test-scoped with an explicit upstream version
+  (the BOM still forces its `resteasy-core`/core-spi transitives to the
+  Red Hat build of the same 6.2.12 line, which is fine).
+
+**Surefire must run the new tests**: the application may predate JUnit 5
+(JUnit 4 dependency, surefire 2.x, failsafe-managed `*IT` classes). Check
+the effective surefire configuration before writing tests: JUnit 5 needs
+surefire ≥ 2.22 (the quickstarts' 3.2.3 auto-detects the Jupiter engine);
+if the application pins an older surefire or restrictive `<includes>`,
+add a test-scoped surefire upgrade/plugin configuration inside the
+application path and confirm from the run output that the new `*Test`
+classes execute - a suite that silently runs zero tests is not green.
 
 ### 3. Consult the Citrus MCP server while authoring
 
