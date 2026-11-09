@@ -37,6 +37,57 @@ application path. Record:
   needs a deployed container (EJBs with container services, MDBs, servlet
   filters).
 
+Then match each inventoried element against what the framework can
+cover. The `citrus_catalog_endpoints` tool is the ground truth for the
+exact endpoint list - query it (with no filter) before finalizing the
+classification. The verified shape of the coverage map:
+
+- **Jakarta REST / any HTTP entry point** → Citrus `http` client; the
+  application side is an in-JVM embedded deployment (in-JVM lane) or
+  the container-provisioned EAP (container lane).
+- **Outbound HTTP calls the application makes** → Citrus `http-server`
+  endpoint simulating the external service on localhost.
+- **SOAP** → `soap-client` / `soap-server` (citrus-ws).
+- **JMS producers/consumers** → `jms` endpoints; broker-backed, so the
+  author stage adds test-scoped embedded broker infrastructure (e.g.
+  an in-VM Artemis) - doable in-JVM, but the plan must name it.
+- **Kafka** → `kafka` endpoints; same broker-backed caveat, heavier -
+  treat as possible-but-fragile under a time-boxed sandbox.
+- **Mail** → `mail-server` simulation (citrus-mail); **FTP/SFTP/SCP**
+  → `citrus-ftp` client+server endpoints; **WebSocket** →
+  `citrus-websocket`; **GraphQL** → `citrus-graphql`; **JMX, RMI,
+  SSH, Vert.x, Spring Integration channels, Camel routes** →
+  dedicated catalog endpoints - all in-JVM simulation, no external
+  infrastructure.
+- **Plain CDI beans / POJOs** → testable in-JVM (Citrus `direct`
+  endpoints if orchestration is wanted), but conventional unit tests
+  are usually the better fit - say so explicitly in the plan rather
+  than forcing Citrus.
+- **EJBs with container services, MDBs, servlet filters** → not
+  in-JVM-testable. The container lane can prove deployment-time
+  behavior by driving the deployed application, but direct
+  method-level testing with container-managed transactions/security
+  is Arquillian territory - out of scope with that reason.
+- **JPA/persistence** → not a Citrus target; cover via conventional
+  test-scoped-datasource tests if the plan wants it, or leave to the
+  application's existing test stack.
+- **Plain CDI beans / POJOs** → testable in-JVM (Citrus `direct`
+  endpoints if orchestration is wanted), but conventional unit tests
+  are usually the better fit - say so explicitly in the plan rather
+  than forcing Citrus.
+- **EJBs with container services, MDBs, servlet filters** → not
+  in-JVM-testable. The container lane can prove deployment-time
+  behavior by driving the deployed application, but direct
+  method-level testing with container-managed transactions/security
+  is Arquillian territory - out of scope with that reason.
+- **JPA/persistence** → not a Citrus target; cover via conventional
+  test-scoped-datasource tests if the plan wants it, or leave to the
+  application's existing test stack.
+
+Record the verdict per element in the inventory (coverable-in-JVM /
+coverable-container-lane / better-as-unit-test / out-of-scope with
+reason) - this becomes the plan's gap ledger.
+
 ### 2. Choose the Citrus version line
 
 Before the version, choose the **lane** — record it in the plan as
