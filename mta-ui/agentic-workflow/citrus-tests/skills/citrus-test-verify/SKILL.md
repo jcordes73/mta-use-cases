@@ -99,8 +99,9 @@ endpoint config, test dependencies). A known silent failure signature
 with `Could not initialize class tools.jackson.databind.json.JsonMapper$Builder`
 or `NoClassDefFoundError com/fasterxml/jackson/annotation/JsonSerializeAs`
 mean the pom pins a Jackson 2 `jackson-annotations` while Citrus 5 needs
-the Jackson-3-compatible `2.2x` line (e.g. `2.22`) — check the pom's test
-pins first when you see these. Re-run until green or until the fix
+the Jackson-3-compatible `2.2x` line (e.g. `2.22`) - the author skill
+carries the full recipe; check the pom's test pins first when you see
+these. Re-run until green or until the fix
 clearly requires main-source changes - in that case, disable the failing
 test with an explicit `@Disabled` and the reason, and flag it in the
 handoff as requiring author-stage follow-up. Keep fixes bounded - a green,
@@ -130,9 +131,12 @@ the server — check the deployment, not the test.
   helloworld-rs validation case. When tests existed, report both
   numbers so the delta is the new tests' contribution. (Container
   lane: exclude via failsafe instead, e.g.
-  `-Dit.test='!HelloWorldResourceIT'`; the helloworld-rs container
-  validation measured the same 0% → 100% instruction coverage of the
-  deployed application, agent on the provisioned server JVM.)
+  `-Dit.test='!HelloWorldResourceIT'` - documented from the failsafe
+  conventions, not yet validated live; if the exclusion misbehaves,
+  record the baseline as "not computed" with the reason. The
+  helloworld-rs container validation measured the committed-run side:
+  100% instruction coverage of the deployed application, agent on the
+  provisioned server JVM.)
 
 The report is quantitative context for the verdict, **not** a pass/fail
 gate: low coverage of elements the plan marked out-of-scope (container-

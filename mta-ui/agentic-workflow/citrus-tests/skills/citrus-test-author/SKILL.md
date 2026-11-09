@@ -101,6 +101,12 @@ The catalog tools are only reliable for the MCP server's own Citrus
 version; for an older target line, ground the vocabulary in the default
 catalog and let the Maven build validate against the actual artifacts.
 
+**MCP-outage fallback**: if the MCP server fails to start or tool calls
+fail unrecoverably, proceed with this skill's own verified recipes
+(DSL mechanics, dependency patterns, validation rules) and the Maven
+build as validator - do not stall the stage waiting for the server.
+Record the outage and what was not consulted in the handoff.
+
 ### 4. Implement the tests
 
 For each row of the plan's test inventory:
@@ -155,6 +161,11 @@ your target version differs:
   `@ApplicationPath`.
 
 ### 5. Container lane (`test_kind: it`): the `citrus-container-tests` profile
+
+> **Reference recipe** - consult when (and only when) the plan chose
+> the container lane. In-JVM runs skip this section entirely. The
+> recipe is validated live end-to-end (helloworld-rs against EAP 8.1
+> Update 9.0, 2/2 ITs green, server-side JaCoCo 100%).
 
 When the plan chose the container lane, create a
 `citrus-container-tests` Maven profile (test-side pom change) that

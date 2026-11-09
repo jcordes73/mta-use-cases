@@ -21,6 +21,15 @@ application path.
 
 ### 1. Inventory the application
 
+**Re-run check first**: if the application path already contains citrus
+test work (a `docs/citrus-test-plan.md`, `*Test`/`*IT` classes using
+Citrus imports, a `citrus-container-tests` profile) from a previous
+run of this workflow that was merged into the branch you cloned, switch
+to **extend mode**: reuse the existing plan's lane, Citrus version and
+dependency decisions (do not redeclare the BOM or profile), inventory
+only the *untested* elements, and add rows to the existing plan with a
+"## Status (this run)" note. Never duplicate an existing suite.
+
 Read the application's `pom.xml` (and parent poms) and the sources under the
 application path. Record:
 
@@ -40,7 +49,16 @@ application path. Record:
 Then match each inventoried element against what the framework can
 cover. The `citrus_catalog_endpoints` tool is the ground truth for the
 exact endpoint list - query it (with no filter) before finalizing the
-classification. The verified shape of the coverage map:
+classification.
+
+**Validation status of this map**: only the HTTP/REST rows (both
+lanes) are validated end-to-end. The other rows are derived from the
+live catalog and Citrus's architecture - **catalog-derived, not yet
+validated end-to-end**; when a plan relies on one, treat the author
+stage's Maven build as the validator and record deviations in the
+handoff so the row gets validated or corrected.
+
+The verified shape of the coverage map:
 
 - **Jakarta REST / any HTTP entry point** → Citrus `http` client; the
   application side is an in-JVM embedded deployment (in-JVM lane) or
@@ -165,6 +183,15 @@ differences you know from the migration guides, and let the author
 stage's Maven build be the actual validator.
 
 Cite the consulted catalog entries in the plan (names + one-line purpose).
+
+**MCP-outage fallback**: if the Citrus MCP server fails to start or a
+tool call fails unrecoverably (server jar problems in the sandbox,
+process crashes), do not halt the workflow: proceed using this skill's
+own recipes as the framework vocabulary (they are deliberately
+self-sufficient - DSL mechanics, endpoint patterns, validation
+guidance), let the Maven build be the validator, and record the outage
+and which consultations were skipped in the plan's Notes section and
+the handoff. The catalog is an grounding aid, not a dependency.
 
 ### 4. Design the test cases
 
