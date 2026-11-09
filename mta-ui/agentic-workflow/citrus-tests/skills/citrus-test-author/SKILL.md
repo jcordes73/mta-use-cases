@@ -33,7 +33,15 @@ contradicts the repository, stop and record the blocker in
 
 If the `MAVEN_SETTINGS_XML` environment variable is set, write its value to
 `/home/harness/.m2/settings.xml` so Maven uses the custom settings for
-every build this stage runs.
+every build this stage runs. **If it is unset**: the sandbox image bakes a
+default `/home/harness/.m2/settings.xml` containing a Squid proxy
+(`squid.squid.svc:3128`) — verified live on both the author and verify
+sandboxes, where the proxy made every Maven download time out (the
+allowlist does not cover all repositories a JEE app needs, e.g.
+`repository.jboss.org`). Probe the proxy (`curl -x` through it vs. direct)
+and if it is unreachable, remove the `<proxies>` block from that
+environment file before the first build — a dead proxy stalls Maven for
+minutes per artifact and can burn the stage's turn budget.
 
 ### 2. Add the Citrus test dependencies
 
@@ -89,6 +97,32 @@ For each row of the plan's test inventory:
   properties, Spring/XML or Java DSL config per the plan and docs);
 - keep every test deterministic: localhost only, no time-dependent
   assertions, no ordering dependencies between tests.
+
+DSL mechanics verified live on Citrus 5.1.0 - check the catalog/docs when
+your target version differs:
+
+- **Test action runner**: `GherkinTestActionRunner` has no `http()` method -
+  wrap the actions in `runner.when(http().client(...).send()...)` /
+  `runner.then(http().client(...).receive()...)` with
+  `import static org.citrusframework.http.actions.HttpActionBuilder.http;`.
+  Do NOT implement `TestActionSupport` in the test class: its default
+  `startServer()/stopServer()` DSL methods clash with the static JUnit
+  `@BeforeAll`/`@AfterAll` lifecycle methods an embedded server needs.
+- **Validation matcher syntax**: only the function-style form works -
+  `@contains('text/plain')@`. The `@contains@value@` form fails with
+  `Illegal syntax for validation matcher expression`. Content-type
+  assertions benefit from a contains-match anyway (servers append
+  `;charset=...`).
+- **Embedded JAX-RS deployments**: embedded RESTEasy deployments do NOT
+  classpath-scan resources the way a servlet container does - the
+  `UndertowJaxrsServer.deploy(Class)` shortcuts serve 404 for the
+  resources. Build the deployment explicitly:
+  `new ResteasyDeploymentImpl()` + `setApplicationClass(...)` +
+  `getActualResourceClasses().add(...)` (explicit registration), deployed
+  via `server.undertowDeployment(deployment, null)` with an explicit
+  `DeploymentInfo.setContextPath(...)` (the prefix argument is the servlet
+  mapping, not the context path) - mirroring the application's
+  `@ApplicationPath`.
 
 ### 5. Verify and iterate
 

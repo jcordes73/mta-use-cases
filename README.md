@@ -1731,6 +1731,16 @@ same skills):
   fails at runtime (`Could not initialize class
   tools.jackson.databind.json.JsonMapper$Builder`). The skills carry this
   recipe and the failure signatures.
+- **The sandbox bakes a dead Maven proxy**: the agent image ships
+  `/home/harness/.m2/settings.xml` with a Squid proxy
+  (`squid.squid.svc:3128`). With `MAVEN_SETTINGS_XML` unset (as in a
+  connected environment) both the citrus author and verify stages — and
+  the rhda scan before them — hit every-download timeouts through it and
+  had to strip the `<proxies>` block first. The skills now probe and
+  remove the proxy when it is unreachable; for disconnected environments
+  the proxy is correct, so pass `MAVEN_SETTINGS_XML` from the Hub's Maven
+  settings identity instead (the Squid allowlist must then cover every
+  repository the application builds from, e.g. `repository.jboss.org`).
 
 ## Developer-Infused Migration Using OpenShift Dev Spaces and the MTA Plugin
 

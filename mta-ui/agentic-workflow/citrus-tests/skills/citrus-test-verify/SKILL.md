@@ -28,7 +28,12 @@ authoritative unless they contradict the plan's invariants (deterministic,
 green, surefire-run).
 
 If the `MAVEN_SETTINGS_XML` environment variable is set, write its value
-to `/home/harness/.m2/settings.xml` before any Maven call.
+to `/home/harness/.m2/settings.xml` before any Maven call. If it is unset,
+note that the sandbox image bakes a default settings file with a Squid
+proxy (`squid.squid.svc:3128`) that is dead in a connected environment —
+the author stage usually removed the `<proxies>` block already, but if
+Maven downloads time out, probe and remove the proxy the same way before
+diagnosing anything else.
 
 ### 2. Run the suite from clean
 
