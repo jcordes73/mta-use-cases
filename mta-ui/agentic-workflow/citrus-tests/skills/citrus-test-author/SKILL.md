@@ -112,7 +112,11 @@ For each row of the plan's test inventory:
 - create the endpoint configuration the plan defines (test resources,
   properties, Spring/XML or Java DSL config per the plan and docs);
 - keep every test deterministic: localhost only, no time-dependent
-  assertions, no ordering dependencies between tests.
+  assertions, no ordering dependencies between tests;
+- keep the application code under test executing **in-process** (in-JVM
+  deployment, as here): the verify stage measures coverage with the
+  JaCoCo agent attached to the surefire JVM, so code exercised in a
+  forked JVM or external server is invisible to the report.
 
 DSL mechanics verified live on Citrus 5.1.0 - check the catalog/docs when
 your target version differs:

@@ -1713,7 +1713,16 @@ EOF
 
 The run's deliverable is the target branch: the plan document, the
 committed test classes, and the handoff (`## Plan`/`## Author`/
-`## Verify` sections) reviewing the outcome.
+`## Verify` sections) reviewing the outcome. The verify stage also
+quantifies the coverage the new tests add: it runs the suite under the
+JaCoCo agent (command-line goals, no pom change), parses
+`target/site/jacoco/jacoco.csv`, and records per-package/per-class
+instruction and branch coverage in the `## Verify` section together with
+the pre-existing baseline (the same run with the new tests excluded) —
+on `helloworld-rs`, which had no prior tests, the report reads 0% → 100%
+instruction coverage of the application classes. Coverage is reported,
+not gated: the workflow's gap accounting stays element-based (the plan's
+inventory), with JaCoCo as the quantitative fifth net.
 
 Two lessons from the validated run (a full plan → author → verify cycle on
 `helloworld-rs`, 3/3 tests green, re-verified in a local dry run of the
