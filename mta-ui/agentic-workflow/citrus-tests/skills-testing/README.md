@@ -8,6 +8,23 @@ skill change is committed and the agent image rebuilt.
 
 ## Tooling
 
+- `citrus-doctor.sh` (repo root, baked into the agent image at
+  `/usr/local/bin/citrus-doctor.sh`) — pre-flight checks distilled from
+  every discover-fail cycle the dry runs and cluster runs produced: proxy
+  reachability, Java baseline vs Citrus line, effective surefire
+  (version floor, restrictive includes), checkstyle wiring, BOM-managed
+  jackson line, the jandex 2.x/3.x clash, JUnit 5 engine presence, and
+  the container profile's plugin/channels prerequisites. Three modes
+  matching the author stage's timeline:
+
+      citrus-doctor.sh pre       <app-path>   # before authoring
+      citrus-doctor.sh deps      <app-path>   # after pom edits, before 1st test run
+      citrus-doctor.sh container <app-path>   # before the container profile
+
+  Exit 0/2/1 = clear / warnings / failures. New skill lessons that are
+  mechanically checkable should become a doctor check *and* a recipe, so
+  the next run detects instead of rediscovers.
+
 - `mcp-client.py` — minimal stdio MCP client. Drives the same
   `citrus-mcp-server` uber-jar the agent image bakes:
 

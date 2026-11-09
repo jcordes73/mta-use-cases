@@ -38,10 +38,21 @@ default `/home/harness/.m2/settings.xml` containing a Squid proxy
 (`squid.squid.svc:3128`) — verified live on both the author and verify
 sandboxes, where the proxy made every Maven download time out (the
 allowlist does not cover all repositories a JEE app needs, e.g.
-`repository.jboss.org`). Probe the proxy (`curl -x` through it vs. direct)
-and if it is unreachable, remove the `<proxies>` block from that
-environment file before the first build — a dead proxy stalls Maven for
-minutes per artifact and can burn the stage's turn budget.
+`repository.jboss.org`).
+
+**Pre-flight (mandatory): run the doctor before anything else.** The
+image bakes `citrus-doctor.sh` (also in the workflow directory next to
+the skills):
+
+    bash /usr/local/bin/citrus-doctor.sh pre <application-path>
+
+It probes the Maven proxy, the Java baseline vs the planned Citrus line,
+the effective surefire (version floor, restrictive includes), checkstyle
+wiring, and BOM-managed versions — checks that otherwise surface one
+failed `mvn` run each. Fix every FAIL it reports (fix recipes are in the
+output and in this skill) and treat WARNs as standing instructions (e.g.
+iterate with `-Dcheckstyle.skip=true`); record FAILs you cannot resolve
+in the handoff. Re-run it until no FAILs remain.
 
 ### 2. Add the Citrus test dependencies
 
@@ -82,6 +93,19 @@ if the application pins an older surefire or restrictive `<includes>`,
 add a test-scoped surefire upgrade/plugin configuration inside the
 application path and confirm from the run output that the new `*Test`
 classes execute - a suite that silently runs zero tests is not green.
+
+**Dependency pre-flight: after the pom edits, before the first test
+run**, resolve the classpath once and check it:
+
+    bash /usr/local/bin/citrus-doctor.sh deps <application-path>
+
+It runs `mvn dependency:list` (the same resolution the first test run
+would pay) and checks the classpath-level defects that only surface as
+*runtime* errors inside a full test boot: the jandex 2.x/3.x clash
+(`NoSuchMethodError: Indexer.indexWithSummary`), the resolved
+jackson-annotations line vs Citrus 5, and a missing JUnit 5 engine. Fix
+every FAIL with the recipe in the output (also in this skill's data-backed
+REST recipe and dependency-conflict list) before running tests.
 
 ### 3. Consult the Citrus MCP server while authoring
 
@@ -262,7 +286,13 @@ during validation, so follow the pattern closely:
 > recipe is validated live end-to-end (helloworld-rs against EAP 8.1
 > Update 9.0, 2/2 ITs green, server-side JaCoCo 100%).
 
-When the plan chose the container lane, create a
+When the plan chose the container lane, **first run the container-mode
+pre-flight** (it detects the profile defects that otherwise surface as
+failed provisionings — each one minutes of build time):
+
+    bash /usr/local/bin/citrus-doctor.sh container <application-path>
+
+Then create a
 `citrus-container-tests` Maven profile (test-side pom change) that
 provisions a real JBoss EAP server, deploys the application, and runs
 the planned `*IT` classes via failsafe. The following recipe is
@@ -438,6 +468,16 @@ IT-class mechanics for this lane (differ from the in-JVM lane):
 Run the plan's verification command (e.g. `mvn -pl <module> test`) from
 the application path. Iterate until the new tests pass:
 
+- **fast inner loop**: while iterating on one test class, run only that
+  class with style gates off —
+  `mvn -q -Dtest=<NewTestClass> test -Dcheckstyle.skip=true` — and run
+  the **full clean suite exactly once** before committing (the
+  plan's verification command, without skips). A full `mvn` cycle in the
+  sandbox costs minutes plus a reasoning turn; the cheap loop is where
+  edits happen. Do not commit with skip flags active;
+- batch work between runs: write all test files and pom edits for a
+  verification round in one go, then run once — one build per edit-batch,
+  not per file;
 - fix issues in the test code, endpoint config, or test dependencies;
   never "fix" failures by weakening the assertion below what the plan
   states;
@@ -459,6 +499,11 @@ fixed section header, factual field lines, numbered deviations):
     - Result: green | red (+ counts: Tests run N, Failures F, Errors E)
     - Tests added: <class FQN list, one per line>
     - Dependencies added: <artifact:version list>
+    - Iterations: <n mvn runs, n failed - the loop length, for skill
+      refinement; the failed ones by first error signature>
+    - Pitfalls hit: <doctor/recipe entries that fired, e.g. "jandex
+      clash", "checkstyle"; "none" if none - this is how the skills
+      learn which recipes earn their place>
     - Deviations: none | <numbered list, each with the reason>
     - Environment notes: <anything verify needs about the sandbox>
 

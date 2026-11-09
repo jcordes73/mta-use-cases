@@ -13,6 +13,11 @@ USER root
 COPY skills/citrus-test-plan /citrus-test-plan
 COPY skills/citrus-test-author /citrus-test-author
 COPY skills/citrus-test-verify /citrus-test-verify
+# citrus-doctor: pre-flight checks for the author/verify stages (proxy,
+# surefire, checkstyle, dependency clashes) - converts known discover-fail
+# mvn cycles into one fast local check. The skills mandate running it.
+COPY citrus-doctor.sh /usr/local/bin/citrus-doctor.sh
+RUN chmod 0755 /usr/local/bin/citrus-doctor.sh
 # MCP servers for the goose harness: goose reads its "extensions" from
 # $XDG_CONFIG_HOME/goose/config.yaml at startup. The migration harness only
 # sets provider/model env vars and never writes this file, so image-baked

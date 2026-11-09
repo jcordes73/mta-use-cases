@@ -40,9 +40,14 @@ If the `MAVEN_SETTINGS_XML` environment variable is set, write its value
 to `/home/harness/.m2/settings.xml` before any Maven call. If it is unset,
 note that the sandbox image bakes a default settings file with a Squid
 proxy (`squid.squid.svc:3128`) that is dead in a connected environment —
-the author stage usually removed the `<proxies>` block already, but if
-Maven downloads time out, probe and remove the proxy the same way before
-diagnosing anything else.
+the author stage usually removed the `<proxies>` block already. **Run the
+doctor's pre-flight before the clean run** — this sandbox is fresh, so
+its environment is unproven:
+
+    bash /usr/local/bin/citrus-doctor.sh pre <application-path>
+
+Fix FAILs (the dead-proxy case in particular) before diagnosing anything
+else; record any FAIL you cannot resolve in the verdict.
 
 ### 2. Run the suite from clean, under the JaCoCo agent
 
@@ -164,6 +169,8 @@ skill defines:
     - Commands run: <exact commands>
     - Executed: <class → counts; every planned test or the gap named>
     - Fixes applied: none | <numbered list>
+    - Iterations: <n mvn runs, n failed - for skill refinement>
+    - Pitfalls hit: <doctor/recipe entries that fired; "none" if none>
     - Coverage: <per-package/per-class instruction and branch coverage
       table from the committed run, plus the baseline and the delta
       attributable to the new tests; or "not measured" + reason>
