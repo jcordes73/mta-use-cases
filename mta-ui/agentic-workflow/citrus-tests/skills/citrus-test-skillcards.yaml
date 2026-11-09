@@ -1,0 +1,61 @@
+# SkillCards for the Citrus test-authoring agent.
+#
+# One SkillCard per skill in the mta-citrus-tests-agent image (each skill is
+# one directory at the image root; a SkillCard is always one skill, so
+# subPath selects which - same layout as the rhda skillcards). Built and
+# pushed by the mta-citrus-tests-agent BuildConfig (see the folder
+# Containerfile).
+---
+apiVersion: konveyor.io/v1alpha1
+kind: SkillCard
+metadata:
+  name: citrus-test-plan
+  namespace: openshift-mta
+spec:
+  image: image-registry.openshift-image-registry.svc:5000/openshift-mta/mta-citrus-tests-agent:latest
+  displayName: Citrus Tests Skill - citrus-test-plan
+  version: "0.1.0"
+  description: "Plans Citrus test authoring for a JEE application: inventories the testable JEE surface (JAX-RS resources, EJBs, servlets, CDI beans, consumed endpoints), selects the compatible Citrus version line from the application's Java baseline, consults the Citrus MCP server's catalogs and documentation, and writes a structured test plan (docs/citrus-test-plan.md) that author and verify stages execute. Use when a test-authoring workflow needs a Citrus test plan."
+  type: rule
+  subPath: citrus-test-plan
+  tags:
+    - testing
+    - citrus
+    - jee
+    - planning
+---
+apiVersion: konveyor.io/v1alpha1
+kind: SkillCard
+metadata:
+  name: citrus-test-author
+  namespace: openshift-mta
+spec:
+  image: image-registry.openshift-image-registry.svc:5000/openshift-mta/mta-citrus-tests-agent:latest
+  displayName: Citrus Tests Skill - citrus-test-author
+  version: "0.1.0"
+  description: "Authors Citrus tests for a JEE application from a committed test plan: adds the Citrus test dependencies to pom.xml, writes the JUnit5-run Citrus test classes and endpoint configurations grounded in the Citrus MCP server's catalogs and DSL schemas, and iterates mvn test until the new tests pass. Use when implementing a prepared Citrus test plan."
+  type: rule
+  subPath: citrus-test-author
+  tags:
+    - testing
+    - citrus
+    - jee
+    - authoring
+---
+apiVersion: konveyor.io/v1alpha1
+kind: SkillCard
+metadata:
+  name: citrus-test-verify
+  namespace: openshift-mta
+spec:
+  image: image-registry.openshift-image-registry.svc:5000/openshift-mta/mta-citrus-tests-agent:latest
+  displayName: Citrus Tests Skill - citrus-test-verify
+  version: "0.1.0"
+  description: "Verifies committed Citrus tests for a JEE application in a fresh environment: runs the test plan's verification commands against the committed branch state, confirms the new tests actually executed (not skipped), fixes test-only defects if needed, and records the verdict in the handoff. Use as the final stage of a Citrus test-authoring workflow."
+  type: rule
+  subPath: citrus-test-verify
+  tags:
+    - testing
+    - citrus
+    - jee
+    - verification

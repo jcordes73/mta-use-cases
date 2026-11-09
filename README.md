@@ -1624,6 +1624,114 @@ curl -s -X POST "${MTA_URL}/hub/agentic/workflowruns" \
 EOF
 ```
 
+#### Citrus tests (test authoring via the Citrus MCP server)
+
+The `citrus-tests` workflow **adds Citrus framework tests to a JEE
+application** — a plan → author → verify pipeline in
+`mta-ui/agentic-workflow/citrus-tests/` (own image
+`mta-citrus-tests-agent`, three per-stage agents sharing it). The image
+bakes the **Citrus MCP server**
+([`org.citrusframework:citrus-mcp-server`](https://central.sonatype.com/artifact/org.citrusframework/citrus-mcp-server),
+the Quarkus-based STDIO server the Citrus 5 line ships for AI-assisted
+test development) into the goose harness config — the same
+image-baked-extension pattern as the rhda agent above, minus the Hub
+reporting wrapper. The server exposes the framework's test vocabulary as
+eight MCP tools (`citrus_catalog_actions`/`action`/`action_schema`,
+`citrus_catalog_endpoints`/`endpoint`/`endpoint_schema`,
+`citrus_docs_index`/`docs_page`), and its catalog tools accept a `version`
+argument to query other Citrus versions' catalogs (resolved from Maven
+Central at request time). Build and register it like the other standalone
+workflows (the build takes a few minutes — it downloads the MCP server
+uber-jar from Maven Central):
+
+```bash
+oc new-build --name mta-citrus-tests-agent --strategy=docker --binary -n openshift-mta
+oc patch bc mta-citrus-tests-agent -n openshift-mta --type=json \
+  -p='[{"op":"add","path":"/spec/strategy/dockerStrategy/dockerfilePath","value":"Containerfile"}]'
+oc start-build mta-citrus-tests-agent -n openshift-mta \
+  --from-dir=mta-ui/agentic-workflow/citrus-tests --follow
+oc apply -f mta-ui/agentic-workflow/citrus-tests/skills/citrus-test-skillcards.yaml
+oc apply -f mta-ui/agentic-workflow/citrus-tests/citrus-tests-agents.yaml
+oc apply -f mta-ui/agentic-workflow/citrus-tests/citrus-tests-agent-workflow.yaml
+```
+
+The three stages, each in a fresh sandbox with continuity via git commits
+on the target branch (as with the migration workflow):
+
+- **plan** (`citrus-tests-plan-agent`, `citrus-test-plan` skill) —
+  inventories the application's testable JEE surface (JAX-RS resources,
+  EJBs, servlets, CDI beans, consumed endpoints), derives the Citrus
+  version from the application's Java baseline (Java 17+ → Citrus 5.x,
+  Java 8/11 → Citrus 3.x, or the `citrus_version` run parameter to pin
+  it), consults the MCP catalogs/docs, and writes
+  `docs/citrus-test-plan.md` with the test inventory, the exact
+  test-scoped dependencies to add, and the verification commands. Only
+  strategies that run green under plain `mvn test` are planned (in-JVM
+  embedded deployments, Citrus endpoint simulations — no application
+  server, nothing beyond localhost).
+- **author** (`citrus-tests-author-agent`, `citrus-test-author` skill) —
+  implements the plan: imports the Citrus BOM and adds the test-scoped
+  artifacts, writes the JUnit 5-run Citrus test classes grounded in the
+  MCP catalog/schemas (never from recall), and iterates `mvn test` until
+  the new suite is green. Only `src/test/` and test-scoped pom changes
+  are allowed — `src/main/` is never touched, and existing tests (e.g.
+  Arquillian `*IT`s run by failsafe) stay untouched.
+- **verify** (`citrus-tests-verify-agent`, `citrus-test-verify` skill) —
+  re-runs the suite from clean in the fresh sandbox, confirms the new
+  tests actually executed (not skipped), fixes test-side defects only,
+  and records the verdict in the `## Verify` section of
+  `.konveyor/handoff.md`.
+
+Launch it like the other workflows (the harness requires `APP_ID` and
+`TARGET_BRANCH`; the `path` parameter scopes to the application's
+repository path):
+
+```bash
+APP_ID=$(curl -s "${MTA_URL}/hub/applications" -u admin:admin \
+  | jq -r '.[] | select(.name=="helloworld-rs") | .id')
+
+curl -s -X POST "${MTA_URL}/hub/agentic/workflowruns" \
+  -u admin:admin -H "Content-Type: application/json" \
+  --data @- <<EOF
+{
+  "metadata": {
+    "generateName": "api-citrus-",
+    "labels": {"konveyor.io/application": "${APP_ID}"}
+  },
+  "spec": {
+    "workflowRef": "citrus-tests",
+    "gateway": "openai",
+    "params": [{"name": "path", "value": "helloworld-rs"}],
+    "env": [
+      {"name": "APP_ID", "value": "${APP_ID}"},
+      {"name": "TARGET_BRANCH", "value": "konveyor/citrus-tests-$(date +%s)"}
+    ]
+  }
+}
+EOF
+```
+
+The run's deliverable is the target branch: the plan document, the
+committed test classes, and the handoff (`## Plan`/`## Author`/
+`## Verify` sections) reviewing the outcome.
+
+Two lessons from the validated run (a full plan → author → verify cycle on
+`helloworld-rs`, 3/3 tests green, re-verified in a local dry run of the
+same skills):
+
+- **The harness clones the repository's default branch**, not the
+  application record's `branch` metadata — the citrus run planned against
+  the `8.1.x`-layout sources although the record carries `7.4.x`. Keep
+  this in mind when comparing run results against a specific recorded
+  branch.
+- **Citrus 5.x needs the Jackson-3-compatible annotations line**: the
+  author stage must pin `com.fasterxml.jackson.core:jackson-annotations`
+  to `2.22`+ (test scope) when the application BOM manages the Jackson 2
+  line — compilation succeeds with the wrong pin, but every Citrus test
+  fails at runtime (`Could not initialize class
+  tools.jackson.databind.json.JsonMapper$Builder`). The skills carry this
+  recipe and the failure signatures.
+
 ## Developer-Infused Migration Using OpenShift Dev Spaces and the MTA Plugin
 
 While the [MTA UI](#automated-migration-using-the-mta-ui) covers the automated, portfolio-wide migration, developers can drive the migration of their individual applications themselves from within their IDE. **OpenShift Dev Spaces** provides Kubernetes-based cloud development environments and is installed on the OpenShift Container Platform using the OpenShift Dev Spaces Operator via OperatorHub. The **MTA plugin** (Visual Studio Code extension) then brings inline analysis, remediation hints, and AI-assisted code refactoring (Developer Lightspeed) into the editor, backed by the MTA Hub and Solution Server deployed in the [automated migration](#automated-migration-using-the-mta-ui) part.

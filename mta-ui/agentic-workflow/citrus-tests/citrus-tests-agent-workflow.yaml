@@ -1,0 +1,90 @@
+# The Citrus Tests AgentWorkflow: a plan → author → verify pipeline that
+# adds Citrus framework tests to a JEE application.
+#
+# Three sequential stages, each in a fresh Agent Sandbox with continuity
+# carried via git commits on the target branch (docs/citrus-test-plan.md
+# and .konveyor/handoff.md) - the same pattern as the jboss-eap-7-to-8
+# migration workflow. Every stage runs on the mta-citrus-tests-agent image,
+# which bakes the Citrus MCP server (org.citrusframework:citrus-mcp-server,
+# STDIO) into the goose harness config: the catalog, schema, and docs tools
+# ground the framework decisions in every stage.
+apiVersion: konveyor.io/v1alpha1
+kind: AgentWorkflow
+metadata:
+  name: citrus-tests
+  namespace: openshift-mta
+  labels:
+    konveyor.io/managed: "true"
+spec:
+  guide: >-
+    Add Citrus framework tests to a JEE application. Stage 1 (plan)
+    inventories the application's testable JEE surface, selects the Citrus
+    version compatible with the application's Java baseline, consults the
+    Citrus MCP server's test-action and endpoint catalogs, and writes a
+    structured test plan. Stage 2 (author) adds the test dependencies and
+    implements the planned test classes (in-JVM embedded deployments and
+    Citrus endpoint configurations only - everything must run green under
+    plain mvn test), iterating until green. Stage 3 (verify) re-runs the
+    suite in a fresh sandbox against the committed branch state, confirms
+    the new tests actually executed, and records the verdict. All changes
+    are committed to the run's target branch; src/main is never modified.
+  params:
+    - name: path
+      type: string
+      description: >-
+        The repository-relative path of the application's source (the
+        repository path of the MTA application record, e.g. "helloworld-rs"
+        for a quickstart imported from a multi-module repository). Leave
+        empty only when the application IS the repository root.
+      required: false
+    - name: citrus_version
+      type: string
+      description: >-
+        Pin the Citrus version to author against (e.g. "5.1.0"). When
+        empty, the plan stage derives the compatible version line from the
+        application's Java baseline (Java 17+ → Citrus 5.x, Java 8/11 →
+        Citrus 3.x). Note the Citrus MCP server's catalog covers its own
+        baked version; other lines are validated by the Maven build, not
+        the catalog.
+      required: false
+  stages:
+    - name: plan
+      agentRef: citrus-tests-plan-agent
+      instructions: >-
+        Load the citrus-test-plan skill and follow its SKILL.md exactly.
+        The application's source is located at "$(workflow.path)" within
+        the cloned repository workspace (an empty path means the repository
+        root) - scope the ENTIRE analysis to that directory. Write the test
+        plan to docs/citrus-test-plan.md at the repository root, grounded in
+        the Citrus MCP server's catalog tools. Use the citrus_version
+        workflow parameter when set; otherwise derive the version from the
+        application's Java baseline. If the MAVEN_SETTINGS_XML environment
+        variable is set, write its value to /home/harness/.m2/settings.xml
+        so Maven uses the custom settings for any build this stage runs.
+        Commit the plan and the handoff.
+    - name: author
+      agentRef: citrus-tests-author-agent
+      instructions: >-
+        Load the citrus-test-author skill and follow its SKILL.md exactly.
+        The application's source is located at "$(workflow.path)" within
+        the cloned repository workspace (an empty path means the repository
+        root). Implement the tests from docs/citrus-test-plan.md, grounded
+        in the Citrus MCP server's catalog and schema tools, and iterate
+        mvn test until the new suite is green. Modify test-side files only
+        (src/test and test-scoped pom changes) - never src/main. If the
+        MAVEN_SETTINGS_XML environment variable is set, write its value to
+        /home/harness/.m2/settings.xml so Maven uses the custom settings
+        for every build this stage runs. Commit the tests and the handoff.
+    - name: verify
+      agentRef: citrus-tests-verify-agent
+      instructions: >-
+        Load the citrus-test-verify skill and follow its SKILL.md exactly.
+        The application's source is located at "$(workflow.path)" within
+        the cloned repository workspace (an empty path means the repository
+        root). Run the suite from clean against the committed state,
+        confirm the new tests actually executed (not skipped), fix
+        test-side defects only, and record the verdict in the ## Verify
+        section of .konveyor/handoff.md. If the MAVEN_SETTINGS_XML
+        environment variable is set, write its value to
+        /home/harness/.m2/settings.xml so Maven uses the custom settings
+        for every build this stage runs. Commit the outcome.

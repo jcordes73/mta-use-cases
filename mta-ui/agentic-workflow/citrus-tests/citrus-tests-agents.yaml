@@ -1,0 +1,60 @@
+# The Citrus test-authoring agents: one Agent per workflow stage, mirroring
+# the jboss-eap-7-to-8 plan/execute/verify pattern - each stage's sandbox
+# loads only its own stage skill (type: rule, always in the prompt). All
+# three agents run the same mta-citrus-tests-agent image, which bakes the
+# Citrus MCP server (org.citrusframework:citrus-mcp-server) into the goose
+# harness config - the catalog, schema, and docs tools are available in
+# every stage. No gateways: the AgentRun/AgentWorkflowRun names the
+# gateway at run time.
+#
+# Build the image first (the documented binary-build pattern, as for
+# mta-rhda-agent):
+#   oc new-build --name mta-citrus-tests-agent --strategy=docker --binary -n openshift-mta
+#   oc patch bc mta-citrus-tests-agent -n openshift-mta --type=json \
+#     -p='[{"op":"add","path":"/spec/strategy/dockerStrategy/dockerfilePath","value":"Containerfile"}]'
+#   oc start-build mta-citrus-tests-agent -n openshift-mta \
+#     --from-dir=mta-ui/agentic-workflow/citrus-tests --follow
+#   oc apply -f mta-ui/agentic-workflow/citrus-tests/skills/citrus-test-skillcards.yaml
+#   oc apply -f mta-ui/agentic-workflow/citrus-tests/citrus-tests-agents.yaml
+---
+apiVersion: konveyor.io/v1alpha1
+kind: Agent
+metadata:
+  name: citrus-tests-plan-agent
+  namespace: openshift-mta
+  labels:
+    konveyor.io/managed: "true"
+spec:
+  image: image-registry.openshift-image-registry.svc:5000/openshift-mta/mta-citrus-tests-agent:latest
+  skillCards:
+    - ref: citrus-test-plan
+  execution:
+    maxTurns: 150
+---
+apiVersion: konveyor.io/v1alpha1
+kind: Agent
+metadata:
+  name: citrus-tests-author-agent
+  namespace: openshift-mta
+  labels:
+    konveyor.io/managed: "true"
+spec:
+  image: image-registry.openshift-image-registry.svc:5000/openshift-mta/mta-citrus-tests-agent:latest
+  skillCards:
+    - ref: citrus-test-author
+  execution:
+    maxTurns: 250
+---
+apiVersion: konveyor.io/v1alpha1
+kind: Agent
+metadata:
+  name: citrus-tests-verify-agent
+  namespace: openshift-mta
+  labels:
+    konveyor.io/managed: "true"
+spec:
+  image: image-registry.openshift-image-registry.svc:5000/openshift-mta/mta-citrus-tests-agent:latest
+  skillCards:
+    - ref: citrus-test-verify
+  execution:
+    maxTurns: 150

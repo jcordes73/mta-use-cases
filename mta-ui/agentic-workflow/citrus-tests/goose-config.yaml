@@ -1,0 +1,24 @@
+# MCP servers ("extensions") for the goose harness, baked into the agent image.
+#
+# The migration harness starts `goose serve` with provider/model env vars only
+# and never writes goose's config file, so extensions shipped in
+# $XDG_CONFIG_HOME/goose/config.yaml (see the Containerfile's XDG_CONFIG_HOME
+# ENV) load in every AgentRun using this image. stdio servers run inside the
+# sandbox pod: their binaries and dependencies ship in this image (see the
+# Containerfile's citrus-mcp-server download stage).
+extensions:
+  citrus:
+    type: stdio
+    name: citrus
+    enabled: true
+    # Absolute path: goose spawns the command with the sandbox workdir as cwd,
+    # so the JVM must be addressed absolutely (the Containerfile symlinks the
+    # image's java binary to /usr/local/bin/java at build time). The Citrus
+    # MCP server is the Quarkus uber-jar from Maven Central; it speaks the MCP
+    # protocol over stdio and logs to stderr only.
+    cmd: /usr/local/bin/java
+    args:
+      - -jar
+      - /opt/citrus-mcp/citrus-mcp-server-runner.jar
+    envs: {}
+    timeout: 300

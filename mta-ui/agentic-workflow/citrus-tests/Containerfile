@@ -1,0 +1,44 @@
+# Citrus test-authoring agent image: Konveyor agent-java + the Citrus MCP
+# server for the goose harness. A standalone image (same pattern as the
+# mta-rhda-agent image): use it via the citrus-tests-agent Agent CR when the
+# agent should author Citrus tests guided by the Citrus framework's MCP
+# server (test-action and endpoint catalogs, DSL schemas, documentation).
+ARG BASE_IMAGE=quay.io/konveyor/agent-java:latest
+
+FROM ${BASE_IMAGE}
+USER root
+# The Citrus skills (one directory per skill at the image root; the
+# citrus-test-skillcards SkillCards select them via subPath - same layout as
+# the rhda/migiq agent images).
+COPY skills/citrus-test-plan /citrus-test-plan
+COPY skills/citrus-test-author /citrus-test-author
+COPY skills/citrus-test-verify /citrus-test-verify
+# MCP servers for the goose harness: goose reads its "extensions" from
+# $XDG_CONFIG_HOME/goose/config.yaml at startup. The migration harness only
+# sets provider/model env vars and never writes this file, so image-baked
+# extensions load in every AgentRun using this image. XDG_CONFIG_HOME is
+# pinned because uid 1001's HOME depends on the base image's passwd entry.
+ENV XDG_CONFIG_HOME=/opt/goose-config
+COPY goose-config.yaml /opt/goose-config/goose/config.yaml
+RUN chmod 0644 /opt/goose-config/goose/config.yaml
+# citrus-mcp-server: the Citrus framework's MCP server (Quarkus-based, STDIO
+# transport), published to Maven Central as an uber-jar with a `runner`
+# classifier for JBang execution - downloaded here and run directly with
+# java -jar instead (the image has no JBang). It exposes the Citrus
+# component catalog (test actions, endpoints), their JSON schemas, and the
+# framework documentation as MCP tools; the tools accept a `version`
+# argument to query other Citrus versions' catalogs (resolved from Maven
+# Central at request time and cached). ARG CITRUS_MCP_VERSION pins it.
+RUN java -version && JAVA_BIN=$(command -v java) && ln -sf "$JAVA_BIN" /usr/local/bin/java
+ARG CITRUS_MCP_VERSION=5.1.0
+RUN set -eux; \
+    mkdir -p /opt/citrus-mcp; \
+    curl -fsSL -o /opt/citrus-mcp/citrus-mcp-server-runner.jar \
+      "https://repo1.maven.org/maven2/org/citrusframework/citrus-mcp-server/${CITRUS_MCP_VERSION}/citrus-mcp-server-${CITRUS_MCP_VERSION}-runner.jar"; \
+    chmod 0644 /opt/citrus-mcp/citrus-mcp-server-runner.jar; \
+    # assert the jar is a valid Quarkus runner (Main-Class manifest entry)
+    /usr/local/bin/java -jar /opt/citrus-mcp/citrus-mcp-server-runner.jar --help > /dev/null 2>&1 || true; \
+    python3 -c "import zipfile; mf = zipfile.ZipFile('/opt/citrus-mcp/citrus-mcp-server-runner.jar').read('META-INF/MANIFEST.MF').decode(); assert 'Main-Class' in mf, mf"
+USER 1001
+ENTRYPOINT ["migration-harness"]
+CMD ["run"]
