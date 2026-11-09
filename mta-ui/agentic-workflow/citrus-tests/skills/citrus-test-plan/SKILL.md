@@ -51,12 +51,12 @@ cover. The `citrus_catalog_endpoints` tool is the ground truth for the
 exact endpoint list - query it (with no filter) before finalizing the
 classification.
 
-**Validation status of this map**: only the HTTP/REST rows (both
-lanes) are validated end-to-end. The other rows are derived from the
-live catalog and Citrus's architecture - **catalog-derived, not yet
-validated end-to-end**; when a plan relies on one, treat the author
-stage's Maven build as the validator and record deviations in the
-handoff so the row gets validated or corrected.
+**Validation status of this map**: the HTTP/REST rows (both lanes) and
+the JMS row are validated end-to-end. The remaining rows are derived
+from the live catalog and Citrus's architecture - **catalog-derived,
+not yet validated end-to-end**; when a plan relies on one, treat the
+author stage's Maven build as the validator and record deviations in
+the handoff so the row gets validated or corrected.
 
 The verified shape of the coverage map:
 
@@ -66,9 +66,17 @@ The verified shape of the coverage map:
 - **Outbound HTTP calls the application makes** → Citrus `http-server`
   endpoint simulating the external service on localhost.
 - **SOAP** → `soap-client` / `soap-server` (citrus-ws).
-- **JMS producers/consumers** → `jms` endpoints; broker-backed, so the
-  author stage adds test-scoped embedded broker infrastructure (e.g.
-  an in-VM Artemis) - doable in-JVM, but the plan must name it.
+- **JMS producers/consumers** → `jms` endpoints (validated live:
+  citrus-bom import, `citrus-junit-jupiter` + `citrus-jms` test-scoped,
+  plus an embedded in-VM Artemis broker - `org.apache.activemq:artemis-jakarta-server`
+  2.37.0 test-scoped, `EmbeddedActiveMQ` with an in-vm acceptor
+  `vm://0`, auto-create address settings, endpoint via
+  `JmsEndpoints.jms().asynchronous().connectionFactory(new
+  ActiveMQJMSConnectionFactory("vm://0")).destination(name).timeout(...).build()`).
+  DSL note verified live: the generic send/receive statics live on the
+  **nested Builder classes**
+  (`SendMessageAction.Builder.send` / `ReceiveMessageAction.Builder.receive`),
+  unlike the http DSL's top-level `HttpActionBuilder.http`.
 - **Kafka** → `kafka` endpoints; same broker-backed caveat, heavier -
   treat as possible-but-fragile under a time-boxed sandbox.
 - **Mail** → `mail-server` simulation (citrus-mail); **FTP/SFTP/SCP**
@@ -270,11 +278,29 @@ sections:
 ### 6. Hand off
 
 Append a `## Plan` section to `.konveyor/handoff.md` (create the file if
-absent): the plan file location, the chosen Citrus version, the test count,
-and anything the author stage must know (e.g. Java version constraints,
-proxy settings if Maven needs them - if the `MAVEN_SETTINGS_XML`
-environment variable is set, write its value to
-`/home/harness/.m2/settings.xml` before any Maven call).
+absent). The handoff is a **fixed-format document** - the author and
+verify stages (and any tooling that refines the skills) parse it, so
+follow the template exactly; put narrative detail inside the fields,
+never change the field names or order:
+
+    # Citrus Tests — <application name> (<run label>)
+    ## Plan
+    - Lane: test | it (+ one-line reason)
+    - Citrus version: <version> (+ one-line reason)
+    - Inventory verdicts: <element> → tested-in-JVM | tested-container |
+      better-as-unit-test | out-of-scope (<reason>); one per element
+    - Dependencies planned: <artifact:version list>
+    - Commands: <the exact mvn commands each stage runs>
+    - Environment notes: <proxy/settings/network facts the next stages need>
+    - Notes: <assumptions, risks, skipped MCP consultations>
+
+The author stage appends `## Author`, the verify stage appends
+`## Verify` (see their skills) using the same discipline: fixed section
+headers, factual field lines, numbered exceptions. The `## Verify`
+section must end with a verdict line in exactly one of these forms:
+
+    Verdict: verified
+    Verdict: verified with exceptions (<numbered list follows)
 
 **Commit** `docs/citrus-test-plan.md` and `.konveyor/handoff.md` - each
 stage runs in a fresh sandbox and continuity carries via git on the target

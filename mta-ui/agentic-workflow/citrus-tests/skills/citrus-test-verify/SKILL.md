@@ -147,13 +147,20 @@ covers.
 
 ### 5. Record the verdict
 
-Append a `## Verify` section to `.konveyor/handoff.md`: the exact commands
-run, test counts (run/passed/failed/skipped), whether every planned test
-executed, fixes applied, the **coverage table** (per-package/per-class
-instruction and branch coverage from the committed run, plus the baseline
-and the delta attributable to the new tests; or "not measured" with the
-reason), and the final verdict (verified / verified with exceptions,
-listing exceptions).
+Append a `## Verify` section to `.konveyor/handoff.md`, following the
+fixed-format template (fixed section header, factual field lines), and
+end with the verdict line in exactly one of the two forms the plan
+skill defines:
+
+    ## Verify
+    - Commands run: <exact commands>
+    - Executed: <class → counts; every planned test or the gap named>
+    - Fixes applied: none | <numbered list>
+    - Coverage: <per-package/per-class instruction and branch coverage
+      table from the committed run, plus the baseline and the delta
+      attributable to the new tests; or "not measured" + reason>
+    Verdict: verified
+    Verdict: verified with exceptions (<numbered list follows)
 
 **Commit** any test-side fixes plus the handoff update with a message
 summarizing the verification outcome - the run's target branch is the

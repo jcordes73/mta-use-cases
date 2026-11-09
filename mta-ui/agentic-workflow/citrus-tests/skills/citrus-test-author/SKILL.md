@@ -356,9 +356,16 @@ the application path. Iterate until the new tests pass:
 
 ### 7. Hand off
 
-Append an `## Author` section to `.konveyor/handoff.md`: tests added
-(class list), dependencies added, `mvn test` result (counts), deviations
-from the plan (with reasons), anything the verify stage must know.
+Append an `## Author` section to `.konveyor/handoff.md`, following the
+fixed-format template the plan stage established (same discipline:
+fixed section header, factual field lines, numbered deviations):
+
+    ## Author
+    - Result: green | red (+ counts: Tests run N, Failures F, Errors E)
+    - Tests added: <class FQN list, one per line>
+    - Dependencies added: <artifact:version list>
+    - Deviations: none | <numbered list, each with the reason>
+    - Environment notes: <anything verify needs about the sandbox>
 
 **Commit** all changes (pom, tests, config, `docs/citrus-test-plan.md`
 status edits, `.konveyor/handoff.md`) with a message summarizing the added
