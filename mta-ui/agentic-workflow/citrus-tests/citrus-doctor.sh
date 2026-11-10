@@ -174,11 +174,22 @@ if [ "$mode" = "deps" ]; then
         PASS "hibernate-core/jpamodelgen scope shape OK"
     fi
 
-    # 8. JUnit 5 engine for the Citrus Jupiter runtime
+    # 8. JUnit engine for the Citrus Jupiter runtime
         if printf '%s\n' "$deps" | grep -q "junit-jupiter-engine"; then
             PASS "junit-jupiter-engine on the test classpath"
         else
             FAIL "citrus-junit-jupiter present but junit-jupiter-engine missing - tests would be skipped silently"
+        fi
+        # 8b. stale Jupiter pin: citrus-junit-jupiter 5.x pulls JUnit 6.x;
+        #     an explicit 5.x pin wins mediation (nearest) and crashes the
+        #     surefire fork (NoClassDefFoundError
+        #     org/junit/platform/engine/OutputDirectoryCreator) - observed
+        #     live on websocket-hello.
+        stale_pin=$(grep -B4 "<version>5\.[0-9]" $poms 2>/dev/null | grep "junit-jupiter" | head -1)
+        if [ -n "$stale_pin" ]; then
+            FAIL "stale JUnit Jupiter 5.x pin in the pom chain while citrus-junit-jupiter 5.x (JUnit 6.1.3) is declared - nearest-wins mediation drags platform 1.9 in and the surefire fork dies with NoClassDefFoundError: org/junit/platform/engine/OutputDirectoryCreator; remove the explicit jupiter pin and let citrus-bom resolve it"
+        else
+            PASS "no stale JUnit Jupiter 5.x pin"
         fi
     else
         PASS "no citrus-junit-jupiter (deps-mode jackson/engine checks n/a)"

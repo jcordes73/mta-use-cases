@@ -89,16 +89,32 @@ deviations):
 
 ## Draft recipes pending validation
 
-`citrus-test-author/recipes/` carries seven DRAFT recipes
-(soap, mail, ftp-sftp, websocket, graphql, kafka, jmx-rmi-ssh),
+`citrus-test-author/recipes/` carries six DRAFT recipes
+(soap, mail, ftp-sftp, graphql, kafka, jmx-rmi-ssh),
 grounded in the Citrus 5.1.0 MCP catalog + docs but not validated
 live. The harness earns each one its verified banner: run the
 scenario on a matching quickstart (candidates: `helloworld-ws` or
-`jaxws-retail` for SOAP; `websocket-hello` for WebSocket;
-`mail` for mail; `spring-kafka`-style producers for Kafka),
+`jaxws-retail` for SOAP; `mail` for mail;
+`spring-kafka`-style producers for Kafka),
 fold observed failure signatures into the recipe, flip the banner.
 The REST/container/JMS recipes are the validated template for what
 that output should look like.
+
+**First promotion (2026-11-10): WebSocket.** Dry run on
+`websocket-hello` (2/2 green, 0% → 100% instruction of `HelloName`)
+promoted `recipes/websocket.md` to verified. Findings: citrus's
+`WebSocketClient` hardcodes a `permessage-deflate` handshake offer
+(built from Jetty 12 core internal classes) that Tyrus rejects with a
+PROTOCOL_ERROR close — the receive then silently times out; strip
+`WebSocketHttpHeaders` after building the client. A stale
+`junit-jupiter-engine:5.9.1` pin crashed the surefire fork
+(`NoClassDefFoundError OutputDirectoryCreator`) because
+citrus-junit-jupiter 5.1.0 pulls JUnit 6.1.3 — same nearest-wins trap
+class as the hibernate-core crash. Tyrus `Server` takes endpoint
+classes (annotation path), not `ServerEndpointConfig`. And `-Dtest`
+exclusion filters override surefire's default includes, dragging the
+module's failsafe ITs into surefire (they fail on missing
+`SERVER_HOST`) — exclude every IT class explicitly when baselining.
 
 ## Doctor regression sweep
 

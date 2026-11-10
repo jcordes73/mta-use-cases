@@ -112,14 +112,19 @@ The verified shape of the coverage map:
   the sandbox, not "possible-but-fragile". **Draft recipe**:
   `skills/citrus-test-author/recipes/kafka.md` (unvalidated; note the
   docs constraint: Kafka is asynchronous communication only).
+- **WebSocket** → `citrus-websocket`, in-JVM via a standalone Tyrus WS
+  container hosting the real `@ServerEndpoint` (**validated live** on
+  `websocket-hello`: recipe `skills/citrus-test-author/recipes/websocket.md`
+  — note the permessage-deflate handshake trap and the JUnit-pin
+  conflict it documents).
 - **Mail** → `mail-server` simulation (citrus-mail); **FTP/SFTP/SCP**
-  → `citrus-ftp` client+server endpoints; **WebSocket** →
-  `citrus-websocket`; **GraphQL** → `citrus-graphql`; **JMX, RMI,
+  → `citrus-ftp` client+server endpoints; **GraphQL** → `citrus-graphql`;
+  **JMX, RMI,
   SSH, Vert.x, Spring Integration channels, Camel routes** →
   dedicated catalog endpoints - all in-JVM simulation, no external
   infrastructure. **Draft recipes** (unvalidated) for the first five:
   `skills/citrus-test-author/recipes/mail.md`, `ftp-sftp.md`,
-  `websocket.md`, `graphql.md`, `jmx-rmi-ssh.md`.
+  `graphql.md`, `jmx-rmi-ssh.md`.
 - **Plain CDI beans / POJOs** → testable in-JVM (Citrus `direct`
   endpoints if orchestration is wanted), but conventional unit tests
   are usually the better fit - say so explicitly in the plan rather

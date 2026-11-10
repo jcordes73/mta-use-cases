@@ -164,7 +164,7 @@ from memory:
 | `recipes/soap.md` | SOAP (`citrus-ws`) | **DRAFT — unvalidated** |
 | `recipes/mail.md` | mail (`citrus-mail`) | **DRAFT — unvalidated** |
 | `recipes/ftp-sftp.md` | FTP/SFTP (`citrus-ftp`) | **DRAFT — unvalidated** |
-| `recipes/websocket.md` | WebSocket (`citrus-websocket`) | **DRAFT — unvalidated** |
+| `recipes/websocket.md` | WebSocket (`citrus-websocket`) | validated live (websocket-hello) |
 | `recipes/graphql.md` | GraphQL (`citrus-graphql`) | **DRAFT — unvalidated** |
 | `recipes/kafka.md` | Kafka + embedded broker (`citrus-kafka`) | **DRAFT — unvalidated** |
 | `recipes/jmx-rmi-ssh.md` | JMX / RMI / SSH (`citrus-jmx`, `citrus-rmi`, `citrus-ssh`) | **DRAFT — unvalidated** |
