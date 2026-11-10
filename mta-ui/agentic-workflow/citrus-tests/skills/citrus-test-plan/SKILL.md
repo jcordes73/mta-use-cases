@@ -121,14 +121,20 @@ The verified shape of the coverage map:
   `websocket-hello`: recipe `skills/citrus-test-author/recipes/websocket.md`
   — note the permessage-deflate handshake trap and the JUnit-pin
   conflict it documents).
-- **Mail** → `mail-server` simulation (citrus-mail); **FTP/SFTP/SCP**
+- **Mail** → `mail-server` simulation (citrus-mail; **validated live**
+  on `mail`: recipe `skills/citrus-test-author/recipes/mail.md` —
+  SMTP-only, so app read paths go via error-path coverage; note the
+  byte-exact single-line payload template, the
+  `initialize()`-before-`start()` lifecycle, the Jackson-annotations
+  pin, and the recording-FacesContext pattern it documents).
+  **FTP/SFTP/SCP**
   → `citrus-ftp` client+server endpoints; **GraphQL** → `citrus-graphql`;
   **JMX, RMI,
   SSH, Vert.x, Spring Integration channels, Camel routes** →
   dedicated catalog endpoints - all in-JVM simulation, no external
-  infrastructure. **Draft recipes** (unvalidated) for the first five:
-  `skills/citrus-test-author/recipes/mail.md`, `ftp-sftp.md`,
-  `graphql.md`, `jmx-rmi-ssh.md`.
+  infrastructure. **Draft recipes** (unvalidated) for the rest:
+  `skills/citrus-test-author/recipes/ftp-sftp.md`, `graphql.md`,
+  `jmx-rmi-ssh.md`.
 - **Plain CDI beans / POJOs** → testable in-JVM (Citrus `direct`
   endpoints if orchestration is wanted), but conventional unit tests
   are usually the better fit - say so explicitly in the plan rather

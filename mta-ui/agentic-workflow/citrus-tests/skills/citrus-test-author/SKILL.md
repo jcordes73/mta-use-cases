@@ -162,7 +162,7 @@ from memory:
 | (container recipe in step 5 below) | container lane `*IT` vs real EAP | validated live |
 | (JMS recipe in `citrus-test-plan` SKILL.md) | JMS in-JVM (embedded Artemis) | validated live |
 | `recipes/soap.md` | SOAP (`citrus-ws`) | validated live (jaxws-ejb, container lane) |
-| `recipes/mail.md` | mail (`citrus-mail`) | **DRAFT — unvalidated** |
+| `recipes/mail.md` | mail (`citrus-mail`) | validated live (mail, in-JVM lane) |
 | `recipes/ftp-sftp.md` | FTP/SFTP (`citrus-ftp`) | **DRAFT — unvalidated** |
 | `recipes/websocket.md` | WebSocket (`citrus-websocket`) | validated live (websocket-hello) |
 | `recipes/graphql.md` | GraphQL (`citrus-graphql`) | **DRAFT — unvalidated** |

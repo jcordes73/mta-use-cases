@@ -89,12 +89,12 @@ deviations):
 
 ## Draft recipes pending validation
 
-`citrus-test-author/recipes/` carries five DRAFT recipes
-(mail, ftp-sftp, graphql, kafka, jmx-rmi-ssh),
+`citrus-test-author/recipes/` carries four DRAFT recipes
+(ftp-sftp, graphql, kafka, jmx-rmi-ssh),
 grounded in the Citrus 5.1.0 MCP catalog + docs but not validated
 live. The harness earns each one its verified banner: run the
 scenario on a matching quickstart (candidates:
-`mail` for mail; `spring-kafka`-style producers for Kafka),
+`spring-kafka`-style producers for Kafka),
 fold observed failure signatures into the recipe, flip the banner.
 The REST/container/JMS recipes are the validated template for what
 that output should look like.
@@ -135,6 +135,28 @@ validation DSL is `org.citrusframework.xml.dsl.XpathSupport`
 server boot is non-fatal. Doctor pre/deps/container all behaved as
 expected on the first container-lane exercise (checkstyle +
 failsafe-includes WARNs only).
+
+**Third promotion (2026-11-10): Mail — the recording-FacesContext
+pattern.** Dry run on `mail` (5/5 green under plain `mvn test` with
+checkstyle on, 0% → 54.6% instruction of `Email` — 24/25 methods, 100%
+of all lane-reachable code; baseline 0 tests / 0%, no SE warm-up)
+promoted `recipes/mail.md` to verified. Findings: the EAP BOM pins
+`jackson-annotations` 2.18.4 while citrus-mail's Jackson 3 needs the
+2.22 line (`NoClassDefFoundError JsonSerializeAs` — the doctor's
+jackson check class again). A manually built `MailServer` needs
+`initialize()` before `start()` or `deliver()` NPEs on the null
+endpoint adapter, and `autoStart(true)` + manual `start()` double-binds
+the port (GreenMail's "Could not start … set server startup timeout"
+message is misleading). The forwarded payload is a **single line** with
+its own XML declaration and no cc/bcc elements, validation is
+positional text equality that does not honor `@ignore@`, and a
+~250-char template line crashes checkstyle 8.5 ("Range out of bounds")
+— build templates by concatenation. Faces-dependent beans need a
+recording `FacesContext` (no-op subclass + protected static
+`setCurrentInstance`) for BOTH paths — `send()` swallows exceptions
+into Faces messages, so a failed send is otherwise invisible. And the
+confirmed scope limit: the citrus mail server is SMTP-only, so the
+app's POP3/IMAP read path is covered via error paths only.
 
 ## Doctor regression sweep
 
