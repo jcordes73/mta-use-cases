@@ -93,8 +93,12 @@ The verified shape of the coverage map:
     those for the container lane or mark out of scope with the reason.
 - **Outbound HTTP calls the application makes** → Citrus `http-server`
   endpoint simulating the external service on localhost.
-- **SOAP** → `soap-client` / `soap-server` (citrus-ws) - **draft
-  recipe**: `skills/citrus-test-author/recipes/soap.md` (unvalidated).
+- **SOAP** → `soap-client` / `soap-server` (citrus-ws) — **validated
+  live** (container lane, on `jaxws-ejb`): recipe
+  `skills/citrus-test-author/recipes/soap.md` — note the endpoint-URL
+  (context-root) and RPC/literal `arg0` traps it documents; an
+  EJB-as-`@WebService` has **no in-JVM lane** (needs the EJB + WS
+  runtime).
 - **JMS producers/consumers** → `jms` endpoints (validated live:
   citrus-bom import, `citrus-junit-jupiter` + `citrus-jms` test-scoped,
   plus an embedded in-VM Artemis broker - `org.apache.activemq:artemis-jakarta-server`

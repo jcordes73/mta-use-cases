@@ -89,13 +89,12 @@ deviations):
 
 ## Draft recipes pending validation
 
-`citrus-test-author/recipes/` carries six DRAFT recipes
-(soap, mail, ftp-sftp, graphql, kafka, jmx-rmi-ssh),
+`citrus-test-author/recipes/` carries five DRAFT recipes
+(mail, ftp-sftp, graphql, kafka, jmx-rmi-ssh),
 grounded in the Citrus 5.1.0 MCP catalog + docs but not validated
 live. The harness earns each one its verified banner: run the
-scenario on a matching quickstart (candidates: `helloworld-ws` or
-`jaxws-retail` for SOAP; `mail` for mail;
-`spring-kafka`-style producers for Kafka),
+scenario on a matching quickstart (candidates:
+`mail` for mail; `spring-kafka`-style producers for Kafka),
 fold observed failure signatures into the recipe, flip the banner.
 The REST/container/JMS recipes are the validated template for what
 that output should look like.
@@ -115,6 +114,27 @@ classes (annotation path), not `ServerEndpointConfig`. And `-Dtest`
 exclusion filters override surefire's default includes, dragging the
 module's failsafe ITs into surefire (they fail on missing
 `SERVER_HOST`) — exclude every IT class explicitly when baselining.
+
+**Second promotion (2026-11-10): SOAP — first container-lane
+exercise.** Dry run on `jaxws-ejb` (2/2 green under
+`mvn verify -Pcitrus-container-tests`, server-side JaCoCo, 50% → 100%
+instruction of `EJB3Bean` — deployment itself covers the bean
+skeleton) promoted `recipes/soap.md` to verified and exercised the
+validated helloworld-rs container profile as a copy-template for the
+first time. Findings: the planned endpoint URL was wrong —
+`jboss-web.xml` sets the context root to `/`, so the endpoint is
+`http://localhost:8080/EJB3Bean`, and a wrong URL fails fast with
+`Method Not Allowed [405]` (never derive the endpoint from the
+artifact id; read `jboss-web.xml`/`web.xml` or the WSDL
+`soap:address`). RPC/literal with no `@WebParam`: the request part is
+`arg0`, namespace-unqualified — wrong shape → `soap:Client`
+`Unmarshalling Error … Expected elements are <{}arg0>`. The XPath
+validation DSL is `org.citrusframework.xml.dsl.XpathSupport`
+(citrus-validation-xml, transitive via citrus-ws). JaCoCo
+`IllegalClassFormatException` noise on JDK bootstrap classes during
+server boot is non-fatal. Doctor pre/deps/container all behaved as
+expected on the first container-lane exercise (checkstyle +
+failsafe-includes WARNs only).
 
 ## Doctor regression sweep
 

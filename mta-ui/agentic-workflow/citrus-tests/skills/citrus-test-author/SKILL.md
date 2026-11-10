@@ -161,7 +161,7 @@ from memory:
 | `recipes/data-backed-rest.md`* | data-backed REST in-JVM (Weld SE + H2) | validated live |
 | (container recipe in step 5 below) | container lane `*IT` vs real EAP | validated live |
 | (JMS recipe in `citrus-test-plan` SKILL.md) | JMS in-JVM (embedded Artemis) | validated live |
-| `recipes/soap.md` | SOAP (`citrus-ws`) | **DRAFT — unvalidated** |
+| `recipes/soap.md` | SOAP (`citrus-ws`) | validated live (jaxws-ejb, container lane) |
 | `recipes/mail.md` | mail (`citrus-mail`) | **DRAFT — unvalidated** |
 | `recipes/ftp-sftp.md` | FTP/SFTP (`citrus-ftp`) | **DRAFT — unvalidated** |
 | `recipes/websocket.md` | WebSocket (`citrus-websocket`) | validated live (websocket-hello) |
