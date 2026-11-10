@@ -89,8 +89,8 @@ deviations):
 
 ## Draft recipes pending validation
 
-`citrus-test-author/recipes/` carries four DRAFT recipes
-(ftp-sftp, graphql, kafka, jmx-rmi-ssh),
+`citrus-test-author/recipes/` carries three DRAFT recipes
+(ftp-sftp, graphql, jmx-rmi-ssh),
 grounded in the Citrus 5.1.0 MCP catalog + docs but not validated
 live. The harness earns each one its verified banner: run the
 scenario on a matching quickstart (candidates:
@@ -157,6 +157,32 @@ recording `FacesContext` (no-op subclass + protected static
 into Faces messages, so a failed send is otherwise invisible. And the
 confirmed scope limit: the citrus mail server is SMTP-only, so the
 app's POP3/IMAP read path is covered via error paths only.
+
+**Fourth promotion (2026-11-10): Kafka — the embedded-broker pattern,
+first XP-line module.** Dry run on `microprofile-reactive-messaging-kafka`
+(checked out from `origin/xp-6.0.x`; 6/6 green under plain `mvn test`
+with checkstyle on, 0% → 70.4% instruction over the in-scope classes,
+MessagingBean 7/7 methods — all five channel methods; baseline 0 tests)
+promoted `recipes/kafka.md` to verified. The citrus-kafka **embedded
+Kafka server is Kafka 4.4.0** and the XP BOM line conflicts with it on
+three fronts, all pinned in the module: the spec MP reactive-messaging
+API (3.0.1) dropped the metadata methods that smallrye's own
+`Message` interface (inside `smallrye-reactive-messaging-api`) still
+carries and `KafkaMetadataUtil` calls — add the SmallRye API
+test-scoped, declared BEFORE the spec API, or `sendToKafka` dies with
+`NoSuchMethodError` (this is also why the deployed app works: WildFly
+resolves the same conflict in SmallRye's favor); kafka-clients 3.9.1
+vs server 4.4 (`NoSuchMethodError ConfigDef$ValidList.anyNonDuplicateValues`);
+log4j-api 2.23.1 vs 2.25 (`NoSuchFieldError FlowMessageFactory.INSTANCE`).
+Lifecycle note opposite to mail: `EmbeddedKafkaServer.initialize()`
+starts the broker AND creates topics — call it once, never `start()`
+on top. Per-test topic + consumer group with `offsetReset("earliest")`
+keeps tests from leaking records; non-text payloads validate via a
+`ValidationProcessor` on the deserialized object (Java-serialization
+bytes are not text-matchable), with the app's own serializer classes
+on the endpoint. The draft's catalog property names (`key`,
+`autoOffsetReset`, `allowNonEmptyKeys`) were wrong and are corrected
+in the promoted recipe.
 
 ## Doctor regression sweep
 
