@@ -500,6 +500,15 @@ IT-class mechanics for this lane (differ from the in-JVM lane):
 - keep failsafe `<includes>` exactly the planned `*IT` classes; the
   quickstarts' pre-existing `RESTEndPointIT` (JUnit 4, needs
   SERVER_HOST env and an external server) must not be picked up.
+- **failsafe is the whole test phase of this lane - it fails silently**:
+  JUnit 5 ITs need failsafe >= 2.22 (the doctor's `container` mode
+  checks the effective version), and 40/47 quickstart modules declare
+  restrictive `<includes>` naming their own IT classes - a new `*IT`
+  class outside those patterns is skipped and `mvn verify` reports
+  green with zero tests. The recipe above writes the profile's own
+  `<includes>` (overriding the module's), so the new ITs always run;
+  confirm from the verify report's test count, never from BUILD
+  SUCCESS alone.
 
 ### 6. Verify and iterate
 

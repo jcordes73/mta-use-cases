@@ -187,7 +187,42 @@ fi
 
 # ---------------------------------------------------------- container mode
 if [ "$mode" = "container" ]; then
-    # 9. wildfly-maven-plugin version floor (resolve ${property} versions)
+    # 9. failsafe: the container lane's whole test phase runs here.
+    #    Version floor 2.22 for JUnit 5, and restrictive includes (the
+    #    quickstarts name their own IT classes) - a new *IT class outside
+    #    the declared patterns is silently skipped: the suite reports
+    #    green with zero tests, exactly like the surefire trap.
+    fs_version=""
+    effpom=$(mktemp)
+    if mvn -B -q -o help:effective-pom -f "$app/pom.xml" -Doutput="$effpom" >/dev/null 2>&1 && [ -s "$effpom" ]; then
+        :
+    elif mvn -B -q help:effective-pom -f "$app/pom.xml" -Doutput="$effpom" >/dev/null 2>&1 && [ -s "$effpom" ]; then
+        :
+    fi
+    if [ -s "$effpom" ]; then
+        fs_version=$(grep -A2 "<artifactId>maven-failsafe-plugin</artifactId>" "$effpom" | \
+            grep "<version>" | head -1 | sed -n 's/.*<version>\(.*\)<\/version>.*/\1/p')
+    fi
+    rm -f "$effpom"
+    if [ -n "$fs_version" ]; then
+        fs_major=${fs_version%%.*}; fs_minor=$(printf '%s' "$fs_version" | cut -d. -f2)
+        if [ "$fs_major" -gt 2 ] || { [ "$fs_major" -eq 2 ] && [ "$fs_minor" -ge 22 ]; } 2>/dev/null; then
+            PASS "failsafe ${fs_version} (JUnit 5 capable)"
+        else
+            FAIL "failsafe ${fs_version} < 2.22 - JUnit 5 ITs would silently not run under mvn verify; add a pluginManagement version override in the container profile"
+        fi
+    elif grep -qh "maven-failsafe-plugin" $poms 2>/dev/null; then
+        WARN "failsafe declared but version not resolvable from the effective pom (offline?) - confirm it runs JUnit 5 (needs >= 2.22) from the first mvn verify report"
+    else
+        PASS "no failsafe declared yet (the container recipe adds it)"
+    fi
+    if grep -h "maven-failsafe-plugin" -A14 $poms 2>/dev/null | grep -q "<include>"; then
+        WARN "failsafe declares explicit <includes> (the quickstarts name their own IT classes, 40/47 modules) - a new *IT class is SILENTLY SKIPPED unless it matches a declared pattern (default: **/IT*.java, **/*IT.java, **/*ITCase.java) or the includes are extended; confirm from the mvn verify report that the new ITs execute"
+    else
+        PASS "failsafe has no restrictive <includes> (default patterns apply)"
+    fi
+
+    # 10. wildfly-maven-plugin version floor (resolve ${property} versions)
     wf_version=$(grep -h "wildfly-maven-plugin" -A3 $poms 2>/dev/null | grep "<version>" | head -1 | sed -n 's/.*<version>\(.*\)<\/version>.*/\1/p')
     case "$wf_version" in
         '${'*) wf_version=$(resolve_prop "$wf_version") ;;
@@ -202,13 +237,13 @@ if [ "$mode" = "container" ]; then
             FAIL "wildfly-maven-plugin ${wf_version} < 5 - cannot parse the EAP feature-pack schema; use >= 5.x"
         fi
     fi
-    # 10. channel manifest: the real EAP artifact resolver
+    # 11. channel manifest: the real EAP artifact resolver
     if grep -q "<channels>" $poms 2>/dev/null; then
         PASS "EAP channel manifest present (the real resolver for EAP artifacts)"
     else
         WARN "no <channels> manifest in the pom chain - several EAP artifacts are not on redhat-ga; the profile must resolve via org.jboss.eap.channels:eap-<ver> (repo sweep: only some modules ship one - copy the <channels> block from a sibling quickstart's eap/wildfly-maven-plugin config, e.g. org.jboss.eap.channels:eap-8.1)"
     fi
-    # 11. profile-level pluginRepositories for the Galleon resolution
+    # 12. profile-level pluginRepositories for the Galleon resolution
     if grep -q "repository.jboss.org\|maven.repository.redhat.com" $poms 2>/dev/null; then
         PASS "Red Hat repositories referenced"
     else
