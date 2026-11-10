@@ -21,6 +21,23 @@ plan → author → verify workflow.
 Never modify `src/main/` sources or configuration, existing tests, or
 anything outside the application path.
 
+## When to use this skill
+
+Use this skill when a **committed test plan** exists (`docs/citrus-test-plan.md`
+plus the `## Plan` section of `.konveyor/handoff.md`) and the task is to
+implement it: add the dependencies, write the Citrus test classes and
+endpoint configurations, and iterate until the suite is green.
+
+Do **not** use this skill when:
+
+- no plan is committed — use `citrus-test-plan` first. This stage's
+  contract is that plan; authoring without one is how validation points
+  get skipped and vacuous-green suites happen;
+- the task is to re-run and audit already-committed tests in a fresh
+  environment — use `citrus-test-verify`.
+
+## Workflow
+
 ## Workflow
 
 ### 1. Ground yourself

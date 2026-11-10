@@ -16,6 +16,25 @@ files: `src/test/` inside the application path, test-scoped `pom.xml`
 changes inside the application path, and the plan/handoff documents. Never
 modify `src/main/`.
 
+## When to use this skill
+
+Use this skill as the **final, independent stage**: the author stage has
+committed tests on the target branch, and the task is to prove they work
+from a clean state — run the plan's verification commands fresh, confirm
+the tests actually executed, quantify the coverage they add, and record
+the verdict in the handoff.
+
+Do **not** use this skill when:
+
+- tests have not been authored yet — use `citrus-test-author`;
+- no plan exists — use `citrus-test-plan`.
+
+The fresh sandbox is the point of this stage: never skip it because the
+author reported green — an author's green run is a claim, this stage is
+the evidence.
+
+## Workflow
+
 ## Workflow
 
 ### 1. Ground yourself

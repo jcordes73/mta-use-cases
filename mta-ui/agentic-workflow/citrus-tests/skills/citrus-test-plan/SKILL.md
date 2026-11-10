@@ -17,6 +17,24 @@ may be a multi-application repository (e.g. the jboss-quickstarts monorepo
 carries 123 applications) - never plan tests for directories outside the
 application path.
 
+## When to use this skill
+
+Use this skill when the task is to **decide what Citrus tests to add** to
+a JEE application and produce the plan that later stages execute: test
+inventory, lane selection (in-JVM vs container), Citrus version line,
+coverage targets. Trigger it when no committed test plan exists yet for
+the application path.
+
+Do **not** use this skill when:
+
+- `docs/citrus-test-plan.md` already exists for the application path and
+  the task is to implement it — use `citrus-test-author`;
+- the task is to independently re-run and audit already-committed tests —
+  use `citrus-test-verify`;
+- the task asks for plain unit tests with no integration dimension (no
+  REST/JMS/container surface to exercise) — a unit-test workflow fits
+  better; Citrus earns its keep on protocol and integration testing.
+
 ## Workflow
 
 ### 1. Inventory the application
