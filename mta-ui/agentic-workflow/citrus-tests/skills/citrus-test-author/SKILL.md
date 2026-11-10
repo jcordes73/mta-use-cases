@@ -152,6 +152,33 @@ Record the outage and what was not consulted in the handoff.
 
 ### 4. Implement the tests
 
+**Recipe library** — per-scenario recipes live in `recipes/` next to
+this file. Read the matching one on demand, don't guess the builder DSL
+from memory:
+
+| Recipe | Scenario | Status |
+|---|---|---|
+| `recipes/data-backed-rest.md`* | data-backed REST in-JVM (Weld SE + H2) | validated live |
+| (container recipe in step 5 below) | container lane `*IT` vs real EAP | validated live |
+| (JMS recipe in `citrus-test-plan` SKILL.md) | JMS in-JVM (embedded Artemis) | validated live |
+| `recipes/soap.md` | SOAP (`citrus-ws`) | **DRAFT — unvalidated** |
+| `recipes/mail.md` | mail (`citrus-mail`) | **DRAFT — unvalidated** |
+| `recipes/ftp-sftp.md` | FTP/SFTP (`citrus-ftp`) | **DRAFT — unvalidated** |
+| `recipes/websocket.md` | WebSocket (`citrus-websocket`) | **DRAFT — unvalidated** |
+| `recipes/graphql.md` | GraphQL (`citrus-graphql`) | **DRAFT — unvalidated** |
+| `recipes/kafka.md` | Kafka + embedded broker (`citrus-kafka`) | **DRAFT — unvalidated** |
+| `recipes/jmx-rmi-ssh.md` | JMX / RMI / SSH (`citrus-jmx`, `citrus-rmi`, `citrus-ssh`) | **DRAFT — unvalidated** |
+
+\* The validated REST/container recipes live inline in this skill
+(steps 4–5) until the reference-card split moves them out.
+
+**Promotion protocol**: a DRAFT recipe's DSL is grounded in the Citrus
+5.1.0 MCP catalog/docs, but its pitfalls are *expected*, not observed.
+When a harness or cluster run exercises a draft family, fold the
+observed failure signatures into the recipe and flip its banner to
+verified — never present a draft's pitfalls as validated experience in
+the handoff.
+
 For each row of the plan's test inventory:
 
 - create the test class (FQN from the plan) under `src/test/java` with the

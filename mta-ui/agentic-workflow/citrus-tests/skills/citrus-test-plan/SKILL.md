@@ -93,7 +93,8 @@ The verified shape of the coverage map:
     those for the container lane or mark out of scope with the reason.
 - **Outbound HTTP calls the application makes** → Citrus `http-server`
   endpoint simulating the external service on localhost.
-- **SOAP** → `soap-client` / `soap-server` (citrus-ws).
+- **SOAP** → `soap-client` / `soap-server` (citrus-ws) - **draft
+  recipe**: `skills/citrus-test-author/recipes/soap.md` (unvalidated).
 - **JMS producers/consumers** → `jms` endpoints (validated live:
   citrus-bom import, `citrus-junit-jupiter` + `citrus-jms` test-scoped,
   plus an embedded in-VM Artemis broker - `org.apache.activemq:artemis-jakarta-server`
@@ -105,14 +106,20 @@ The verified shape of the coverage map:
   **nested Builder classes**
   (`SendMessageAction.Builder.send` / `ReceiveMessageAction.Builder.receive`),
   unlike the http DSL's top-level `HttpActionBuilder.http`.
-- **Kafka** → `kafka` endpoints; same broker-backed caveat, heavier -
-  treat as possible-but-fragile under a time-boxed sandbox.
+- **Kafka** → `kafka` endpoints - **upgrade**: the catalog shows
+  `EmbeddedKafkaServerBuilder` (embedded broker, temp-dir storage,
+  auto-delete on exit), so an embedded-broker round trip is viable in
+  the sandbox, not "possible-but-fragile". **Draft recipe**:
+  `skills/citrus-test-author/recipes/kafka.md` (unvalidated; note the
+  docs constraint: Kafka is asynchronous communication only).
 - **Mail** → `mail-server` simulation (citrus-mail); **FTP/SFTP/SCP**
   → `citrus-ftp` client+server endpoints; **WebSocket** →
   `citrus-websocket`; **GraphQL** → `citrus-graphql`; **JMX, RMI,
   SSH, Vert.x, Spring Integration channels, Camel routes** →
   dedicated catalog endpoints - all in-JVM simulation, no external
-  infrastructure.
+  infrastructure. **Draft recipes** (unvalidated) for the first five:
+  `skills/citrus-test-author/recipes/mail.md`, `ftp-sftp.md`,
+  `websocket.md`, `graphql.md`, `jmx-rmi-ssh.md`.
 - **Plain CDI beans / POJOs** → testable in-JVM (Citrus `direct`
   endpoints if orchestration is wanted), but conventional unit tests
   are usually the better fit - say so explicitly in the plan rather

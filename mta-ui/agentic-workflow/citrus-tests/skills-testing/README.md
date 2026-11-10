@@ -87,6 +87,19 @@ deviations):
   bootstrap, `addAlternative()` needing `addBeanClasses()` (three
   defects the local warm run could not surface)
 
+## Draft recipes pending validation
+
+`citrus-test-author/recipes/` carries seven DRAFT recipes
+(soap, mail, ftp-sftp, websocket, graphql, kafka, jmx-rmi-ssh),
+grounded in the Citrus 5.1.0 MCP catalog + docs but not validated
+live. The harness earns each one its verified banner: run the
+scenario on a matching quickstart (candidates: `helloworld-ws` or
+`jaxws-retail` for SOAP; `websocket-hello` for WebSocket;
+`mail` for mail; `spring-kafka`-style producers for Kafka),
+fold observed failure signatures into the recipe, flip the banner.
+The REST/container/JMS recipes are the validated template for what
+that output should look like.
+
 ## Doctor regression sweep
 
 When the doctor itself changes, sweep the whole target repo once —
