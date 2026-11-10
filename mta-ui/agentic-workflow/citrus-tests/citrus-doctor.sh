@@ -113,7 +113,7 @@ EOF
     # 4. Checkstyle on test sources: the quickstarts ruleset kills the build
     #    on redundant/unused imports - iterate with it off.
     if grep -q "checkstyle" $poms 2>/dev/null; then
-        WARN "checkstyle is wired into the build - iterate with -Dcheckstyle.skip=true and run the suite once clean before committing (redundant/unused imports WILL fail the build otherwise)"
+        WARN "checkstyle is wired into the build (the quickstarts parent pom ships it on every module - expected here) - iterate with -Dcheckstyle.skip=true and run the suite once clean before committing (redundant/unused imports WILL fail the build otherwise)"
     else
         PASS "no checkstyle in the pom chain"
     fi
@@ -206,7 +206,7 @@ if [ "$mode" = "container" ]; then
     if grep -q "<channels>" $poms 2>/dev/null; then
         PASS "EAP channel manifest present (the real resolver for EAP artifacts)"
     else
-        WARN "no <channels> manifest in the pom chain - several EAP artifacts are not on redhat-ga; the profile must resolve via org.jboss.eap.channels:eap-<ver>"
+        WARN "no <channels> manifest in the pom chain - several EAP artifacts are not on redhat-ga; the profile must resolve via org.jboss.eap.channels:eap-<ver> (repo sweep: only some modules ship one - copy the <channels> block from a sibling quickstart's eap/wildfly-maven-plugin config, e.g. org.jboss.eap.channels:eap-8.1)"
     fi
     # 11. profile-level pluginRepositories for the Galleon resolution
     if grep -q "repository.jboss.org\|maven.repository.redhat.com" $poms 2>/dev/null; then

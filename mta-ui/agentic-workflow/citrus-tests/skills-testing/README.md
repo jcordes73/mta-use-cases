@@ -87,6 +87,28 @@ deviations):
   bootstrap, `addAlternative()` needing `addBeanClasses()` (three
   defects the local warm run could not surface)
 
+## Doctor regression sweep
+
+When the doctor itself changes, sweep the whole target repo once —
+every check in every mode, against every project. Cost: `pre` and
+`container` are grep-only (seconds per project); `deps` pays one
+`mvn dependency:list` per project (~45 s each, ~35 min for all 47
+quickstarts):
+
+    for d in ~/jboss-quickstarts-ssh/*/; do
+      [ -f "$d/pom.xml" ] || continue
+      citrus-doctor.sh pre "$d"; citrus-doctor.sh deps "$d"; citrus-doctor.sh container "$d"
+    done
+
+Baseline (2026-11-10, doctor as of build 13): 47/47 projects exit
+`deps` clean; `pre` reports only the parent-pom checkstyle WARN
+(universal here); `container` flags missing `<channels>` on 2 EJB-only
+modules (ejb-multi-server, ejb-txn-remote-call); 6 modules carry
+`org.jboss:jandex` (helloworld-rs, jaxrs-client, jaxrs-jwt, logging,
+thread-racing, todo-backend) — the clash check arms there once the
+data-backed recipe adds Weld 5. Anything beyond this baseline after a
+doctor edit is a regression, not a discovery.
+
 The pattern: a skill edit is only trustworthy once a dry run executed
 the edited text end-to-end. Never rebuild the image from unedited
 aspiration.

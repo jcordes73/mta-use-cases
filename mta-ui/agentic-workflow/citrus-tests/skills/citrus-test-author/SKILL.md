@@ -252,6 +252,11 @@ during validation, so follow the pattern closely:
      shadows `io.smallrye:jandex` 3.x on the test classpath and Weld 5
      blows up with `NoSuchMethodError: Indexer.indexWithSummary` —
      exclude `org.jboss:jandex` and add `io.smallrye:jandex` test-scoped;
+     several REST quickstarts ship the 2.x jandex transitively (repo
+     sweep: helloworld-rs, jaxrs-client, jaxrs-jwt, logging,
+     thread-racing, todo-backend), so expect the clash there as soon as
+     the recipe adds Weld 5 - apply the exclude up front rather than
+     waiting for the red first run;
    - Citrus 5.1.0 needs the Jackson-annotations line matching its Jackson
      version — the EAP BOM pins an older one; add the newer version
      test-scoped if validation fails with Jackson errors;
