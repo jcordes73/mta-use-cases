@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- EXAMPLE ONLY — the EJB client configuration backing the remote-EJB call site
+     (the SOAP call site needs no descriptor — it is WSDL-driven). CLEANUP TARGET
+     (§4.2/§6): deleted only when the §4.4 audit shows the remote view has no
+     consumers left. In the SOAP variant, the REST facade replaces the remote-EJB
+     call sites; the SOAP path stays (§2.6). -->
+<jboss-ejb-client xmlns="urn:jboss:ejb-client:1.0">
+    <client-context>
+        <connection target-uri="remote+http://customer-app:8080" username="order-consumer">
+            <secret value="PLACEHOLDER — from the platform, never hard-coded"/>
+        </connection>
+    </client-context>
+</jboss-ejb-client>

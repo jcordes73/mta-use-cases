@@ -1,0 +1,224 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>com.acme</groupId>
+    <artifactId>order-consumer-soap</artifactId>
+    <version>1.0.0</version>
+    <packaging>war</packaging>
+
+    <properties>
+        <maven.compiler.release>17</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+    <!-- JBoss EAP 8 GA artifacts (org.jboss.eap BOMs) come from the Red Hat repo
+         (public, no subscription needed for GA artifacts) -->
+    <repositories>
+        <repository>
+            <id>redhat-ga</id>
+            <url>https://maven.repository.redhat.com/ga/</url>
+            <releases><enabled>true</enabled></releases>
+            <snapshots><enabled>false</enabled></snapshots>
+        </repository>
+    </repositories>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- JBoss EAP 8 BOMs — imports must live HERE, not in <dependencies>.
+                 Production POMs should import these instead of pinning versions. -->
+            <dependency>
+                <groupId>org.jboss.eap</groupId>
+                <artifactId>wildfly-standard-ee-bom</artifactId>
+                <version>8.1.1.GA-redhat-00048</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.jboss.eap</groupId>
+                <artifactId>wildfly-ejb-client-bom</artifactId>
+                <version>8.1.8.GA-redhat-00008</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <!-- COUPLING 1 (SOAP): wsconsume-style stubs call the @WebService endpoint —
+             WSDL-driven, no compile dependency on provider classes. -->
+        <!-- COUPLING 2 (remote EJB): compile-time dependency on the shared api jar,
+             plus the JBoss EJB client stack for the ejb: lookup. -->
+        <dependency>
+            <groupId>com.acme</groupId>
+            <artifactId>customer-api</artifactId>
+            <version>1.0.0</version>
+        </dependency>
+        <!-- The EJB client stack — VERSION MANAGED by the wildfly-ejb-client-bom import
+             above (no <version> here; it resolves to the EAP-managed artifact).
+             CLEANUP TARGET (§4.2/§6): remove when the remote call sites are gone. -->
+        <dependency>
+            <groupId>org.jboss</groupId>
+            <artifactId>jboss-ejb-client</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.platform</groupId>
+            <artifactId>jakarta.jakartaee-api</artifactId>
+            <version>10.0.0</version>
+            <scope>provided</scope>
+        </dependency>
+        <!-- integration tests (§4.5 "before" baseline), Citrus framework:
+             run against a provisioned EAP (see the guide's §10.2/§10.3); skipped
+             unless -Dcustomer.server=<host:port>. Citrus 4.x targets Jakarta EE 10
+             (jakarta namespace) / Java 17+; Citrus 5.x is out (JUnit 6 / Spring 7). -->
+        <dependency>
+            <groupId>org.citrusframework</groupId>
+            <artifactId>citrus-junit5</artifactId>
+            <version>4.10.3</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.10.2</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- SOAP client support (spring-ws based; brings citrus-spring transitively)
+             and the HTTP client the basic-auth sender needs -->
+        <dependency>
+            <groupId>org.citrusframework</groupId>
+            <artifactId>citrus-ws</artifactId>
+            <version>4.10.3</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.httpcomponents.client5</groupId>
+            <artifactId>httpclient5</artifactId>
+            <version>5.5.1</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- test scope: the WildFly naming client for the remote-EJB lookup — the
+             jboss-ejb-client runtime dependency does not carry it on the test
+             classpath (version managed by the ejb-client BOM) -->
+        <dependency>
+            <groupId>org.wildfly</groupId>
+            <artifactId>wildfly-naming-client</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- test scope: the elytron credential + auth-client handling the remote-EJB
+             caller needs (versions managed by the ejb-client BOM) -->
+        <dependency>
+            <groupId>org.wildfly.security</groupId>
+            <artifactId>wildfly-elytron-auth-server</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.wildfly.security</groupId>
+            <artifactId>wildfly-elytron-client</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.jboss.remoting</groupId>
+            <artifactId>jboss-remoting</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.wildfly.discovery</groupId>
+            <artifactId>wildfly-discovery-client</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.jboss.marshalling</groupId>
+            <artifactId>jboss-marshalling</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.jboss.marshalling</groupId>
+            <artifactId>jboss-marshalling-river</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.wildfly.transaction</groupId>
+            <artifactId>wildfly-transaction-client</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- test scope: xnio — the remoting transport the WildFly naming client needs
+             (version managed by the ejb-client BOM) -->
+        <dependency>
+            <groupId>org.jboss.xnio</groupId>
+            <artifactId>xnio-api</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.jboss.xnio</groupId>
+            <artifactId>xnio-nio</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- test scope: stax-ex — the SAAJ message conversion the SOAP send needs
+             (saaj-impl's dependency is not pulled transitively by citrus-ws) -->
+        <dependency>
+            <groupId>org.jvnet.staxex</groupId>
+            <artifactId>stax-ex</artifactId>
+            <version>2.1.0</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Coverage gate: unit-test coverage of the HAND-WRITTEN classes must be
+                 >= 95% line coverage, enforced on `mvn test`. The wsconsume-GENERATED
+                 SOAP stubs (com.acme.order.soap.*) are EXCLUDED from the measurement —
+                 generated code is verified by the integration tests against the live
+                 WSDL (§4.5), not by the coverage bar. -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.12</version>
+                <configuration>
+                    <excludes>
+                        <!-- wsconsume-generated SOAP stubs — out of scope for the bar -->
+                        <exclude>com/acme/order/soap/**</exclude>
+                    </excludes>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>check</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <rule>
+                                    <element>BUNDLE</element>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.95</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

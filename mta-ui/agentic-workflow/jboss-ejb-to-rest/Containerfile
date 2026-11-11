@@ -1,0 +1,25 @@
+# JBoss EAP EJB-to-REST migration agent image: Konveyor agent-java + the
+# three stage skills (plan / author / verify) + the original refactoring
+# guide with its worked example. A standalone image (same pattern as the
+# mta-citrus-tests-agent image): use it via the jboss-ejb-to-rest-*-agent
+# Agent CRs when the agent should drive one stage of the EJB-to-REST
+# migration.
+ARG BASE_IMAGE=quay.io/konveyor/agent-java:latest
+
+FROM ${BASE_IMAGE}
+USER root
+# The EJB-to-REST skills (one directory per skill at the image root; the
+# jboss-ejb-to-rest-skillcards SkillCards select them via subPath - same
+# layout as the citrus-tests/migiq agent images).
+COPY skills/jboss-ejb-to-rest-plan /jboss-ejb-to-rest-plan
+COPY skills/jboss-ejb-to-rest-author /jboss-ejb-to-rest-author
+COPY skills/jboss-ejb-to-rest-verify /jboss-ejb-to-rest-verify
+# The original EJB-to-REST refactoring guide the skills cite (the SKILL.md
+# section references (§n) resolve into it) and its worked example
+# (example/before must transform into example/after) used by the plan and
+# author skills to calibrate the transformations. Baked read-only into the
+# image so every stage's fresh sandbox finds it at the same path.
+COPY guide /guide
+USER 1001
+ENTRYPOINT ["migration-harness"]
+CMD ["run"]

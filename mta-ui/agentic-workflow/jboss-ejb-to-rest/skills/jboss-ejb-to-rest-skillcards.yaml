@@ -1,0 +1,66 @@
+# SkillCards for the JBoss EAP EJB-to-REST migration agents.
+#
+# One SkillCard per skill in the mta-jboss-ejb-to-rest-agent image (each
+# skill is one directory at the image root; a SkillCard is always one
+# skill, so subPath selects which - same layout as the citrus-tests
+# skillcards). Built and pushed by the mta-jboss-ejb-to-rest-agent
+# BuildConfig (see the workflow folder's Containerfile). All three cards
+# are type: rule - each skill is its stage's driving skill, so its full
+# content is included in every agent prompt of that stage.
+---
+apiVersion: konveyor.io/v1alpha1
+kind: SkillCard
+metadata:
+  name: jboss-ejb-to-rest-plan
+  namespace: openshift-mta
+spec:
+  image: image-registry.openshift-image-registry.svc:5000/openshift-mta/mta-jboss-ejb-to-rest-agent:latest
+  displayName: JBoss EJB-to-REST Skill - jboss-ejb-to-rest-plan
+  version: "0.0.1"
+  description: "Stage 1 of 3 of the JBoss EAP EJB-to-REST migration. Audits inter-application EJB (remote @Remote, ejb:/JNDI lookups, SOAP/JAX-WS exposed) call sites in a JBoss EAP 8.0+ codebase, builds a migration inventory with per-call-site go/no-go, and proposes the migration order. Makes no code changes; the author and verify stages follow it."
+  type: rule
+  subPath: jboss-ejb-to-rest-plan
+  tags:
+    - java
+    - javaee
+    - eap
+    - migration
+    - planning
+---
+apiVersion: konveyor.io/v1alpha1
+kind: SkillCard
+metadata:
+  name: jboss-ejb-to-rest-author
+  namespace: openshift-mta
+spec:
+  image: image-registry.openshift-image-registry.svc:5000/openshift-mta/mta-jboss-ejb-to-rest-agent:latest
+  displayName: JBoss EJB-to-REST Skill - jboss-ejb-to-rest-author
+  version: "0.0.1"
+  description: "Stage 2 of 3 of the JBoss EAP EJB-to-REST migration. Applies the provider-side (JAX-RS resources/facades over EJBs, OpenAPI) and consumer-side (MicroProfile REST Client, adapter seam) transformations to a JBoss EAP 8.0+ codebase, one call site at a time, driven by the mapping tables in the skill's references/. Requires the inventory produced by the jboss-ejb-to-rest-plan skill."
+  type: rule
+  subPath: jboss-ejb-to-rest-author
+  tags:
+    - java
+    - javaee
+    - eap
+    - migration
+    - authoring
+---
+apiVersion: konveyor.io/v1alpha1
+kind: SkillCard
+metadata:
+  name: jboss-ejb-to-rest-verify
+  namespace: openshift-mta
+spec:
+  image: image-registry.openshift-image-registry.svc:5000/openshift-mta/mta-jboss-ejb-to-rest-agent:latest
+  displayName: JBoss EJB-to-REST Skill - jboss-ejb-to-rest-verify
+  version: "0.0.1"
+  description: "Stage 3 of 3 of the JBoss EAP EJB-to-REST migration. Runs the machine-checkable postcondition gates, contract tests, runtime error triage (the skill's references/verify-errors.md table), and the cleanup checklist after call-site cutovers performed by the jboss-ejb-to-rest-author skill in a JBoss EAP 8.0+ codebase."
+  type: rule
+  subPath: jboss-ejb-to-rest-verify
+  tags:
+    - java
+    - javaee
+    - eap
+    - migration
+    - verification

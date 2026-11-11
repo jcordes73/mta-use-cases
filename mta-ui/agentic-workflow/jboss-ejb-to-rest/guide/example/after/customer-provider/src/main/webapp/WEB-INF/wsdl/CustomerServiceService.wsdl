@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- EXAMPLE ONLY — the WSDL for the @WebService endpoint, the consumer-facing contract
+     for the SOAP client (wsconsume generates stubs from it). Hand-crafted to match
+     CustomerServiceEndpoint; in a real project, serve the container-generated WSDL
+     (?wsdl) and feed it to wsconsume. REST is added in ADDITION (§2.6); this WSDL
+     stays the contract for existing SOAP clients. -->
+<wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+                  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+                  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+                  xmlns:tns="http://acme.com/customer"
+                  targetNamespace="http://acme.com/customer"
+                  name="CustomerServiceService">
+
+    <wsdl:types>
+        <xsd:schema targetNamespace="http://acme.com/customer">
+            <xsd:element name="findCustomer">
+                <xsd:complexType>
+                    <xsd:sequence>
+                        <xsd:element name="arg0" type="xsd:long"/>
+                    </xsd:sequence>
+                </xsd:complexType>
+            </xsd:element>
+            <xsd:element name="findCustomerResponse">
+                <xsd:complexType>
+                    <xsd:sequence>
+                        <xsd:element name="return" type="tns:customerDTO"/>
+                    </xsd:sequence>
+                </xsd:complexType>
+            </xsd:element>
+            <xsd:element name="CustomerNotFoundFault">
+                <xsd:complexType>
+                    <xsd:sequence>
+                        <xsd:element name="message" type="xsd:string"/>
+                        <xsd:element name="customerId" type="xsd:long"/>
+                    </xsd:sequence>
+                </xsd:complexType>
+            </xsd:element>
+            <xsd:complexType name="customerDTO">
+                <xsd:sequence>
+                    <xsd:element name="id" type="xsd:long"/>
+                    <xsd:element name="name" type="xsd:string" nillable="true"/>
+                    <xsd:element name="email" type="xsd:string" nillable="true"/>
+                </xsd:sequence>
+            </xsd:complexType>
+        </xsd:schema>
+    </wsdl:types>
+
+    <wsdl:message name="findCustomerRequest">
+        <wsdl:part name="parameters" element="tns:findCustomer"/>
+    </wsdl:message>
+    <wsdl:message name="findCustomerResponse">
+        <wsdl:part name="parameters" element="tns:findCustomerResponse"/>
+    </wsdl:message>
+    <wsdl:message name="CustomerNotFoundFault">
+        <wsdl:part name="fault" element="tns:CustomerNotFoundFault"/>
+    </wsdl:message>
+
+    <wsdl:portType name="CustomerService">
+        <wsdl:operation name="findCustomer">
+            <wsdl:input message="tns:findCustomerRequest"/>
+            <wsdl:output message="tns:findCustomerResponse"/>
+            <wsdl:fault name="CustomerNotFoundException" message="tns:CustomerNotFoundFault"/>
+        </wsdl:operation>
+    </wsdl:portType>
+
+    <wsdl:binding name="CustomerServiceSoapBinding" type="tns:CustomerService">
+        <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+        <wsdl:operation name="findCustomer">
+            <soap:operation soapAction=""/>
+            <wsdl:input>
+                <soap:body use="literal"/>
+            </wsdl:input>
+            <wsdl:output>
+                <soap:body use="literal"/>
+            </wsdl:output>
+            <wsdl:fault name="CustomerNotFoundException">
+                <soap:fault name="CustomerNotFoundException" use="literal"/>
+            </wsdl:fault>
+        </wsdl:operation>
+    </wsdl:binding>
+
+    <wsdl:service name="CustomerServiceService">
+        <wsdl:port name="CustomerServicePort" binding="tns:CustomerServiceSoapBinding">
+            <soap:address location="http://customer-app:8080/customer/CustomerServiceService"/>
+        </wsdl:port>
+    </wsdl:service>
+</wsdl:definitions>

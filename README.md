@@ -1842,6 +1842,103 @@ client-proxy laziness (`container.select(...).get()` never runs
 sandbox (dead Squid proxy) and its `deps` mode caught the jandex and
 jackson conflicts before any test boot.
 
+#### JBoss EJB to REST (inter-application EJB couplings to REST)
+
+The `jboss-ejb-to-rest` workflow **migrates inter-application EJB couplings
+to REST** — remote `@Remote` interfaces, `ejb:/` JNDI lookups, and
+SOAP/JAX-WS-exposed EJBs — in a JBoss EAP 8.0+ codebase: a plan → author →
+verify pipeline in `mta-ui/agentic-workflow/jboss-ejb-to-rest/` (own image
+`mta-jboss-ejb-to-rest-agent`, three per-stage agents sharing it). The
+image bakes the three stage skills (each one agentskills.io SKILL.md with
+its own `references/` mapping tables) plus the **original refactoring
+guide** with its worked `example/` (a `before/` tree that must transform
+into `after/`) — the skills cite the guide's sections as `§n` references
+and use the example to calibrate the transformations, so both ride in the
+image at `/guide/`:
+
+```bash
+oc new-build --name mta-jboss-ejb-to-rest-agent --strategy=docker --binary -n openshift-mta
+oc patch bc mta-jboss-ejb-to-rest-agent -n openshift-mta --type=json \
+  -p='[{"op":"add","path":"/spec/strategy/dockerStrategy/dockerfilePath","value":"Containerfile"}]'
+oc start-build mta-jboss-ejb-to-rest-agent -n openshift-mta \
+  --from-dir=mta-ui/agentic-workflow/jboss-ejb-to-rest --follow
+oc apply -f mta-ui/agentic-workflow/jboss-ejb-to-rest/skills/jboss-ejb-to-rest-skillcards.yaml
+oc apply -f mta-ui/agentic-workflow/jboss-ejb-to-rest/jboss-ejb-to-rest-agents.yaml
+oc apply -f mta-ui/agentic-workflow/jboss-ejb-to-rest/jboss-ejb-to-rest-agent-workflow.yaml
+```
+
+The three stages, each in a fresh sandbox with continuity via git commits
+on the target branch (as with the other migration workflows):
+
+- **plan** (`jboss-ejb-to-rest-plan-agent`, `jboss-ejb-to-rest-plan`
+  skill) — runs the deterministic discovery commands (grep sweeps for
+  `@Remote`/`@EJB`/`ejb:` lookups/`@WebService`, EJB client artifacts,
+  shared API jars, async/state that does not survive a split), writes the
+  inventory to `docs/jboss-ejb-to-rest-inventory.md` with a per-call-site
+  go/no-go verdict, and **proposes** (never finalizes) the migration order
+  — simple read-only calls first, transaction-participating calls last,
+  one provider interface at a time. This stage makes no code changes.
+- **author** (`jboss-ejb-to-rest-author-agent`,
+  `jboss-ejb-to-rest-author` skill) — applies the transformations one
+  call site at a time (strangler-fig), driven by the skill's mapping
+  tables (`references/api-map.md`, `pattern-map.md`, `dependency-map.md`,
+  `config-map.md`): provider-side JAX-RS resources over the beans' local
+  views (the EJBs stay untouched), exception→status mappers, OpenAPI
+  publication; consumer-side MicroProfile REST Client generated from the
+  OpenAPI document behind an adapter seam that doubles as the rollback
+  point. Every change is gated by `mvn clean test-compile`, and the old
+  EJB/SOAP paths are never modified or deleted.
+- **verify** (`jboss-ejb-to-rest-verify-agent`,
+  `jboss-ejb-to-rest-verify` skill) — runs the per-call-site cutover
+  gates (contract tests against both paths, error scenarios including
+  401, no remaining `ejb:` lookups, unchanged call-site signatures),
+  triages runtime errors against the skill's
+  `references/verify-errors.md` table (EAP-verified signatures:
+  `EJBCLIENT000409`, `WELD-001408`, `WFLYEJB0406`, ...), runs the cleanup
+  checklist only when all call sites have cut over, and records the
+  verdict (`verified` / `verified with exceptions`) in the `## Verify`
+  section of `.konveyor/handoff.md`.
+
+The workflow carries an optional `path` parameter (the application's
+repository path in a multi-module repository, e.g. a quickstart) scoping
+the entire analysis and transformation to that directory. Launch it like
+the other workflows (the harness requires `APP_ID` and `TARGET_BRANCH`):
+
+```bash
+APP_ID=$(curl -s "${MTA_URL}/hub/applications" -u admin:admin \
+  | jq -r '.[] | select(.name=="helloworld") | .id')
+
+curl -s -X POST "${MTA_URL}/hub/agentic/workflowruns" \
+  -u admin:admin -H "Content-Type: application/json" \
+  --data @- <<EOF
+{
+  "metadata": {
+    "generateName": "api-ejbrest-",
+    "labels": {"konveyor.io/application": "${APP_ID}"}
+  },
+  "spec": {
+    "workflowRef": "jboss-ejb-to-rest",
+    "gateway": "openai",
+    "params": [{"name": "path", "value": "helloworld"}],
+    "env": [
+      {"name": "APP_ID", "value": "${APP_ID}"},
+      {"name": "TARGET_BRANCH", "value": "konveyor/ejb-to-rest-$(date +%s)"}
+    ]
+  }
+}
+EOF
+```
+
+The run's deliverable is the target branch: the inventory, the REST
+endpoints and consumers added alongside the untouched EJB/SOAP paths, and
+the handoff (`## Plan`/`## Author`/`## Verify` sections, fixed-format per
+the plan skill's template, ending in exactly one of the two legal verdict
+lines). Note that the workflow is scoped to **EAP 8.0+ codebases** already
+on the `jakarta.*` namespace — the plan stage stops and reports when the
+application is still on EAP 7.4/`javax.*` (the namespace migration is a
+separate migration that must run first, e.g. the `jboss-eap-7-to-8`
+workflow above).
+
 ## Developer-Infused Migration Using OpenShift Dev Spaces and the MTA Plugin
 
 While the [MTA UI](#automated-migration-using-the-mta-ui) covers the automated, portfolio-wide migration, developers can drive the migration of their individual applications themselves from within their IDE. **OpenShift Dev Spaces** provides Kubernetes-based cloud development environments and is installed on the OpenShift Container Platform using the OpenShift Dev Spaces Operator via OperatorHub. The **MTA plugin** (Visual Studio Code extension) then brings inline analysis, remediation hints, and AI-assisted code refactoring (Developer Lightspeed) into the editor, backed by the MTA Hub and Solution Server deployed in the [automated migration](#automated-migration-using-the-mta-ui) part.

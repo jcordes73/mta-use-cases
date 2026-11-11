@@ -1,0 +1,95 @@
+{
+  "name": "JmxPlatformTest.readsPlatformBeanAttributeAndInvokesOperation",
+  "result": {
+    "name": "JmxPlatformTest.readsPlatformBeanAttributeAndInvokesOperation",
+    "className": "poc.citrus.synthetic.JmxPlatformTest",
+    "result": "SUCCESS",
+    "duration": 222
+  },
+  "actions": [
+    {
+      "name": "send",
+      "path": "actions.0.send",
+      "message": {
+        "headers": [
+          {
+            "name": "citrus_message_id",
+            "value": "c7b3becf-6b5b-4f50-a019-19b1ee62d1e1"
+          },
+          {
+            "name": "citrus_message_timestamp",
+            "value": "1794329617071"
+          },
+          {
+            "name": "citrus_message_type",
+            "value": "XML"
+          }
+        ],
+        "headerData": [
+        ],
+        "payload": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiIHN0YW5kYWxvbmU9InllcyI/PjxtYmVhbi1pbnZvY2F0aW9uIHhtbG5zPSJodHRwOi8vd3d3LmNpdHJ1c2ZyYW1ld29yay5vcmcvc2NoZW1hL2pteC9tZXNzYWdlIj48bWJlYW4+amF2YS5sYW5nOnR5cGU9TWVtb3J5PC9tYmVhbj48YXR0cmlidXRlIG5hbWU9IlZlcmJvc2UiIHR5cGU9ImphdmEubGFuZy5TdHJpbmciLz48L21iZWFuLWludm9jYXRpb24+"
+      }
+    },
+    {
+      "name": "receive",
+      "path": "actions.1.receive",
+      "message": {
+        "headers": [
+          {
+            "name": "citrus_message_id",
+            "value": "ff374f84-b676-4248-b2d7-69e1f7131b4f"
+          },
+          {
+            "name": "citrus_message_timestamp",
+            "value": "1794329617086"
+          }
+        ],
+        "headerData": [
+        ],
+        "payload": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiIHN0YW5kYWxvbmU9InllcyI/PjxtYmVhbi1yZXN1bHQgeG1sbnM9Imh0dHA6Ly93d3cuY2l0cnVzZnJhbWV3b3JrLm9yZy9zY2hlbWEvam14L21lc3NhZ2UiPjxvYmplY3QgdHlwZT0iamF2YS5sYW5nLkJvb2xlYW4iIHZhbHVlPSJmYWxzZSIvPjwvbWJlYW4tcmVzdWx0Pg=="
+      }
+    },
+    {
+      "name": "send",
+      "path": "actions.2.send",
+      "message": {
+        "headers": [
+          {
+            "name": "citrus_message_id",
+            "value": "30ad80ac-efa5-4d12-aec7-8800fab68489"
+          },
+          {
+            "name": "citrus_message_timestamp",
+            "value": "1794329617120"
+          },
+          {
+            "name": "citrus_message_type",
+            "value": "XML"
+          }
+        ],
+        "headerData": [
+        ],
+        "payload": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiIHN0YW5kYWxvbmU9InllcyI/PjxtYmVhbi1pbnZvY2F0aW9uIHhtbG5zPSJodHRwOi8vd3d3LmNpdHJ1c2ZyYW1ld29yay5vcmcvc2NoZW1hL2pteC9tZXNzYWdlIj48bWJlYW4+amF2YS5sYW5nOnR5cGU9TWVtb3J5PC9tYmVhbj48b3BlcmF0aW9uIG5hbWU9ImdjIi8+PC9tYmVhbi1pbnZvY2F0aW9uPg=="
+      }
+    },
+    {
+      "name": "receive",
+      "path": "actions.3.receive",
+      "message": {
+        "headers": [
+          {
+            "name": "citrus_message_id",
+            "value": "f88d35a5-fb99-415f-b7a3-31d6f31d7154"
+          },
+          {
+            "name": "citrus_message_timestamp",
+            "value": "1794329617134"
+          }
+        ],
+        "headerData": [
+        ],
+        "payload": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiIHN0YW5kYWxvbmU9InllcyI/PjxtYmVhbi1yZXN1bHQgeG1sbnM9Imh0dHA6Ly93d3cuY2l0cnVzZnJhbWV3b3JrLm9yZy9zY2hlbWEvam14L21lc3NhZ2UiLz4="
+      }
+    }
+  ]
+}

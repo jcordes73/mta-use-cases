@@ -1,0 +1,232 @@
+# EXAMPLE ONLY — static OpenAPI document (§2.7), shipped in
+# src/main/resources/META-INF/openapi.yaml (merged with generated metadata). It
+# illustrates the shape of the contract for the SOAP-exposed-EJB variant (§2.6):
+# REST offered IN ADDITION to the existing @WebService endpoint, which keeps serving
+# its existing SOAP clients — retirement is a separate, audited decision (§4.4).
+openapi: 3.0.3
+info:
+  title: Customer Service API
+  version: "2.0.0"
+  description: |
+    REST interface for customer lookup and maintenance, offered in addition to the
+    existing SOAP interface (which remains the supported contract for existing
+    clients, §2.6). Includes the translatable design-work endpoints: streaming avatar
+    (MTOM → octet-stream), 202-async welcome pack (@Oneway → 202 + status), and a
+    Bean-validated address-change request (XSD → Bean Validation).
+servers:
+  - url: https://customer-app:8443
+    description: production (TLS terminated by the load balancer or JBoss EAP)
+paths:
+  /api/v1/customers/{id}:
+    get:
+      operationId: getCustomer
+      summary: Look up a customer
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: The customer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomerDTO"
+        "404":
+          description: No customer with the given id (§5.3)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing or invalid bearer token (§3.5)
+        "503":
+          description: Service unavailable
+  /api/v1/customers/{id}/avatar:
+    put:
+      operationId: uploadAvatar
+      summary: Upload the customer avatar (MTOM/XOP replacement — streaming body, §2.6)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "204":
+          description: Avatar stored
+        "400":
+          description: Empty body
+        "404":
+          description: No customer with the given id
+        "413":
+          description: Payload exceeds the 1 MB limit
+    get:
+      operationId: getAvatar
+      summary: Fetch the customer avatar
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: The avatar image
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: No customer or no avatar
+  /api/v1/customers/{id}/welcome-pack:
+    post:
+      operationId: requestWelcomePack
+      summary: Start the welcome pack (@Oneway replacement — 202 + status polling, §2.6/§5.7)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "202":
+          description: Accepted; poll the status resource in the Location header
+          headers:
+            Location:
+              schema:
+                type: string
+        "404":
+          description: No customer with the given id
+  /api/v1/customers/{id}/welcome-pack/status:
+    get:
+      operationId: welcomePackStatus
+      summary: Poll the welcome-pack status
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: Current status
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [UNKNOWN, RUNNING, DONE]
+  /api/v1/customers/{id}/address-change-requests:
+    post:
+      operationId: requestAddressChange
+      summary: Request an address change (XSD → Bean Validation, §2.6)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddressChangeRequest"
+      responses:
+        "202":
+          description: Request accepted
+        "400":
+          description: Validation failed (Bean Validation → JSON error body, §2.6/§5.3)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "404":
+          description: No customer with the given id
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    CustomerDTO:
+      type: object
+      required: [id, name, email]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        email:
+          type: string
+    AddressChangeRequest:
+      type: object
+      required: [street, postalCode, city]
+      properties:
+        street:
+          type: string
+          minLength: 1
+        postalCode:
+          type: string
+          maxLength: 20
+        city:
+          type: string
+          maxLength: 60
+        phone:
+          type: string
+          pattern: '^\+?[0-9 -]{6,20}$'
+    Error:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        customerId:
+          type: integer
+          format: int64
+    ValidationError:
+      type: object
+      required: [error, violations]
+      properties:
+        error:
+          type: string
+        violations:
+          type: array
+          items:
+            type: string

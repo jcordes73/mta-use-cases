@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Harness fixture for the jmx-rmi-ssh recipe validation.
+
+    Synthetic surface, NOT a quickstart: no quickstart in the repo
+    registers MBeans, speaks JRMP RMI, or speaks SSH, and the one
+    RMI-flavored quickstart (jts) uses IIOP/CORBA, which citrus-rmi
+    cannot reach. This project gives the citrus-jmx / citrus-rmi /
+    citrus-ssh modules a minimal, self-contained surface to validate
+    the recipe's DSL claims and record failure signatures.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4_0_0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>poc.citrus</groupId>
+    <artifactId>synthetic-jmx-rmi-ssh</artifactId>
+    <version>1.0.0</version>
+    <packaging>jar</packaging>
+    <name>citrus-tests synthetic surface: jmx / rmi / ssh</name>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.release>17</maven.compiler.release>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.citrusframework</groupId>
+                <artifactId>citrus-bom</artifactId>
+                <version>5.1.0</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.citrusframework</groupId>
+            <artifactId>citrus-junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.citrusframework</groupId>
+            <artifactId>citrus-jmx</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.citrusframework</groupId>
+            <artifactId>citrus-rmi</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.citrusframework</groupId>
+            <artifactId>citrus-ssh</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Citrus 5.1.0's Jackson 3 (tools.jackson) needs the Jackson-3-compatible
+             annotations line; without a pin the newest Jackson 2 line resolves -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-annotations</artifactId>
+            <version>2.22</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+                <configuration>
+                    <release>${maven.compiler.release}</release>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+            </plugin>
+        </plugins>
+    </build>
+</project>

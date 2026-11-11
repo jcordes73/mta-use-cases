@@ -1,0 +1,7 @@
+-------------------------------------------------------------------------------
+Test set: poc.citrus.synthetic.RmiRoundTripTest
+-------------------------------------------------------------------------------
+Tests run: 2, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 2.122 s <<< FAILURE! -- in poc.citrus.synthetic.RmiRoundTripTest
+poc.citrus.synthetic.RmiRoundTripTest.serverScriptedExceptionReachesClient(GherkinTestActionRunner, TestContext) -- Time elapsed: 1.029 s <<< FAILURE!
+org.citrusframework.junit.jupiter.CitrusJUnitException: Test failed
+

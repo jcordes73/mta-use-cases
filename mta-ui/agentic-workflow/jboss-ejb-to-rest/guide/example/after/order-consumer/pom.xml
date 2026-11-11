@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>com.acme</groupId>
+    <artifactId>order-consumer-soap</artifactId>
+    <version>2.0.0</version>
+    <packaging>war</packaging>
+
+    <properties>
+        <maven.compiler.release>17</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+    <!-- JBoss EAP 8 GA artifacts (org.jboss.eap BOMs) come from the Red Hat repo
+         (public, no subscription needed for GA artifacts) -->
+    <repositories>
+        <repository>
+            <id>redhat-ga</id>
+            <url>https://maven.repository.redhat.com/ga/</url>
+            <releases><enabled>true</enabled></releases>
+            <snapshots><enabled>false</enabled></snapshots>
+        </repository>
+    </repositories>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- JBoss EAP 8 BOMs — imports must live HERE, not in <dependencies>.
+                 Production POMs should import these instead of pinning versions. -->
+            <dependency>
+                <groupId>org.jboss.eap</groupId>
+                <artifactId>wildfly-standard-ee-bom</artifactId>
+                <version>8.1.1.GA-redhat-00048</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.jboss.eap</groupId>
+                <artifactId>wildfly-ejb-client-bom</artifactId>
+                <version>8.1.8.GA-redhat-00008</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <!-- KEPT: both old couplings stay until the §4.4 audit shows every consumer
+             on REST — the SOAP call site (WSDL-driven) and the remote-EJB call site
+             (shared api jar + EJB client stack). Remove them only after that audit;
+             the NEW REST call sites (ReportingProcessor) need none of these. -->
+        <dependency>
+            <groupId>com.acme</groupId>
+            <artifactId>customer-api</artifactId>
+            <version>1.0.0</version>
+        </dependency>
+        <!-- The EJB client stack — VERSION MANAGED by the wildfly-ejb-client-bom import
+             above (no <version> here; it resolves to the EAP-managed artifact).
+             CLEANUP TARGET (§4.2/§6): remove when the remote call sites are gone. -->
+        <dependency>
+            <groupId>org.jboss</groupId>
+            <artifactId>jboss-ejb-client</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <!-- NEW: MicroProfile REST Client API for NEW call sites (§3.2) — requires the
+             EAP XP; on base EAP use the plain JAX-RS Client fallback (§3.4). Not managed
+             by the EAP BOMs (MP artifacts are in the expansion BOM, XP-only), so the
+             version is explicit. -->
+        <dependency>
+            <groupId>org.eclipse.microprofile.rest.client</groupId>
+            <artifactId>microprofile-rest-client-api</artifactId>
+            <version>3.0</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.platform</groupId>
+            <artifactId>jakarta.jakartaee-api</artifactId>
+            <version>10.0.0</version>
+            <scope>provided</scope>
+        </dependency>
+        <!-- integration tests (§4.5, after state), Citrus framework: the REST endpoint
+             rows of the §10.3 matrix (HTTP-level) and the §3.2 programmatic MP REST
+             Client fallback (works on base EAP, unlike the @Inject — §3.1). Run against
+             a provisioned EAP (guide §10.2/§10.3); skipped unless
+             -Dcustomer.server=<host:port>. Citrus 4.x targets Jakarta EE 10 / Java 17+;
+             Citrus 5.x is out (JUnit 6 / Spring 7). -->
+        <dependency>
+            <groupId>org.citrusframework</groupId>
+            <artifactId>citrus-junit5</artifactId>
+            <version>4.10.3</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.citrusframework</groupId>
+            <artifactId>citrus-http</artifactId>
+            <version>4.10.3</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.10.2</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- standalone MP REST Client implementation for the consumer-side leg
+             (§3.2 programmatic RestClientBuilder); JSON-B entity support for the DTO -->
+        <dependency>
+            <groupId>org.jboss.resteasy.microprofile</groupId>
+            <artifactId>microprofile-rest-client</artifactId>
+            <version>2.1.5.Final</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.jboss.resteasy</groupId>
+            <artifactId>resteasy-json-binding-provider</artifactId>
+            <version>6.2.7.Final</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- optional MP Config implementation the MP REST Client resolves at runtime
+             (the version microprofile-rest-client was built against) -->
+        <dependency>
+            <groupId>io.smallrye.config</groupId>
+            <artifactId>smallrye-config</artifactId>
+            <version>3.0.0</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Coverage gate: unit-test coverage of the HAND-WRITTEN classes must be
+                 >= 95% line coverage, enforced on `mvn test`. The wsconsume-GENERATED
+                 SOAP stubs (com.acme.order.soap.*) are EXCLUDED from the measurement —
+                 generated code is verified by the integration tests against the live
+                 WSDL (§4.5), not by the coverage bar. -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.12</version>
+                <configuration>
+                    <excludes>
+                        <!-- wsconsume-generated SOAP stubs — out of scope for the bar -->
+                        <exclude>com/acme/order/soap/**</exclude>
+                    </excludes>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>check</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <rule>
+                                    <element>BUNDLE</element>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.95</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

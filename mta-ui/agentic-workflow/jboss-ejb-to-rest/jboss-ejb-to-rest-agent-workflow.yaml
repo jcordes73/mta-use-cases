@@ -1,0 +1,110 @@
+# The JBoss EAP EJB-to-REST AgentWorkflow: a plan → author → verify
+# pipeline that migrates inter-application EJB couplings to REST.
+#
+# Three sequential stages, each in a fresh Agent Sandbox with continuity
+# carried via git commits on the target branch (docs/jboss-ejb-to-rest-inventory.md
+# and .konveyor/handoff.md) - the same pattern as the citrus-tests
+# workflow. Every stage runs on the mta-jboss-ejb-to-rest-agent image,
+# which bakes the three stage skills and the original refactoring guide
+# (/guide/README.md, whose sections the skills' §n citations resolve into,
+# plus its worked example /guide/example used to calibrate the
+# transformations).
+apiVersion: konveyor.io/v1alpha1
+kind: AgentWorkflow
+metadata:
+  name: jboss-ejb-to-rest
+  namespace: openshift-mta
+  labels:
+    konveyor.io/managed: "true"
+spec:
+  guide: >-
+    Migrate inter-application EJB couplings (remote @Remote, ejb:/ JNDI
+    lookups, SOAP/JAX-WS exposed EJBs) of a JBoss EAP 8.0+ application to
+    REST. Stage 1 (plan) inventories every inter-application EJB call site
+    with deterministic discovery commands, applies per-call-site go/no-go
+    checks, and proposes (never finalizes) the migration order - it makes
+    no code changes. Stage 2 (author) applies the provider-side (JAX-RS
+    resources over the beans' local views, OpenAPI publication) and
+    consumer-side (MicroProfile REST Client behind an adapter seam)
+    transformations one call site at a time, gated by the build. Stage 3
+    (verify) runs the per-call-site contract gates, the runtime error
+    triage, and the cleanup checklist, and records the verdict. The old
+    EJB/SOAP paths are never modified or deleted - retirement is a
+    separate, human, audited decision. All artifacts are committed to the
+    run's target branch.
+  params:
+    - name: path
+      type: string
+      description: >-
+        The repository-relative path of the application's source (the
+        repository path of the MTA application record, e.g. "helloworld"
+        for a quickstart imported from a multi-module repository). Leave
+        empty only when the application IS the repository root.
+      required: false
+  stages:
+    - name: plan
+      agentRef: jboss-ejb-to-rest-plan-agent
+      instructions: >-
+        Load the jboss-ejb-to-rest-plan skill and follow its SKILL.md
+        exactly. The application's source is located at "$(workflow.path)"
+        within the cloned repository workspace (an empty path means the
+        repository root) - scope the ENTIRE discovery and inventory to
+        that directory. The original guide is baked into the image at
+        /guide/README.md - resolve the skill's §n section references into
+        it - and its worked example is at /guide/example (example/before
+        must transform into example/after) for calibration. Run the
+        skill's deterministic discovery commands, build the inventory at
+        docs/jboss-ejb-to-rest-inventory.md at the repository root, apply
+        the per-call-site go/no-go checks, and propose the migration order
+        - this stage makes NO code changes. Write the ## Plan section of
+        .konveyor/handoff.md exactly in the skill's fixed-format template
+        (the author and verify stages parse it). If the
+        MAVEN_SETTINGS_XML environment variable is set, write its value to
+        /home/harness/.m2/settings.xml so Maven uses the custom settings
+        for any build this stage runs. Commit the inventory and the
+        handoff - and nothing else.
+    - name: author
+      agentRef: jboss-ejb-to-rest-author-agent
+      instructions: >-
+        Load the jboss-ejb-to-rest-author skill and follow its SKILL.md
+        exactly. The application's source is located at "$(workflow.path)"
+        within the cloned repository workspace (an empty path means the
+        repository root). Work from the committed
+        docs/jboss-ejb-to-rest-inventory.md and the ## Plan section of
+        .konveyor/handoff.md, proceeding in the proposed order recorded
+        there. The original guide is baked into the image at
+        /guide/README.md - resolve the skill's §n section references into
+        it - and its worked example is at /guide/example for calibration.
+        Apply the transformations one call site at a time per the skill's
+        mapping tables (references/), run the build gate
+        (mvn clean test-compile) after every change, and NEVER modify or
+        delete the old EJB/SOAP path (the @Remote view, SOAP endpoints,
+        remoting config, and EJB client artifacts stay supported). Write
+        an ## Author section per call-site pass to .konveyor/handoff.md in
+        the skill's fixed format. If the MAVEN_SETTINGS_XML environment
+        variable is set, write its value to /home/harness/.m2/settings.xml
+        so Maven uses the custom settings for every build this stage runs.
+        Commit the code changes of each pass together with the updated
+        handoff.
+    - name: verify
+      agentRef: jboss-ejb-to-rest-verify-agent
+      instructions: >-
+        Load the jboss-ejb-to-rest-verify skill and follow its SKILL.md
+        exactly. The application's source is located at "$(workflow.path)"
+        within the cloned repository workspace (an empty path means the
+        repository root). Run the per-call-site cutover gates against the
+        committed branch state, grounded in
+        docs/jboss-ejb-to-rest-inventory.md and the ## Plan and ## Author
+        sections of .konveyor/handoff.md - contract tests on both paths,
+        error scenarios, no remaining ejb: lookups at the cut-over call
+        sites, unchanged call-site signatures. For runtime errors consult
+        the skill's references/verify-errors.md table before any ad-hoc
+        fix. Run the cleanup checklist only when ALL call sites of the
+        application have cut over. Write the ## Verify section of
+        .konveyor/handoff.md in the skill's fixed format, ending with
+        exactly one verdict line. Flag the items that require human
+        decision (order confirmations, endpoint design, transaction
+        redesigns, the eventual retirement audit). If the
+        MAVEN_SETTINGS_XML environment variable is set, write its value to
+        /home/harness/.m2/settings.xml so Maven uses the custom settings
+        for every build this stage runs. Commit the outcome.

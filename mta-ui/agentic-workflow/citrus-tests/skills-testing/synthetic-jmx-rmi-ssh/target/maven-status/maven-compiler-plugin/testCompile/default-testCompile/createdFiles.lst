@@ -1,0 +1,6 @@
+poc/citrus/synthetic/SyntheticMBean.class
+poc/citrus/synthetic/JmxPlatformTest.class
+poc/citrus/synthetic/SyntheticMBeanImpl.class
+poc/citrus/synthetic/RmiRoundTripTest.class
+poc/citrus/synthetic/SshRoundTripTest.class
+poc/citrus/synthetic/NewsService.class

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- EXAMPLE ONLY — web.xml carrying ONLY the MP-JWT login-config (§2.4): @LoginConfig
+     does not exist in Jakarta EE 10 (it arrived in EE 11), so the auth method is
+     declared here instead. JAX-RS auto-discovery still applies (no servlet mapping
+     needed — the @ApplicationPath Application class activates the resources). -->
+<web-app xmlns="https://jakarta.ee/xml/ns/jakartaee"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="https://jakarta.ee/xml/ns/jakartaee
+                             https://jakarta.ee/xml/ns/jakartaee/web-app_6_0.xsd"
+         version="6.0">
+    <login-config>
+        <auth-method>MP-JWT</auth-method>
+    </login-config>
+</web-app>

@@ -1,0 +1,22 @@
+-------------------------------------------------------------------------------
+Test set: poc.citrus.synthetic.SshRoundTripTest
+-------------------------------------------------------------------------------
+Tests run: 1, Failures: 0, Errors: 1, Skipped: 0, Time elapsed: 0.430 s <<< FAILURE! -- in poc.citrus.synthetic.SshRoundTripTest
+poc.citrus.synthetic.SshRoundTripTest -- Time elapsed: 0.430 s <<< ERROR!
+java.lang.IllegalStateException: could not start SSH server after 5 attempts
+	at poc.citrus.synthetic.SshRoundTripTest.startSshServer(SshRoundTripTest.java:75)
+Caused by: org.citrusframework.exceptions.CitrusRuntimeException: Failed to start SSH server - Address already in use
+	at org.citrusframework.ssh.server.SshServer.startup(SshServer.java:199)
+	at org.citrusframework.base.server.AbstractServer.start(AbstractServer.java:91)
+	at poc.citrus.synthetic.SshRoundTripTest.startSshServer(SshRoundTripTest.java:62)
+Caused by: java.net.BindException: Address already in use
+	at java.base/sun.nio.ch.Net.bind0(Native Method)
+	at java.base/sun.nio.ch.Net.bind(Net.java:522)
+	at java.base/sun.nio.ch.Net.bind(Net.java:511)
+	at java.base/sun.nio.ch.AsynchronousServerSocketChannelImpl.bind(AsynchronousServerSocketChannelImpl.java:160)
+	at org.apache.sshd.common.io.nio2.Nio2Acceptor.bind(Nio2Acceptor.java:87)
+	at org.apache.sshd.common.io.nio2.Nio2Acceptor.bind(Nio2Acceptor.java:177)
+	at org.apache.sshd.server.SshServer.start(SshServer.java:340)
+	at org.citrusframework.ssh.server.SshServer.startup(SshServer.java:197)
+	... 2 more
+
