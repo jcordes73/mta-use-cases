@@ -111,6 +111,19 @@ commands:
       # PVC and applies to all workspace folders. The existing settings (e.g.
       # git.defaultCloneDirectory, set by Dev Spaces) are merged, not overwritten.
       #
+      # git.openRepositoryInParentFolders: "always" is required for the MTA plugin's
+      # Hub profile sync. clone-git opens the APPLICATION SUBFOLDER
+      # (/projects/<repo>/<path>) in the editor while the git repository root is the
+      # parent directory. VS Code's git extension does not open a repository located
+      # above the workspace folder unless the user accepts its "repository in parent
+      # folders" prompt (the default is "prompt", and the prompt is not reliably
+      # shown/accepted in che-code). Without the parent repository open, the git
+      # extension API returns no repository for the workspace, and every profile sync
+      # aborts before it reaches the Hub - silently for the scheduled syncs - with
+      # "No git repository found for workspace" in the extension log and no Hub
+      # profiles downloaded. Verified live 2026-11-11: 19/19 scheduled syncs failed
+      # this way while the Hub connection itself was healthy.
+      #
       # No LLM credentials are configured in the extension: the workspace connects to
       # the MTA Hub, whose Solution Server fronts the cluster's LLM (Konveyor Gateway)
       # behind its LLM proxy - the extension's GenAI requests go through the Hub and
@@ -124,6 +137,7 @@ commands:
         [ -f /checode/remote/data/Machine/settings.json ] || echo '{}' > /checode/remote/data/Machine/settings.json
         cat <<'EOF' > /tmp/mta-settings.json
         {
+          "git.openRepositoryInParentFolders": "always",
           "mta-core.genai.enabled": true,
           "mta-core.genai.agentMode": true
         }
