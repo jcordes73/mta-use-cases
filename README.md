@@ -89,8 +89,8 @@ The versions below are what this PoC was validated against (OpenShift 4.22 sandb
 |---|---|---|
 | MTA Operator | **8.3.3** (pinned) | `redhat-operators`, channel `stable-v8` |
 | └ mta-ui / mta-hub / mta-solution-server / mta-agentic-controller | 8.3.3 (CSV digest-pinned) | `registry.redhat.io/mta/*-rhel9` |
-| RHBK Operator (Red Hat build of Keycloak) | 26.6.7-opr.3 (pinned) | `redhat-operators`, channel `stable-v26` — `keycloak/keycloak-operator.yaml` |
-| └ Keycloak server | 26.6.7.redhat-00003 | `rhbk/keycloak-rhel9` |
+| RHBK Operator (Red Hat build of Keycloak) | 26.6.9-opr.1 (pinned) | `redhat-operators`, channel `stable-v26` — `keycloak/keycloak-operator.yaml` |
+| └ Keycloak server | 26.6.9.redhat-00002 | `rhbk/keycloak-rhel9` |
 | PostgreSQL (Keycloak database) | 16 (`rhel9/postgresql-16`) | `registry.redhat.io` |
 | Agent Sandbox Operator | 0.9.0 (pinned) | `redhat-operators`, channel `preview-0.9` |
 | Migration skill images (built on-cluster) | 0.0.1 | UBI 9 micro base, one per agentic workflow |
@@ -99,7 +99,7 @@ The versions below are what this PoC was validated against (OpenShift 4.22 sandb
 
 | Component | Version | Source |
 |---|---|---|
-| OpenShift Dev Spaces Operator | 3.31.2 (pinned) + DevWorkspace Operator 1.0.0 | `redhat-operators`, channel `stable` — `devspaces/openshift-devspaces-operator.yaml` |
+| OpenShift Dev Spaces Operator | 3.31.3 (pinned) + DevWorkspace Operator 1.0.0 | `redhat-operators`, channel `stable` — `devspaces/openshift-devspaces-operator.yaml` |
 | Gitea | 1.27 (rootless) | Helm chart `gitea-12.7.0` (`dl.gitea.com/charts`), pinned via `--version` |
 | Squid proxy (disconnected environments) | 5.5 (`rhel9/squid`, pinned) | `registry.redhat.io` |
 | MTA VS Code extensions | 8.3.1 (`redhat.mta-core`, `redhat.mta-java`) | Open VSX |
