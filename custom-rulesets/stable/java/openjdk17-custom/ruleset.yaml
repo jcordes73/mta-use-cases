@@ -1,0 +1,2 @@
+name: openjdk17-custom
+description: Custom rules for the Oracle JDK 8 to OpenJDK 17 migration PoC

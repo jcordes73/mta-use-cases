@@ -1,0 +1,159 @@
+# JEP 320: Java EE and CORBA modules were deprecated in JDK 9 and removed in
+# JDK 11. These rules flag code that imports from the removed modules.
+- ruleID: jep320-removed-javaee-modules-00010
+  category: mandatory
+  effort: 3
+  labels:
+  - konveyor.io/source=openjdk11-
+  - konveyor.io/source=openjdk
+  - konveyor.io/target=openjdk17+
+  - konveyor.io/target=openjdk
+  when:
+    java.referenced:
+      pattern: javax.xml.bind*
+      location: IMPORT
+  description: JAXB (java.xml.bind module) was removed in JDK 11
+  message: |
+    The `java.xml.bind` module (JAXB, `javax.xml.bind.*`) shipped with JDK 8
+    but was deprecated in JDK 9 and removed in JDK 11 (JEP 320). The code no
+    longer compiles or runs on JDK 17.
+
+    Before:
+        import javax.xml.bind.JAXBContext;
+        JAXBContext ctx = JAXBContext.newInstance(Order.class);
+
+    After (add the dependency, or migrate to jakarta.xml.bind on Jakarta EE 9+):
+        <dependency>
+            <groupId>javax.xml.bind</groupId>
+            <artifactId>jaxb-api</artifactId>
+            <version>2.3.1</version>
+        </dependency>
+        <dependency>
+            <groupId>org.glassfish.jaxb</groupId>
+            <artifactId>jaxb-runtime</artifactId>
+            <version>2.3.8</version>
+        </dependency>
+  links:
+  - title: 'JEP 320: Remove the Java EE and CORBA Modules'
+    url: https://openjdk.org/jeps/320
+  - title: Oracle JDK 11 Migration Guide
+    url: https://docs.oracle.com/en/java/javase/11/migrate/
+  - title: Oracle JDK 17 Migration Guide
+    url: https://docs.oracle.com/en/java/javase/17/migrate/
+
+- ruleID: jep320-removed-javaee-modules-00020
+  category: mandatory
+  effort: 5
+  labels:
+  - konveyor.io/source=openjdk11-
+  - konveyor.io/source=openjdk
+  - konveyor.io/target=openjdk17+
+  - konveyor.io/target=openjdk
+  when:
+    java.referenced:
+      pattern: javax.xml.ws*
+      location: IMPORT
+  description: JAX-WS (java.xml.ws module) was removed in JDK 11
+  message: |
+    The `java.xml.ws` module (JAX-WS client stack, `javax.xml.ws.*`) shipped
+    with JDK 8 but was deprecated in JDK 9 and removed in JDK 11 (JEP 320).
+    SOAP clients and endpoints written against the JDK stack must move to a
+    standalone implementation.
+
+    Before:
+        import javax.xml.ws.Service;
+
+    After:
+        <dependency>
+            <groupId>com.sun.xml.ws</groupId>
+            <artifactId>jaxws-ri</artifactId>
+            <version>2.3.5</version>
+            <type>pom</type>
+        </dependency>
+        // or, on Jakarta EE 9+: use the jakarta.xml.ws / Metro 3+ stack
+  links:
+  - title: 'JEP 320: Remove the Java EE and CORBA Modules'
+    url: https://openjdk.org/jeps/320
+  - title: Oracle JDK 11 Migration Guide
+    url: https://docs.oracle.com/en/java/javase/11/migrate/
+  - title: Oracle JDK 17 Migration Guide
+    url: https://docs.oracle.com/en/java/javase/17/migrate/
+
+- ruleID: jep320-removed-javaee-modules-00030
+  category: mandatory
+  effort: 1
+  labels:
+  - konveyor.io/source=openjdk11-
+  - konveyor.io/source=openjdk
+  - konveyor.io/target=openjdk17+
+  - konveyor.io/target=openjdk
+  when:
+    java.referenced:
+      pattern: javax.activation*
+      location: IMPORT
+  description: JAF (java.activation module) was removed in JDK 11
+  message: |
+    The `java.activation` module (JavaBeans Activation Framework,
+    `javax.activation.*`) shipped with JDK 8 but was deprecated in JDK 9 and
+    removed in JDK 11 (JEP 320).
+
+    Before:
+        import javax.activation.DataHandler;
+
+    After:
+        <dependency>
+            <groupId>javax.activation</groupId>
+            <artifactId>javax.activation-api</artifactId>
+            <version>1.2.0</version>
+        </dependency>
+        // or the standalone implementation
+        <dependency>
+            <groupId>com.sun.activation</groupId>
+            <artifactId>javax.activation</artifactId>
+            <version>1.2.0</version>
+        </dependency>
+  links:
+  - title: 'JEP 320: Remove the Java EE and CORBA Modules'
+    url: https://openjdk.org/jeps/320
+  - title: Oracle JDK 11 Migration Guide
+    url: https://docs.oracle.com/en/java/javase/11/migrate/
+  - title: Oracle JDK 17 Migration Guide
+    url: https://docs.oracle.com/en/java/javase/17/migrate/
+
+- ruleID: jep320-removed-javaee-modules-00040
+  category: mandatory
+  effort: 1
+  labels:
+  - konveyor.io/source=openjdk11-
+  - konveyor.io/source=openjdk
+  - konveyor.io/target=openjdk17+
+  - konveyor.io/target=openjdk
+  when:
+    java.referenced:
+      pattern: javax.annotation*
+      location: IMPORT
+  description: Common Annotations (java.xml.ws.annotation module) were removed in JDK 11
+  message: |
+    The `java.xml.ws.annotation` module (Common Annotations,
+    `javax.annotation.*`, e.g. `@PostConstruct`/`@PreDestroy`) shipped with
+    JDK 8 but was deprecated in JDK 9 and removed in JDK 11 (JEP 320).
+    Lifecycle callbacks annotated with these annotations silently stop firing
+    on JDK 11+.
+
+    Before:
+        import javax.annotation.PostConstruct;
+
+    After:
+        <dependency>
+            <groupId>javax.annotation</groupId>
+            <artifactId>javax.annotation-api</artifactId>
+            <version>1.3.2</version>
+        </dependency>
+        // or, on Jakarta EE 9+: jakarta.annotation:jakarta.annotation-api
+  links:
+  - title: 'JEP 320: Remove the Java EE and CORBA Modules'
+    url: https://openjdk.org/jeps/320
+  - title: Oracle JDK 11 Migration Guide
+    url: https://docs.oracle.com/en/java/javase/11/migrate/
+  - title: Oracle JDK 17 Migration Guide
+    url: https://docs.oracle.com/en/java/javase/17/migrate/

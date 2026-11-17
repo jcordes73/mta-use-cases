@@ -1,0 +1,19 @@
+rulesPath: ../jvm-flags.yaml
+providers:
+- name: builtin
+  dataPath: ./data/builtin
+tests:
+- ruleID: jvm-flags-00010
+  testCases:
+  - name: tc-legacy-gc-flags
+    analysisParams:
+      mode: "source-only"
+    hasIncidents:
+      exactly: 1
+- ruleID: jvm-flags-00020
+  testCases:
+  - name: tc-legacy-gc-flags
+    analysisParams:
+      mode: "source-only"
+    hasIncidents:
+      exactly: 1

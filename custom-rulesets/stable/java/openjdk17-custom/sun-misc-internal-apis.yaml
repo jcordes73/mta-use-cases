@@ -1,0 +1,48 @@
+# JEP 260 (JDK 9), JEP 396 (JDK 16) and JEP 403 (JDK 17) restricted and then
+# strongly encapsulated the JDK internal APIs. Some sun.* classes were removed
+# outright (e.g. the BASE64 encoder/decoder in JDK 9), the rest are no longer
+# accessible from classpath code on JDK 17.
+- ruleID: sun-misc-internal-apis-00010
+  category: mandatory
+  effort: 5
+  labels:
+  - konveyor.io/source=openjdk11-
+  - konveyor.io/source=openjdk
+  - konveyor.io/target=openjdk17+
+  - konveyor.io/target=openjdk
+  when:
+    or:
+    - java.referenced:
+        pattern: sun.misc*
+        location: IMPORT
+    - java.referenced:
+        pattern: sun.reflect*
+        location: IMPORT
+  description: Usage of JDK-internal sun.misc / sun.reflect APIs
+  message: |
+    Code on the classpath can no longer access JDK internals on JDK 17:
+    `sun.misc.BASE64Encoder`/`BASE64Decoder` were removed outright in JDK 9,
+    and the remaining `sun.misc.*`/`sun.reflect.*` APIs (e.g.
+    `sun.misc.Unsafe`) are strongly encapsulated by JEP 396/403, failing with
+    `InaccessibleObjectException` or `IllegalAccessError` at runtime.
+
+    Before:
+        import sun.misc.BASE64Encoder;
+        String encoded = new BASE64Encoder().encode(data);
+
+    After:
+        import java.util.Base64;
+        String encoded = Base64.getEncoder().encodeToString(data);
+
+    For `sun.misc.Unsafe`, replace with `java.lang.invoke.VarHandle`,
+    `java.util.concurrent.atomic.*` or `LockSupport`; if the usage is inside a
+    third-party library, upgrade the library instead of opening the module.
+    Only as a last resort, add `--add-opens`/`--add-exports` JVM flags, noting
+    they may stop working in future releases.
+  links:
+  - title: 'JEP 260: Encapsulate Most Internal APIs'
+    url: https://openjdk.org/jeps/260
+  - title: 'JEP 403: Strongly Encapsulate JDK Internals'
+    url: https://openjdk.org/jeps/403
+  - title: Oracle JDK 17 Migration Guide
+    url: https://docs.oracle.com/en/java/javase/17/migrate/

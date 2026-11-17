@@ -1,0 +1,68 @@
+# JVM flags that were removed or ignored between JDK 8 and JDK 17. CMS was
+# deprecated in JDK 9 (JEP 291) and removed in JDK 14 (JEP 363); the PermGen
+# flags became no-ops when the permanent generation was removed in JDK 8
+# (JEP 122). G1 is the default collector since JDK 9 (JEP 248).
+- ruleID: jvm-flags-00010
+  category: mandatory
+  effort: 1
+  labels:
+  - konveyor.io/source=openjdk11-
+  - konveyor.io/source=openjdk
+  - konveyor.io/target=openjdk17+
+  - konveyor.io/target=openjdk
+  when:
+    builtin.filecontent:
+      pattern: 'UseConcMarkSweepGC'
+      filePattern: ".*\\.(sh|bat|cmd|conf|properties|yml|yaml)"
+  description: The CMS garbage collector was removed in JDK 14
+  message: |
+    The Concurrent Mark Sweep (CMS) collector was deprecated in JDK 9
+    (JEP 291) and removed in JDK 14 (JEP 363). On JDK 14+ the
+    `-XX:+UseConcMarkSweepGC` flag causes the JVM to exit at startup with
+    "Unrecognized VM option".
+
+    Before:
+        JAVA_OPTS="-XX:+UseConcMarkSweepGC -XX:CMSInitiatingOccupancyFraction=70"
+
+    After:
+        JAVA_OPTS="-XX:+UseG1GC"
+        # G1 is the default collector since JDK 9 (JEP 248) — often the flags
+        # can simply be removed.
+
+    Remove related CMS tuning flags as well (e.g. `-XX:CMSInitiatingOccupancyFraction`,
+    `-XX:+UseParNewGC`, `-XX:ParallelCMSThreads`).
+  links:
+  - title: 'JEP 363: Remove the Concurrent Mark Sweep (CMS) Garbage Collector'
+    url: https://openjdk.org/jeps/363
+  - title: 'JEP 248: Make G1 the Default Garbage Collector'
+    url: https://openjdk.org/jeps/248
+
+- ruleID: jvm-flags-00020
+  category: potential
+  effort: 1
+  labels:
+  - konveyor.io/source=openjdk11-
+  - konveyor.io/source=openjdk
+  - konveyor.io/target=openjdk17+
+  - konveyor.io/target=openjdk
+  when:
+    builtin.filecontent:
+      pattern: '(PermSize|MaxPermSize)'
+      filePattern: ".*\\.(sh|bat|cmd|conf|properties|yml|yaml)"
+  description: PermGen tuning flags are no-ops since JDK 8
+  message: |
+    The permanent generation was removed in JDK 8 (JEP 122), replaced by
+    Metaspace. `-XX:PermSize` and `-XX:MaxPermSize` are ignored (with a
+    warning) on JDK 8+ and should be removed from startup scripts.
+
+    Before:
+        JAVA_OPTS="-XX:PermSize=128m -XX:MaxPermSize=256m"
+
+    After:
+        # Remove the flags; size Metaspace only if needed
+        JAVA_OPTS="-XX:MaxMetaspaceSize=256m"
+  links:
+  - title: 'JEP 122: Remove the Permanent Generation'
+    url: https://openjdk.org/jeps/122
+  - title: Oracle JDK 17 Migration Guide
+    url: https://docs.oracle.com/en/java/javase/17/migrate/

@@ -1,0 +1,67 @@
+# Custom rules demonstrating the konveyor/rulesets conventions.
+# One file per concern; here two example rules share the file for PoC brevity.
+- ruleID: eap8-custom-00010
+  category: potential
+  effort: 1
+  labels:
+  - konveyor.io/source=eap7
+  - konveyor.io/target=eap8+
+  when:
+    builtin.filecontent:
+      pattern: '([0-9]{1,3}\.){3}[0-9]{1,3}'
+      filePattern: '.*\.(properties|yml|yaml)'
+  description: Hard-coded IP address found in a configuration file
+  message: |
+    A hard-coded IP address was found in a configuration file.
+
+    Replace it with a configurable property (environment variable, system
+    property) or a Kubernetes/OpenShift Service name before migrating the
+    application to JBoss EAP 8 on OpenShift.
+
+    Before:
+        reporting.server.address=10.20.30.40
+
+    After:
+        reporting.server.address=${REPORTING_SERVER_ADDRESS}
+  links:
+  - title: Red Hat build of Apache Camel - cloud configuration considerations
+    url: https://access.redhat.com/documentation/en-us/red_hat_build_of_apache_camel/
+
+- ruleID: eap8-custom-00020
+  category: mandatory
+  effort: 3
+  labels:
+  - konveyor.io/source=eap7
+  - konveyor.io/target=eap8+
+  when:
+    java.dependency:
+      name: commons-lang.commons-lang
+      lowerbound: 0.0.0
+      upperbound: 3.0.0
+  description: Apache Commons Lang 2.x dependency should be upgraded to commons-lang3
+  message: |
+    The project depends on Apache Commons Lang 2.x (commons-lang:commons-lang),
+    which is outside the JBoss EAP 8 / Jakarta EE 10 stack and has been
+    end-of-life since 2014. Replace it with org.apache.commons:commons-lang3
+    and update the imports.
+
+    Before:
+        <dependency>
+            <groupId>commons-lang</groupId>
+            <artifactId>commons-lang</artifactId>
+            <version>2.6</version>
+        </dependency>
+
+        import org.apache.commons.lang.StringUtils;
+
+    After:
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-lang3</artifactId>
+            <version>3.14.0</version>
+        </dependency>
+
+        import org.apache.commons.lang3.StringUtils;
+  links:
+  - title: Apache Commons Lang3 migration notes
+    url: https://commons.apache.org/proper/commons-lang3/

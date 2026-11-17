@@ -1,0 +1,12 @@
+rulesPath: ../sun-misc-internal-apis.yaml
+providers:
+- name: java
+  dataPath: ./data/java
+tests:
+- ruleID: sun-misc-internal-apis-00010
+  testCases:
+  - name: tc-sun-misc-apis
+    analysisParams:
+      mode: "source-only"
+    hasIncidents:
+      exactly: 1

@@ -1,0 +1,21 @@
+rulesPath: ../eap8-custom-example.yaml
+providers:
+- name: builtin
+  dataPath: ./data/builtin
+- name: java
+  dataPath: ./data/java
+tests:
+- ruleID: eap8-custom-00010
+  testCases:
+  - name: tc-hardcoded-ip
+    analysisParams:
+      mode: "source-only"
+    hasIncidents:
+      exactly: 1
+- ruleID: eap8-custom-00020
+  testCases:
+  - name: tc-commons-lang
+    analysisParams:
+      mode: "source-only"
+    hasIncidents:
+      exactly: 1

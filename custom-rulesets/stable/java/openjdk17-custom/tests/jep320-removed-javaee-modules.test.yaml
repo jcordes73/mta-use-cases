@@ -1,0 +1,33 @@
+rulesPath: ../jep320-removed-javaee-modules.yaml
+providers:
+- name: java
+  dataPath: ./data/java
+tests:
+- ruleID: jep320-removed-javaee-modules-00010
+  testCases:
+  - name: tc-removed-javaee-modules
+    analysisParams:
+      mode: "source-only"
+    hasIncidents:
+      exactly: 1
+- ruleID: jep320-removed-javaee-modules-00020
+  testCases:
+  - name: tc-removed-javaee-modules
+    analysisParams:
+      mode: "source-only"
+    hasIncidents:
+      exactly: 1
+- ruleID: jep320-removed-javaee-modules-00030
+  testCases:
+  - name: tc-removed-javaee-modules
+    analysisParams:
+      mode: "source-only"
+    hasIncidents:
+      exactly: 1
+- ruleID: jep320-removed-javaee-modules-00040
+  testCases:
+  - name: tc-removed-javaee-modules
+    analysisParams:
+      mode: "source-only"
+    hasIncidents:
+      exactly: 1
