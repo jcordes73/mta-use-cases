@@ -645,6 +645,44 @@ MTA 8.3 provides automated analysis, assessment, and refactoring tooling for app
     - Create another `Konveyor Gateway` resource in addition
 
     If you later you want to run an `Agentic Migration` you will be prompted which Konveyor Gateway to use, and the run dialog also prompts for the target branch. The target branch is prefilled with the UI default `konveyor/migration-<timestamp>` (hardcoded in the MTA UI as `TARGET_BRANCH_PREFIX`), but it can be edited per run — any valid git refname except the application's source branch (the harness refuses to push onto the source branch) is accepted. The results, including the committed handoff files, are pushed to this target branch.
+- **Trusting a private root CA on the LLM endpoint (optional)**: This is only needed if the LLM endpoint presents a certificate signed by a private/corporate CA. The `maas.apps...` endpoint this PoC uses serves a public Let's Encrypt chain (leaf → `YR1` → `ISRG Root YR`, cross-signed by `ISRG Root X1`, which every standard trust store already contains), so nothing below is required for it — but the procedure was validated end-to-end against that endpoint and is ready if the endpoint ever moves behind a private CA. To see the chain the endpoint actually serves (the last certificate is the root to install):
+
+    ```bash
+    echo | openssl s_client -connect ${OPENAI_HOST}:443 -servername ${OPENAI_HOST} -showcerts 2>/dev/null \
+      | awk '/BEGIN CERT/,/END CERT/{print}' > /tmp/llm-chain.pem
+    ```
+
+    The `Gateway` CRD has no field for a CA bundle (`spec` is only `provider`, `endpoint`, `credentialRef`, `model`), and the Gateway itself never needs one: its connectivity probe runs `curl -sk` — certificate verification disabled — so the Gateway reports `Ready` with `connectionVerified=true` regardless of what the endpoint's chain looks like. The client that actually enforces TLS is the agent runtime (goose) inside the Agent Sandbox pod, so the CA has to reach the sandbox container. There are two mechanisms, in order of preference:
+
+    - **Bake the CA into the agent image (recommended — also covers UI-launched runs).** Derive from the agent base image and extract the trust store at *build* time — the sandbox runs with a random UID under the restricted SCC and cannot run `update-ca-trust` at pod start:
+
+      ```dockerfile
+      FROM registry.redhat.io/mta/mta-agent-java-rhel9:8.3.1
+      COPY corp-root-ca.crt /etc/pki/ca-trust/source/anchors/
+      RUN update-ca-trust extract
+      ```
+
+      Build it with the same `oc new-build --binary` pattern used for the custom agent images (see the workflow sections below) and point the workflow's `Agent` manifests' `spec.image` at the derived image. Because each workflow owns its agent images, this is effectively per-workflow and needs no run-time changes — verified live: an image built this way reaches the endpoint with no environment variables set (`ssl_verify=0`).
+    - **Mount the CA per run.** `AgentRun` and `AgentWorkflowRun` support `spec.env`, `spec.envFrom` and `spec.fileMounts`, and the workflow run forwards all three to every stage run it creates (the `AgentWorkflow`/`Agent` definition CRs deliberately carry none of them — they are execution-time concerns). Create a ConfigMap with the root CA and reference it on the run:
+
+      ```bash
+      oc create configmap corp-root-ca --from-file=corp-root-ca.crt=/path/to/root-ca.pem -n openshift-mta
+      ```
+
+      ```yaml
+      # on the AgentWorkflowRun / AgentRun spec, alongside gateway/params/agentRef
+      env:
+        - name: SSL_CERT_FILE
+          value: /etc/certs/corp-root-ca.crt
+      fileMounts:
+        - configMapName: corp-root-ca
+          mountPath: /etc/certs/corp-root-ca.crt
+          subPath: corp-root-ca.crt
+      ```
+
+      The mount path must not collide with the controller-managed mounts (`/opt/skills`, `/opt/skills-src`, `/run/konveyor`, `/workspace`, `/tmp`) — a collision fails the run terminally with `InvalidFileMounts`, a missing ConfigMap retries until it appears. Because the MTA UI's run dialog creates the run resource itself, this variant only applies to runs launched from YAML/CLI.
+
+    Which environment variable actually switches a client to the mounted file is client-specific and a classic trap when verifying the setup: `curl` ignores `SSL_CERT_FILE` — its variable is `CURL_CA_BUNDLE` (a missing file fails with exit 77, verification failure with exit 60) — while `SSL_CERT_FILE` is honored by OpenSSL-default-path clients, Go, and goose's TLS stack. Note that Go's `crypto/x509` merges `SSL_CERT_FILE` with the default certificate directories (upstream golang/go#79496), so a Go diagnostic that "passes despite a bogus `SSL_CERT_FILE`" proves nothing — set `SSL_CERT_DIR=/nonexistent` alongside it to actually restrict the pool (verified: with the pool restricted to an unrelated CA, verification fails with `x509: certificate signed by unknown authority`; restricted to the endpoint's root, it succeeds).
 - **Accessing the MTA UI**: The MTA UI can be accessed like this:
 
     ```bash
@@ -2607,4 +2645,100 @@ You can find the `README.md` and the resulting skill presented here at https://g
     ```bash
     podman kill skillcard
     ```
+
+### Create your own rules
+
+Skills guide agents, but the analysis findings themselves come from **rules** — YAML
+files processed by the [analyzer-lsp](https://github.com/konveyor/analyzer-lsp) engine.
+The [konveyor/rulesets](https://github.com/konveyor/rulesets) repository — the source of
+the EAP 8, Jakarta EE, and OpenJDK rulesets used in this PoC — maintains an authoring
+workflow as skills under [`.skills`](https://github.com/konveyor/rulesets/tree/main/.skills)
+(`create-new-rule.md`, `run-rule-tests.md`, `add-or-update-tests.md`) with detailed
+format references under `.cursor/rules/`.
+
+A working example ruleset for this PoC's EAP 7 → EAP 8 path lives in
+[`custom-rulesets/`](custom-rulesets/README.md), with two rules demonstrating both
+condition families — `builtin.filecontent` (hard-coded IPs in configuration files) and
+`java.dependency` (Commons Lang 2.x → commons-lang3) — plus a Kantra test file and test
+data. A second ruleset, [`openjdk17-custom/`](custom-rulesets/stable/java/openjdk17-custom/),
+covers an Oracle JDK 8 → OpenJDK 17 migration (JEP 320 removed Java EE modules,
+`sun.misc` internals, and legacy JVM flags), filling the gaps the upstream
+`stable/java/openjdk17` ruleset leaves open:
+
+```
+custom-rulesets/stable/java/eap8-custom/
+├── ruleset.yaml                       ruleset name + description
+├── eap8-custom-example.yaml           the rules
+└── tests/
+    ├── eap8-custom-example.test.yaml  one test file per rule file, rulesPath → ../
+    └── data/                          per-provider, per-test-case data folders
+        ├── builtin/tc-hardcoded-ip/
+        └── java/tc-commons-lang/      minimal Maven project for the java provider
+```
+
+The essential conventions, taken from the upstream skills:
+
+- Rules live under `stable/<language>/<technology>/` (or `preview/...`), one directory
+  per target technology with a `ruleset.yaml`; one rule file per concern.
+- Each rule has a `ruleID` of the form `<ruleset-prefix>-<5-digit-number>`, incremented
+  by 10 so rules can be inserted later, plus `category` (`mandatory`/`optional`/`potential`),
+  `effort` (Fibonacci), `labels` (e.g. `konveyor.io/source=eap7`, `konveyor.io/target=eap8+`),
+  a `description`, and a `message` with before/after examples and `links` — this message
+  is what both the report and AI agents act on.
+- Every rule file gets a sibling `tests/<basename>.test.yaml` declaring `rulesPath`,
+  the `providers` (`java`, `builtin`) with their `dataPath`s, and per-rule test cases
+  with `hasIncidents` expectations; the test data lives under
+  `tests/data/<provider-dataPath>/<test-case-name>/`.
+
+The tests run with [Kantra](https://github.com/konveyor/kantra), the same way the
+upstream CI does:
+
+```bash
+kantra test custom-rulesets/stable/java/eap8-custom/tests/eap8-custom-example.test.yaml
+```
+
+Once validated, upload the ruleset in the MTA web console (*Migration → Rulesets*) and
+select it in an analysis profile via its labels (see
+[Define an Analysis Profile](#define-an-analysis-profile)) — the example rules carry
+this PoC's `konveyor.io/source=eap7` / `konveyor.io/target=eap8+` labels, so they slot
+into the existing EAP 7 → 8 profile unchanged. See
+[custom-rulesets/README.md](custom-rulesets/README.md) for the full step-by-step
+walkthrough.
+
+### Suggested design: Agentic run observability and a persistent event log
+
+The agentic architecture in this PoC has two structural observability gaps: a run is
+only observed while a client is attached to its ACP stream, and nothing about the run
+is persisted once the sandbox pod goes away — so runs cannot be reviewed afterwards,
+and there is no data for measuring token/cost effectiveness or improving skills and
+tools. The proposal in
+[design/agentic-observability-event-log.md](design/agentic-observability-event-log.md)
+addresses both by making the Hub the primary contact for agent events: the in-pod
+harness keeps driving the run, but its ACP tee pushes a normalized event stream
+(tool calls, HITL permission round-trips, steering, token usage, skill markers) to the
+Hub, which persists it in its existing PostgreSQL database, serves live subscribers and
+retrospective replay from that store, and exposes aggregates for analytics. Highlights
+of the document:
+
+- **Variant decision**: Hub as recorder/broker (chosen) vs. Hub as ACP driver
+  (rejected — breaks the harness-owned git lifecycle, batch playbooks, and fail-closed
+  HITL).
+- **Topology change**: the Hub's pod-dial WebSocket proxy (with its `X-Secret-Key`
+  credential swap) is replaced by an outbound, cursor-resumable uplink from the pod —
+  the per-run ACP key never leaves the pod, the browser keeps the hub token as its only
+  credential, and the controller stays stateless.
+- **Event schema**: append-only, `seq`-ordered, normalized at capture time — including
+  the `skill.loaded` markers only the harness can emit, which are what makes
+  token-to-skill attribution possible.
+- **Persistence**: PostgreSQL with JSONB in the Hub's existing database — append-only
+  and idempotent (`(run_id, seq)` upsert), monthly partitions for retention, rollup
+  tables kept forever for analytics; no new datastore in disconnected clusters.
+- **Analytics**: effectiveness measured per successful outcome (tokens per migrated
+  file, tool failure rates, skill-version A/B, HITL friction, loop detection).
+- **Related upstream work**: aligned with the open proposals #341 (transcript
+  persistence with a working prototype), #192 (usage accounting/telemetry research),
+  and #282 (usage telemetry ADR) — the design's unique contributions are the
+  normalized event schema, relational persistence/analytics, and skill attribution.
+- **Six implementation phases**, the first two of which (always-on recorder + Hub
+  persistence) deliver reviewability on their own, before any console change.
 

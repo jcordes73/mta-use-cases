@@ -379,3 +379,53 @@ remote both read the HTTPS web URL; SSH remains the push transport via
    `PROJECT_REPO_PATH` variable of the clone-config Secret (verified live:
    with `helloworld` as the first folder the sync matches and profiles
    download; with the repo root open it fails).
+
+## Agentic run: sandbox fails on the LLM connection although the Gateway is `Ready`
+
+The Konveyor Gateway's connectivity probe runs `curl -sk` — certificate
+verification is disabled — so `Ready=True` / `connectionVerified=true` says
+nothing about the endpoint's TLS chain. If the LLM endpoint presents a
+certificate signed by a private CA, the Gateway still verifies fine and the
+failure only surfaces at run time, when the agent runtime (goose) inside the
+sandbox pod enforces TLS for the first time. The run fails with a provider
+error like `certificate signed by unknown authority` (visible in the sandbox
+pod's termination message / `oc logs <sandbox-pod> -n openshift-mta`), while
+the `AgentRun` phases may still report `Succeeded` — check the pod, not just
+the run status.
+
+Two look-alikes to rule out first, both of which have appeared in practice:
+
+1. **Hub API token failure, not TLS**: a sandbox terminating with
+   `hub resolution: fetch app: GET /applications/<id> failed: 401` and a body
+   of `Token [...] not-authenticated: token not recognized` is a stale Hub
+   credential (the harness resolves the application from the Hub before the
+   first LLM call) — rotate/refresh the Hub API key, no certificate work
+   applies.
+2. **Endpoint unreachable, not TLS**: `curl exit 6/7/28`-style transport
+   errors (DNS, refused, timeout) are egress/proxy problems, e.g. a missing
+   proxy allowlist entry in disconnected environments.
+
+To confirm a TLS trust problem, test the endpoint's chain the way the sandbox
+sees it — from inside the cluster, with verification on (the `mta-hub` pod has
+`curl`; `401` with `ssl_verify=0` means the chain verifies and only the auth
+header was missing, while `curl exit 60` means verification failed):
+
+```bash
+oc exec -n openshift-mta deploy/mta-hub -- \
+  curl -s -o /dev/null -w '%{http_code} ssl_verify=%{ssl_verify_result}\n' \
+  --max-time 15 https://${OPENAI_HOST}/v1/models
+```
+
+The served chain (the last certificate is the root to install) is:
+
+```bash
+echo | openssl s_client -connect ${OPENAI_HOST}:443 -servername ${OPENAI_HOST} -showcerts 2>/dev/null \
+  | awk '/BEGIN CERT/,/END CERT/{print}' > /tmp/llm-chain.pem
+```
+
+For the fix, follow the *Trusting a private root CA on the LLM endpoint*
+step of the main README (bake the CA into the agent image, or mount it per
+run via `spec.env` + `spec.fileMounts`). When verifying the fix, remember the
+env-var trap: `curl` honors `CURL_CA_BUNDLE`, not `SSL_CERT_FILE`; Go
+additionally merges `SSL_CERT_FILE` with the default certificate directories
+(golang/go#79496), so restrict `SSL_CERT_DIR` too when testing with Go.
