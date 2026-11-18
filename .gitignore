@@ -2,3 +2,4 @@
 *.pem
 .vscode/*
 !.vscode/extensions.json
+application_import.csv

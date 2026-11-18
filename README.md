@@ -331,6 +331,23 @@ To prevent unwanted changes and/or commits to existing source code, the original
     ```bash
     git clone https://git.${OPENSHIFT_APPS_DOMAIN}/jboss/jboss-quickstarts ~/jboss-quickstarts
     ```
+- **When working with your Git instance that is using ssh-key based authentication then follow these steps**: The `repos/migrate` endpoint above authenticates the source with `auth_username`/`auth_password` — credentials Gitea injects **only into HTTP(S) clone addresses**. An `ssh://` `clone_addr` to a key-authenticated repository cannot be migrated this way: the API has no field for an SSH private key, and Gitea's server-side `git clone` has no agent to offer one, so the migration fails with a public-key error. If your Git instance authenticates via SSH keys but **also serves HTTPS with a personal-access token** (most SSH-only setups do), migrate over that HTTPS path instead — the SSH keys remain irrelevant to the migration:
+
+    ```bash
+    curl -s -X POST "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/repos/migrate" \
+    -H "Authorization: token ${GITEA_ADMIN_TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d '{
+        "clone_addr": "https://source-git.internal.example.com/team/the-repo.git",
+        "auth_username": "<source-user>",
+        "auth_password": "<source-personal-access-token>",
+        "repo_name": "the-repo",
+        "repo_owner": "jboss",
+        "mirror": false
+    }'
+    ```
+
+    Set `mirror: false` deliberately — the PoC treats the Gitea copy as frozen (it is the migration source for MTA), so Gitea should not re-fetch from the original instance. If the source instance serves HTTPS **without** a token-based auth path (SSH is the only authentication), the migrate API cannot be used at all; clone with the SSH key locally and push the mirror into Gitea over HTTPS with the `gitea-admin` token instead. After the migration, verify as above and reference the repository by its **HTTPS web URL** (`https://git.${OPENSHIFT_APPS_DOMAIN}/...`) in the application records — the analyzer and the agentic harness clone with HTTP basic auth only (see [Bulk Uploading Applications](#bulk-uploading-applications)).
 - **Proxy settings (disconnected environments)**: Gitea needs outbound access to GitHub to migrate the original repositories. In a disconnected environment, route this traffic through a proxy. Define the `MTA_`-prefixed proxy environment variables (see [Proxy configuration](#proxy-configuration)) and install the chart with the additional values file `gitea/values-proxy.yaml`. Both values files are substituted with `envsubst` during the installation, so the `MTA_`-prefixed shell variables are resolved automatically, while the Gitea container receives the standard `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` environment variables:
 
     ```bash
