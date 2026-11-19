@@ -155,10 +155,10 @@ export JIRA_EMAIL=<Atlassian account email>
 export JIRA_API_TOKEN=<API token>
 ```
 
-To verify the LLM endpoint is reachable and the model responds, send a test request via `curl`:
+To verify the LLM endpoint is reachable and the model responds, send a test request via `curl`. All `curl` commands in this guide use `-k` (`--insecure`) because the cluster routes and the LLM endpoint present certificates that are not in the workstation's trust store (self-signed sandbox certificates) — remove the flag when working against endpoints with publicly trusted certificates:
 
 ```bash
-curl -s ${OPENAI_BASE_URL}/chat/completions \
+curl -k -s ${OPENAI_BASE_URL}/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer ${OPENAI_API_KEY}" \
   -d '{
@@ -275,7 +275,7 @@ To prevent unwanted changes and/or commits to existing source code, the original
     > The chart defaults to a `RollingUpdate` deployment strategy, which deadlocks on the single RWO data PVC: the new pod waits with *"Multi-Attach error for volume ... Volume is already used by pod(s) ..."*, while the old pod keeps serving. `gitea/values.yaml` sets `strategy.type: Recreate` to replace the pod before the new one starts — without it a later `helm upgrade` stalls the rollout.
 - **Verify Open API endpoint**: To verify if the Gitea Open API endpoint is working use
     ```bash
-    curl -s -o /dev/null -w "%{http_code}\n" https://git.${OPENSHIFT_APPS_DOMAIN}/api/swagger
+    curl -k -s -o /dev/null -w "%{http_code}\n" https://git.${OPENSHIFT_APPS_DOMAIN}/api/swagger
     ```
     The expected output should be `200`.
 - **Access Token**:For any actions later we will need an access token
@@ -285,7 +285,7 @@ To prevent unwanted changes and/or commits to existing source code, the original
     ```
     To verify that the token works run
     ```bash
-    curl -s -o /dev/null -w "%{http_code}\n" \
+    curl -k -s -o /dev/null -w "%{http_code}\n" \
     "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/user" \
     -H "Authorization: token ${GITEA_ADMIN_TOKEN}"
     ```
@@ -293,18 +293,18 @@ To prevent unwanted changes and/or commits to existing source code, the original
 
     In case you need to delete this token use the following command
     ```bash
-    curl --request DELETE https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/users/gitea-admin/tokens/admin_token   --header "Authorization: Basic $(echo -n 'gitea-admin:giteaftw!' | base64)"
+    curl -k --request DELETE https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/users/gitea-admin/tokens/admin_token   --header "Authorization: Basic $(echo -n 'gitea-admin:giteaftw!' | base64)"
     ```
 
 - **Cloning Repositories**: Now we will clone the [JBoss EAP Quickstarts](https://github.com/jboss-developer/jboss-eap-quickstarts) repository into Gitea using the REST-API. This will also require to create an organization `jboss`
 
     ```bash
-    curl -s -X POST "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/orgs" \
+    curl -k -s -X POST "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/orgs" \
     -H "Authorization: token ${GITEA_ADMIN_TOKEN}" \
     -H "Content-Type: application/json" \
     -d '{"username": "jboss", "visibility": "public"}'
 
-    curl -X POST "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/repos/migrate" \
+    curl -k -X POST "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/repos/migrate" \
     -H "Authorization: token ${GITEA_ADMIN_TOKEN}" \
     -H "Content-Type: application/json" \
     -d '{
@@ -313,7 +313,7 @@ To prevent unwanted changes and/or commits to existing source code, the original
         "repo_owner": "jboss"
     }'
 
-    curl -s -X POST "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/admin/users" \
+    curl -k -s -X POST "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/admin/users" \
     -H "Authorization: token ${GITEA_ADMIN_TOKEN}" \
     -H "Content-Type: application/json" \
     -d '{
@@ -325,7 +325,7 @@ To prevent unwanted changes and/or commits to existing source code, the original
 
     export GITEA_OWNERS_TEAM_ID=$(curl -s "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/orgs/jboss/teams"   -H "Authorization: token ${GITEA_ADMIN_TOKEN}" | jq '.[].id')
 
-    curl -s -X PUT "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/teams/${GITEA_OWNERS_TEAM_ID}/members/jboss-dev"   -H "Authorization: token ${GITEA_ADMIN_TOKEN}"
+    curl -k -s -X PUT "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/teams/${GITEA_OWNERS_TEAM_ID}/members/jboss-dev"   -H "Authorization: token ${GITEA_ADMIN_TOKEN}"
     ```
     To verify if the cloning was successful run
     ```bash
@@ -334,7 +334,7 @@ To prevent unwanted changes and/or commits to existing source code, the original
 - **When working with your Git instance that is using ssh-key based authentication then follow these steps**: The `repos/migrate` endpoint above authenticates the source with `auth_username`/`auth_password` — credentials Gitea injects **only into HTTP(S) clone addresses**. An `ssh://` `clone_addr` to a key-authenticated repository cannot be migrated this way: the API has no field for an SSH private key, and Gitea's server-side `git clone` has no agent to offer one, so the migration fails with a public-key error. If your Git instance authenticates via SSH keys but **also serves HTTPS with a personal-access token** (most SSH-only setups do), migrate over that HTTPS path instead — the SSH keys remain irrelevant to the migration:
 
     ```bash
-    curl -s -X POST "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/repos/migrate" \
+    curl -k -s -X POST "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/repos/migrate" \
     -H "Authorization: token ${GITEA_ADMIN_TOKEN}" \
     -H "Content-Type: application/json" \
     -d '{
@@ -402,7 +402,7 @@ To prevent unwanted changes and/or commits to existing source code, the original
   Then add the public key to the Git server (for Gitea this can also be done via the REST API). The key is passed to `curl` via `jq` to ensure it is properly expanded and JSON-escaped:
 
   ```bash
-  curl -s -X POST "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/user/keys" \
+  curl -k -s -X POST "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/user/keys" \
     -H "Authorization: token ${GITEA_ADMIN_TOKEN}" \
     -H "Content-Type: application/json" \
     -d "{
@@ -773,7 +773,7 @@ The `Tackle` custom resource and the `Konveyor Gateway` custom resource do not p
 The environment-variable propagation above affects the `mta-hub` container process. Independently of it, the Hub stores proxy settings **centrally** — the same data as the UI's *Settings → Proxy* table — exposed via the [Tackle2-Hub API](https://github.com/konveyor/tackle2-hub/blob/main/docs/swagger.yaml) at `/hub/proxies` (an internal, unsupported surface — see the warning below). Two default entries are seeded on installation, `http` (id `1`) and `https` (id `2`), both `enabled: false` with an empty host and port. Inspect them with:
 
 ```bash
-curl -s "${MTA_URL}/hub/proxies" -u admin:admin | jq '.[] | {id, kind, enabled, host, port, excluded}'
+curl -k -s "${MTA_URL}/hub/proxies" -u admin:admin | jq '.[] | {id, kind, enabled, host, port, excluded}'
 ```
 
 These settings configure the Hub's **own git/svn operations**: when the Hub fetches or pushes a repository (e.g. migrating the original repositories from GitHub), it derives the `http.proxy` of the generated `~/.gitconfig` from the `enabled: true` entry matching the clone URL's scheme, and resolves the entry's `identity` reference to add `user:password@` proxy authentication. Clone URLs with the `ssh` scheme bypass the proxy entirely. The entry fields are:
@@ -801,7 +801,7 @@ PROXY_EXCLUDED=${MTA_NO_PROXY},git.${OPENSHIFT_APPS_DOMAIN},git-ssh.${OPENSHIFT_
 
 for kind in http https; do
   id=$([ $kind = http ] && echo 1 || echo 2)
-  curl -s -X PUT "${MTA_URL}/hub/proxies/${id}" \
+  curl -k -s -X PUT "${MTA_URL}/hub/proxies/${id}" \
     -u admin:admin \
     -H "Content-Type: application/json" \
     -d "$(jq -n \
@@ -841,7 +841,7 @@ MTA_USER_ID=$(curl -s -X POST "${MTA_URL}/hub/stakeholders"   -u admin:admin   -
 "jobFunction": {"id": 1, "name": "IT"}
 }' | jq '.id')
 
-curl -s -X POST "${MTA_URL}/hub/stakeholdergroups" \
+curl -k -s -X POST "${MTA_URL}/hub/stakeholdergroups" \
 -u admin:admin \
 -H "Content-Type: application/json" \
 -d "{
@@ -852,7 +852,7 @@ curl -s -X POST "${MTA_URL}/hub/stakeholdergroups" \
     ]
 }"
 
-curl -s -X POST "${MTA_URL}/hub/businessservices" \
+curl -k -s -X POST "${MTA_URL}/hub/businessservices" \
 -u admin:admin \
 -H "Content-Type: application/json" \
 -d "{
@@ -873,7 +873,7 @@ export MAVEN_PROXY_PORT=$(echo "${MTA_HTTP_PROXY#*://}" | cut -s -d: -f2)
 export MAVEN_PROXY_PORT=${MAVEN_PROXY_PORT:-80}
 export MAVEN_PROXY_NONPROXYHOSTS=${MTA_NO_PROXY//,/\|}
 export MAVEN_SETTINGS=$(envsubst < mta-ui/maven-settings.xml | sed 's/\"/\\\"/g' | tr '\n' ' ')
-curl -s -X POST "${MTA_URL}/hub/identities" \
+curl -k -s -X POST "${MTA_URL}/hub/identities" \
   -u admin:admin \
   -H "Content-Type: application/json" \
   -d "{
@@ -893,7 +893,7 @@ The `nonProxyHosts` list is derived by replacing the commas of `MTA_NO_PROXY` wi
 Note that a `maven`-kind identity is only consumed by analyses. The analyzer resolves it the same two-step way as the Git credentials: its Resource Injector first tries an identity **linked to the application with the role `maven`** (the direct search filters on the role exactly), falling back to the global **default** (`kind: maven` and `default: true`). Because the identity is created as the default, it resolves for every application without linking — the same behavior as the `git-credentials` identity. To override the Maven settings for a specific application (e.g. per-app repositories), link a different `maven`-kind identity to it with the role `maven` using the same full-object `PUT` pattern as the Git credentials — the direct link takes precedence over the default:
 
 ```bash
-curl -s -X PUT "${MTA_URL}/hub/applications/${APP_ID}" \
+curl -k -s -X PUT "${MTA_URL}/hub/applications/${APP_ID}" \
   -u admin:admin \
   -H "Content-Type: application/json" \
   -d "$(curl -s "${MTA_URL}/hub/applications/${APP_ID}" -u admin:admin \
@@ -907,7 +907,7 @@ An application can carry both links side by side — the `git-credentials` ident
 
 ```bash
 cat mta-ui/template_application_import.csv | envsubst > mta-ui/application_import.csv
-curl -s -X POST "${MTA_URL}/hub/importsummaries/upload" \
+curl -k -s -X POST "${MTA_URL}/hub/importsummaries/upload" \
   -u admin:admin \
   -F "file=@mta-ui/application_import.csv"
 ```
@@ -925,7 +925,7 @@ The template uses **HTTPS repository URLs** (`https://git.${OPENSHIFT_APPS_DOMAI
 The bulk upload above imports **applications** (record type `1`) — it carries no dependency data. For a portfolio that is already onboarded, dependencies can be added (or corrected) without recreating applications using **dependency-only records** (record type `2`) — uploaded through the same `importsummaries/upload` endpoint, the importer matches the application by name and only creates `Dependency` edges. The file `mta-ui/application_dependency_import.csv` holds the complete intra-portfolio dependency graph derived from the quickstarts' POMs (see [the per-row dependency table](mta-ui/template_application_import.dependencies.md) for how it was derived), maintained alongside the application template as the single source for dependency data:
 
 ```bash
-curl -s -X POST "${MTA_URL}/hub/importsummaries/upload" \
+curl -k -s -X POST "${MTA_URL}/hub/importsummaries/upload" \
   -u admin:admin \
   -F "fileName=application_dependency_import.csv" \
   -F "file=@mta-ui/application_dependency_import.csv"
@@ -956,7 +956,7 @@ During the execution of **Agentic Workflows** information will be stored in Gite
 > The POST returns `409 Conflict` with an error object if the identity already exists — capturing `.id` from that response would yield nothing, so the ID is looked up by name instead:
 
 ```bash
-curl -s -X POST "${MTA_URL}/hub/identities" \
+curl -k -s -X POST "${MTA_URL}/hub/identities" \
   -u admin:admin \
   -H "Content-Type: application/json" \
   -d '{
@@ -975,7 +975,7 @@ export GIT_CREDENTIALS_ID=$(curl -s "${MTA_URL}/hub/identities" -u admin:admin \
 If SSH keys are used for authentication against the Git repository then create an identity with the private SSH key stored in the `key` field. The `password` field can optionally hold the passphrase of the key, and the `user` field is the SSH user of the Git server — `git`, the username Gitea's built-in SSH server requires (pinned via `BUILTIN_SSH_SERVER_USER` in the [Gitea installation](#ssh-keys) values; see the SSH clone test there for details):
 
 ```bash
-curl -s -X POST "${MTA_URL}/hub/identities" \
+curl -k -s -X POST "${MTA_URL}/hub/identities" \
   -u admin:admin \
   -H "Content-Type: application/json" \
   -d "$(jq -n --arg key "$(cat ~/.ssh/mta-gitea)" '{
@@ -996,7 +996,7 @@ Note how the Agentic Workflows resolve their push credentials: the harness does 
 To verify that the identity has been created run
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}\n" \
+curl -k -s -o /dev/null -w "%{http_code}\n" \
   "${MTA_URL}/hub/identities/${GIT_SSH_IDENTITY_ID}" \
   -u admin:admin
 ```
@@ -1004,7 +1004,7 @@ curl -s -o /dev/null -w "%{http_code}\n" \
 This should return `200`. Note that identities are stored in the MTA Hub database rather than as Kubernetes resources, so unlike the `SkillCard`, `Agent`, and `AgentWorkflow` custom resources there is no `oc get` check for them. You can also list all source-control identities with
 
 ```bash
-curl -s "${MTA_URL}/hub/identities" -u admin:admin | jq '[.[] | select(.kind=="source") | {name, user}]'
+curl -k -s "${MTA_URL}/hub/identities" -u admin:admin | jq '[.[] | select(.kind=="source") | {name, user}]'
 ```
 
 ##### Issue Tracking (Jira integration)
@@ -1029,7 +1029,7 @@ IDENTITY_ID=$(curl -s -u admin:admin -H "Content-Type: application/json" \
   "${MTA_URL}/hub/identities" | jq -r '.id')
 
 # Tracker pointing at the rewriter in front of the Jira Cloud site
-curl -s -u admin:admin -H "Content-Type: application/json" \
+curl -k -s -u admin:admin -H "Content-Type: application/json" \
   -d "{\"name\":\"jira-cloud\",\"kind\":\"jira-cloud\",\"url\":\"http://jira-rewriter.openshift-mta.svc:8080\",\"identity\":{\"id\":${IDENTITY_ID},\"name\":\"jira-cloud\"},\"insecure\":false}" \
   "${MTA_URL}/hub/trackers" | jq
 ```
@@ -1042,9 +1042,9 @@ Verify the integration: the tracker's `connected` field (checked by the backgrou
 
 ```bash
 TRK_ID=$(curl -s -u admin:admin "${MTA_URL}/hub/trackers" | jq -r '.[0].id')
-curl -s -u admin:admin "${MTA_URL}/hub/trackers/${TRK_ID}/projects" | jq
+curl -k -s -u admin:admin "${MTA_URL}/hub/trackers/${TRK_ID}/projects" | jq
 # pick a project ID from the list, then:
-curl -s -u admin:admin "${MTA_URL}/hub/trackers/${TRK_ID}/projects/<project-id>" | jq '.issueTypes'
+curl -k -s -u admin:admin "${MTA_URL}/hub/trackers/${TRK_ID}/projects/<project-id>" | jq '.issueTypes'
 ```
 
 Tickets are created from the MTA UI (e.g. from an application's issues or a migration wave): each ticket becomes a Jira issue with the summary `Migrate <application name>` in the chosen project and issue type, and the Hub periodically refreshes the ticket status from Jira (To Do / In Progress / Done, derived from the issue's status category). End-to-end verified with a live Jira Cloud site: ticket `KAN-4` (`Migrate helloworld`, Task in the `MTA` project) created by the Hub, then transitioned to Done in Jira — the Hub picked up the new status within its 30-second refresh cycle.
@@ -1054,7 +1054,7 @@ Tickets are created from the MTA UI (e.g. from an application's issues or a migr
 An analysis profile defines how an analysis is run: which rulesets are applied (selected by their labels), which packages are in scope, and whether dependencies are analyzed. Profiles can be managed in the `Analysis Profiles` view of the MTA UI, or via the REST API as shown below. The following example creates the profile configured in this PoC (hub profile id 1, the one the validated helloworld analysis ran with) for migrating JBoss EAP 7.4 to JBoss EAP 8: it applies the rulesets targeting EAP 8 (`konveyor.io/target=eap8`), the OpenJDK 21 baseline (`konveyor.io/target=openjdk21` — EAP 8 runs on OpenJDK 21, so rules targeting Java versions up to 21 are in scope), narrows the rules to those valid when coming from EAP 7 (`konveyor.io/source=eap7`), and includes dependencies and known (open-source) libraries in the analysis:
 
 ```bash
-curl -s -X POST "${MTA_URL}/hub/analysis/profiles" \
+curl -k -s -X POST "${MTA_URL}/hub/analysis/profiles" \
   -u admin:admin \
   -H "Content-Type: application/json" \
   -d '{
@@ -1089,7 +1089,7 @@ The questionnaire file is YAML for readability; the API expects JSON, so convert
 ```bash
 yq -o=json eval mta-ui/eap7-to-8-questionnaire.yaml > mta-ui/eap7-to-8-questionnaire.json
 
-curl -s -X POST "${MTA_URL}/hub/questionnaires" \
+curl -k -s -X POST "${MTA_URL}/hub/questionnaires" \
   -u admin:admin \
   -H "Content-Type: application/json" \
   -d @mta-ui/eap7-to-8-questionnaire.json
@@ -1098,7 +1098,7 @@ curl -s -X POST "${MTA_URL}/hub/questionnaires" \
 The POST returns `201 Created` with the questionnaire (e.g. `{"id": 2, "name": "JBoss EAP 7 to EAP 8 Assessment"}`); re-running it creates a second copy rather than a conflict, so check for an existing copy first and `DELETE /hub/questionnaires/{id}` the old one if it needs replacing. Verify with `GET /hub/questionnaires` — each section, question, and answer is returned with its `order`, `risk`, `rationale`, and `mitigation`:
 
 ```bash
-curl -s "${MTA_URL}/hub/questionnaires" -u admin:admin | jq -r '.[] | "\(.id): \(.name) — \(.sections | length) sections"'
+curl -k -s "${MTA_URL}/hub/questionnaires" -u admin:admin | jq -r '.[] | "\(.id): \(.name) — \(.sections | length) sections"'
 ```
 
 To use it, create an assessment for an application or archetype in the `Assessments` view of the MTA UI, or via the REST API's sub-resource routes (`POST /hub/applications/{id}/assessments` or `POST /hub/archetypes/{id}/assessments`) — the Hub populates the assessment's sections, questions, and answers from the referenced questionnaire and copies its `thresholds` and `riskMessages`. Once the questions are answered, the Hub computes the application's risk rating from the `thresholds` and reports it with the matching `riskMessages` summary. The assessment complements the analysis profile from [Define an Analysis Profile](#define-an-analysis-profile): the analysis surfaces the technical findings (e.g. every `javax.*` import), while the assessment captures the organizational context (team knowledge, testing coverage, release cadence) that determines how those findings translate into migration effort.
@@ -1108,7 +1108,7 @@ To use it, create an assessment for an application or archetype in the `Assessme
 An **archetype** groups applications that share common characteristics — determined by *criteria tags* the applications must carry — and lets you configure the group once instead of per application: analyses and assessments can be created for the archetype and apply to all its member applications, the archetype links stakeholders and stakeholder groups (which assessments inherit), its *target profiles* reference the analysis profiles that apply to the group, and its *review* (the recorded migration decision) is inherited by all member applications. The following example creates an archetype for the EAP 7 → 8 migration, with the `JBoss EAP` tag (id 427) as the criteria tag, the existing stakeholder and stakeholder group, and a target profile referencing the analysis profile from [Define an Analysis Profile](#define-an-analysis-profile). On this portfolio the tag exists already because the application import carries it: the CSV's `Tag 2` column (`Runtime` category) creates the `JBoss EAP` tag and applies it to all 123 applications during the import (verify the id with `curl -s "${MTA_URL}/hub/tags" -u admin:admin | jq '.[] | select(.name=="JBoss EAP") | .id'` and substitute it) — applications can also pick the tag up from analysis findings, which is what the archetype description below anticipates:
 
 ```bash
-curl -s -X POST "${MTA_URL}/hub/archetypes" \
+curl -k -s -X POST "${MTA_URL}/hub/archetypes" \
   -u admin:admin \
   -H "Content-Type: application/json" \
   -d '{
@@ -1125,13 +1125,13 @@ curl -s -X POST "${MTA_URL}/hub/archetypes" \
 The POST returns `201 Created` with the archetype — note that the response's `applications` array already lists every application matching the criteria tags (all 123 here, via the tags the import created), and re-running the POST creates a second copy rather than a conflict, so check for an existing copy first. Verify with `GET /hub/archetypes`:
 
 ```bash
-curl -s "${MTA_URL}/hub/archetypes" -u admin:admin | jq -r '.[] | "\(.id): \(.name) — criteria: \([.criteria[].name] | join(", ")) — \(.applications | length) applications"'
+curl -k -s "${MTA_URL}/hub/archetypes" -u admin:admin | jq -r '.[] | "\(.id): \(.name) — criteria: \([.criteria[].name] | join(", ")) — \(.applications | length) applications"'
 ```
 
 The criteria tags matter: the tags come from the analysis (the discovery ruleset applies `JBoss EAP` etc. from the application's dependencies), so an application only joins the archetype after it has been analyzed and tagged. To create an assessment for the whole group instead of per application, POST to the archetype's assessment sub-resource with the questionnaire — the Hub populates all sections, questions, and answers from the questionnaire and copies its `thresholds` and `riskMessages` (note that the top-level `POST /hub/assessments` is not routed on the deployed Hub; only the sub-resource routes are):
 
 ```bash
-curl -s -X POST "${MTA_URL}/hub/archetypes/1/assessments" \
+curl -k -s -X POST "${MTA_URL}/hub/archetypes/1/assessments" \
   -u admin:admin \
   -H "Content-Type: application/json" \
   -d '{"questionnaire": {"id": 2}}'
@@ -1140,7 +1140,7 @@ curl -s -X POST "${MTA_URL}/hub/archetypes/1/assessments" \
 The POST returns `201 Created` with the assessment (`status: "empty"`, `risk: "unknown"` until answered). The archetype's stakeholders and stakeholder groups are not inherited automatically via the REST API — add them with a full-object `PUT /hub/assessments/{id}`, the same pattern as the identity links:
 
 ```bash
-curl -s "${MTA_URL}/hub/assessments/1" -u admin:admin \
+curl -k -s "${MTA_URL}/hub/assessments/1" -u admin:admin \
   | jq '.stakeholders = [{"id": 1}] | .stakeholderGroups = [{"id": 1}]' \
   | curl -s -X PUT "${MTA_URL}/hub/assessments/1" -u admin:admin -H "Content-Type: application/json" -d @- -o /dev/null -w "PUT HTTP %{http_code}\n"
 ```
@@ -1148,7 +1148,7 @@ curl -s "${MTA_URL}/hub/assessments/1" -u admin:admin \
 Answer the questions in the `Assessments` view of the MTA UI (or via `PUT /hub/assessments/{id}` by selecting answers), and the Hub aggregates the risk over all 123 member applications, computing a group-wide rating from the questionnaire's `thresholds`. Answering via the REST API works by setting `selected: true` on the chosen answers and PUT-ing the full assessment — the following answers the 14 questions for the quickstart group (grounded in the actual repositories: the applications track the `7.4.x` branch, so EAP 7.4 with the default Java 8 compiler target):
 
 ```bash
-curl -s "${MTA_URL}/hub/assessments/1" -u admin:admin -o /tmp/assessment.json
+curl -k -s "${MTA_URL}/hub/assessments/1" -u admin:admin -o /tmp/assessment.json
 
 # select answers by (section order, question order, answer order)
 python3 - <<'EOF'
@@ -1163,7 +1163,7 @@ for s in q['sections']:
 json.dump(q, open('/tmp/assessment-answered.json','w'))
 EOF
 
-curl -s -X PUT "${MTA_URL}/hub/assessments/1" \
+curl -k -s -X PUT "${MTA_URL}/hub/assessments/1" \
   -u admin:admin \
   -H "Content-Type: application/json" \
   -d @/tmp/assessment-answered.json -o /dev/null -w "PUT HTTP %{http_code}\n"
@@ -1172,7 +1172,7 @@ curl -s -X PUT "${MTA_URL}/hub/assessments/1" \
 One caveat: the archetype's `risk` field derives **only** from assessments of questionnaires marked `required: true` (`RequiredAssessments()` in the Hub's assessment resolver filters on the questionnaire's `required` flag) — so the questionnaire must be set to `"required": true` (a full-object `PUT /hub/questionnaires/{id}`, as in the upload above) for the answers to count. With the answers above — 5 green, 7 yellow, and 2 red (Java SE 8 and ad-hoc releases) — the 2 red answers meet the questionnaire's `red: 2` threshold, and the archetype reports:
 
 ```bash
-curl -s "${MTA_URL}/hub/archetypes/1" -u admin:admin | jq -c '{assessed, risk, confidence}'
+curl -k -s "${MTA_URL}/hub/archetypes/1" -u admin:admin | jq -c '{assessed, risk, confidence}'
 # {"assessed":true,"risk":"red","confidence":15}
 ```
 
@@ -1181,7 +1181,7 @@ curl -s "${MTA_URL}/hub/archetypes/1" -u admin:admin | jq -c '{assessed, risk, c
 Once the assessment is complete, a **Review** records the stakeholder's formal migration decision for the group: the proposed action, effort estimate, business criticality, and work priority. Applications associated with the archetype **inherit** its review — the MTA UI shows the archetype's review on each member application's detail view (until the application has its own review). Create the review via the MTA UI's `Archetypes` view (select the archetype and open **Review**), or via the Hub REST API — a `Review` links either an application or an archetype ref, and the Hub back-links it on the archetype's `review` field:
 
 ```bash
-curl -s -X POST "${MTA_URL}/hub/reviews" \
+curl -k -s -X POST "${MTA_URL}/hub/reviews" \
   -H "Content-Type: application/json" \
   -u admin:admin \
   -d '{
@@ -1197,7 +1197,7 @@ curl -s -X POST "${MTA_URL}/hub/reviews" \
 The POST returns `201 Created` with the review (id 1 here). Verify that the archetype links it:
 
 ```bash
-curl -s "${MTA_URL}/hub/archetypes/1" -u admin:admin | jq -c '{review, assessed, risk}'
+curl -k -s "${MTA_URL}/hub/archetypes/1" -u admin:admin | jq -c '{review, assessed, risk}'
 # {"review":{"id":1},"assessed":true,"risk":"red"}
 ```
 
@@ -1215,7 +1215,7 @@ To change the review later, use a full-object `PUT /hub/reviews/{id}` (the same 
 A **migration wave** groups applications that move together in a scheduled time window, with stakeholders and stakeholder groups assigned for the group — it is used by the MTA UI's timeline/reports views to plan the migration sequence. Create the wave via the MTA UI's `Migration waves` view, or via the Hub REST API — `POST /hub/migrationwaves` with the window's dates in **RFC3339 format** (date-only strings are rejected with `parsing time ... cannot parse "" as "T"`):
 
 ```bash
-curl -s -X POST "${MTA_URL}/hub/migrationwaves" \
+curl -k -s -X POST "${MTA_URL}/hub/migrationwaves" \
   -H "Content-Type: application/json" \
   -u admin:admin \
   -d '{
@@ -1233,7 +1233,7 @@ The POST returns `201 Created` with the wave (id 1 here). Assign applications vi
 APP_ID=$(curl -s "${MTA_URL}/hub/applications" -u admin:admin \
   | jq -r '.[] | select(.name=="helloworld") | .id')
 
-curl -s -X PUT "${MTA_URL}/hub/migrationwaves/1" \
+curl -k -s -X PUT "${MTA_URL}/hub/migrationwaves/1" \
   -H "Content-Type: application/json" \
   -u admin:admin \
   -d "{
@@ -1250,7 +1250,7 @@ curl -s -X PUT "${MTA_URL}/hub/migrationwaves/1" \
 Verify that the application is linked:
 
 ```bash
-curl -s "${MTA_URL}/hub/applications/${APP_ID}" -u admin:admin | jq -c '{id, name, migrationWave}'
+curl -k -s "${MTA_URL}/hub/applications/${APP_ID}" -u admin:admin | jq -c '{id, name, migrationWave}'
 # {"id":1,"name":"helloworld","migrationWave":{"id":1,"name":"EAP 8 Wave 1"}}
 ```
 
@@ -1378,7 +1378,7 @@ Unlike the git push credentials, which the harness resolves from the application
     IDENTITY_ID=$(curl -s "${MTA_URL}/hub/identities" -u admin:admin \
       | jq -r '.[] | select(.name=="git-credentials") | .id')
 
-    curl -s -X PUT "${MTA_URL}/hub/applications/${APP_ID}" \
+    curl -k -s -X PUT "${MTA_URL}/hub/applications/${APP_ID}" \
       -u admin:admin \
       -H "Content-Type: application/json" \
       -d "$(curl -s "${MTA_URL}/hub/applications/${APP_ID}" -u admin:admin \
@@ -1395,7 +1395,7 @@ Unlike the git push credentials, which the harness resolves from the application
     ```bash
     export MAVEN_SETTINGS_XML=$(envsubst < mta-ui/maven-settings.xml | sed 's/\"/\\\"/g' | tr '\n' ' ')
 
-    curl -s -X POST "${MTA_URL}/hub/agentic/workflowruns" \
+    curl -k -s -X POST "${MTA_URL}/hub/agentic/workflowruns" \
       -u admin:admin \
       -H "Content-Type: application/json" \
       --data @- <<EOF
@@ -1569,7 +1569,7 @@ set`, and one without `APP_ID` fails the same way before any stage starts):
 APP_ID=$(curl -s "${MTA_URL}/hub/applications" -u admin:admin \
   | jq -r '.[] | select(.name=="helloworld") | .id')
 
-curl -s -X POST "${MTA_URL}/hub/agentic/workflowruns" \
+curl -k -s -X POST "${MTA_URL}/hub/agentic/workflowruns" \
   -u admin:admin -H "Content-Type: application/json" \
   --data @- <<EOF
 {
@@ -1658,7 +1658,7 @@ objects, not a map):
 APP_ID=$(curl -s "${MTA_URL}/hub/applications" -u admin:admin \
   | jq -r '.[] | select(.name=="helloworld") | .id')
 
-curl -s -X POST "${MTA_URL}/hub/agentic/workflowruns" \
+curl -k -s -X POST "${MTA_URL}/hub/agentic/workflowruns" \
   -u admin:admin -H "Content-Type: application/json" \
   --data @- <<EOF
 {
@@ -1745,7 +1745,7 @@ repository path):
 APP_ID=$(curl -s "${MTA_URL}/hub/applications" -u admin:admin \
   | jq -r '.[] | select(.name=="helloworld-rs") | .id')
 
-curl -s -X POST "${MTA_URL}/hub/agentic/workflowruns" \
+curl -k -s -X POST "${MTA_URL}/hub/agentic/workflowruns" \
   -u admin:admin -H "Content-Type: application/json" \
   --data @- <<EOF
 {
@@ -1963,7 +1963,7 @@ the other workflows (the harness requires `APP_ID` and `TARGET_BRANCH`):
 APP_ID=$(curl -s "${MTA_URL}/hub/applications" -u admin:admin \
   | jq -r '.[] | select(.name=="helloworld") | .id')
 
-curl -s -X POST "${MTA_URL}/hub/agentic/workflowruns" \
+curl -k -s -X POST "${MTA_URL}/hub/agentic/workflowruns" \
   -u admin:admin -H "Content-Type: application/json" \
   --data @- <<EOF
 {
@@ -2090,7 +2090,7 @@ The `Empty` tag has a side effect: the dashboard's samples list forces **`percli
 ```bash
 oc exec -n openshift-devspaces deploy/devspaces-dashboard -- sh -c \
   'TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token); \
-   curl -s -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+   curl -k -s -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
    -d "{\"url\": \"https://devfile-registry-openshift-devspaces.${OPENSHIFT_APPS_DOMAIN}/devfiles/index.json\"}" \
    http://localhost:8080/dashboard/api/data/resolver'
 ```
