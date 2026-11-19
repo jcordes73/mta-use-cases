@@ -1,0 +1,49 @@
+# Egress for SSH-based git operations from agentic Sandboxes.
+#
+# The `mta-egress` default-deny NetworkPolicy in openshift-mta only allows
+# outbound traffic on ports 443, 80, 6443, 8443, 8081, and 8082 — port 22
+# (SSH) is blocked. Agent pods that run git clone/push against SSH remotes
+# (the in-cluster Gitea SSH service, or external git hosts on port 22)
+# need this policy.
+#
+# Scope: only the Agent Sandbox pods (label app.kubernetes.io/managed-by:
+# agentic-controller). Two rules:
+#   1. The in-cluster Gitea SSH service. gitea-ssh is a HEADLESS service —
+#      its DNS name resolves straight to the pod IP, so no port translation
+#      happens and the policy must match the POD's listening port, 2222
+#      (the same port the socat tunnel forwards to). In-cluster SSH URLs
+#      are ssh://git@gitea-ssh.gitea.svc:2222/<owner>/<repo>.git — port 22
+#      is refused, the pod does not listen on it.
+#   2. Any external destination on port 22 (corporate git hosts).
+#
+# Note: the harness itself (go-git) pushes over HTTPS only — this policy
+# enables the agent runtime's own git-over-SSH operations (goose shell
+# tool, skills) and any ssh:// Hub-side flows. The SSH route
+# (git-ssh.${OPENSHIFT_APPS_DOMAIN}:443) is TLS on 443 and already allowed.
+#
+# Apply with: cat mta-ui/allow-egress-git-ssh.yaml | envsubst | oc apply -f -
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-git-ssh
+  namespace: openshift-mta
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/managed-by: agentic-controller
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: gitea
+      ports:
+        - protocol: TCP
+          port: 2222
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 22

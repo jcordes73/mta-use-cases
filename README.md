@@ -438,7 +438,7 @@ To prevent unwanted changes and/or commits to existing source code, the original
       echo "" | openssl s_client -connect git-ssh.${OPENSHIFT_APPS_DOMAIN}:443 -servername git-ssh.${OPENSHIFT_APPS_DOMAIN} 2>/dev/null | openssl x509 -noout -subject
       ```
 
-      In-cluster consumers (e.g. the agentic Sandboxes) bypass the tunnel and reach the SSH server directly at `gitea-ssh.gitea.svc:22`.
+      In-cluster consumers (e.g. the agentic Sandboxes) bypass the tunnel and reach the SSH server directly at `gitea-ssh.gitea.svc:2222` — the Service is **headless**, so its DNS name resolves straight to the pod IP and no port translation happens: the URL must carry the container's listening port 2222 (the same port the tunnel's socat forwards to), not the Service's 22. Cross-namespace egress on port 2222 additionally requires the `allow-egress-git-ssh` NetworkPolicy (see the [Allow egress on port 22 for SSH-based git](#allow-egress-on-port-22-for-ssh-based-git) bullet).
 
   - **The SSH username is `git`**: Gitea's built-in SSH server requires one fixed username for all git operations over SSH — the `[server] BUILTIN_SSH_SERVER_USER` setting, which defaults to the OS user running Gitea. On OpenShift that is the random container UID (e.g. `1000810000`), so `gitea/values.yaml` pins it to `git` via the chart's config (`gitea.config.server.BUILTIN_SSH_SERVER_USER: git`, plus `SSH_USER: git` for the clone URLs the UI displays). Any other username is rejected with `Permission denied (publickey)`, and the server log records `Invalid SSH username <name> - must use ...`. Note the username is still only a gate — the key is matched against the Gitea account it is registered with (`gitea-admin` here), not against the username.
 
@@ -1275,6 +1275,20 @@ For Agentic Migrations, MTA composes agent workloads from **Skills** (SKILL.md f
     ```bash
     oc get networkpolicy allow-egress-to-image-registry -n openshift-mta
     ```
+
+- **Allow egress on port 22 for SSH-based git**: The same default-deny egress posture blocks port 22, which the Agent Sandbox pods need when their git operations run over SSH remotes — the in-cluster Gitea SSH service (`gitea-ssh.gitea.svc:22`, see the [SSH Keys](#ssh-keys) section) or external git hosts on the standard SSH port. Apply the following NetworkPolicy, scoped to the Agent Sandbox pods (`app.kubernetes.io/managed-by: agentic-controller`):
+
+    ```bash
+    oc apply -f mta-ui/allow-egress-git-ssh.yaml
+    ```
+
+    Verify the existence of the `NetworkPolicy` as follows:
+
+    ```bash
+    oc get networkpolicy allow-egress-git-ssh -n openshift-mta
+    ```
+
+    Two details of the policy: the in-cluster rule allows port **2222** — the `gitea-ssh` Service is headless, so its DNS name resolves straight to the pod IP and no port translation happens; the URL (`ssh://git@gitea-ssh.gitea.svc:2222/...`) and the policy must both carry the container's listening port, not the Service's 22 (see the [SSH Keys](#ssh-keys) section). And the harness itself pushes over HTTPS only (the go-git-based `migration-harness` has no SSH support) — this policy enables the agent runtime's own git-over-SSH operations (skills running `git` against SSH remotes) and the TLS-passthrough SSH route is unaffected (it is HTTPS on port 443, already allowed).
 
     For ease of use we build the `SkillCard` container directly on OpenShift using the following commands. The `--binary` flag creates the `BuildConfig` with binary input and **without automatically triggering a build** — the build is only started by the explicit `oc start-build`. Because `--binary` cannot be combined with `--dockerfile`, and the `Containerfile` is not named `Dockerfile`, its path within the build context is set on the `BuildConfig` with `oc patch`:
     ```bash
