@@ -193,7 +193,7 @@ The response should contain the model's completion, e.g.:
 > The Konveyor Gateway verifies its credential by calling the endpoint's **`/v1/models`** route, which is typically stricter about authentication than `chat/completions` (some gateways accept an arbitrary key for completions but return `401` for the model listing). Verify `/v1/models` explicitly with the real API key before deploying — if it returns `401`, the Gateway reports `Ready=False` with *"Endpoint ... returned HTTP 401 - check the credential secret's API key"* even though test completions succeed:
 >
 > ```bash
-> curl -s -o /dev/null -w "%{http_code}\n" ${OPENAI_BASE_URL}/models \
+> curl -k -s -o /dev/null -w "%{http_code}\n" ${OPENAI_BASE_URL}/models \
 >   -H "Authorization: Bearer ${OPENAI_API_KEY}"
 > ```
 >
@@ -226,7 +226,7 @@ oc rollout restart deployment squid -n squid
 Verify that the proxy is running and forwards traffic to an allowed destination:
 
 ```bash
-oc exec -n squid deploy/squid -- curl -s -o /dev/null -w '%{http_code}\n' -x http://localhost:3128 -I https://github.com
+oc exec -n squid deploy/squid -- curl -k -s -o /dev/null -w '%{http_code}\n' -x http://localhost:3128 -I https://github.com
 ```
 
 The command should return `200`. Note that requests from inside the Squid pod match the unrestricted `http_access allow localhost` ACL, so this check does not exercise the `cluster_networks` and `allowed_domains` restrictions — to verify the proxy the way a workload sees it, run the same check from a Dev Spaces workspace terminal against `http://squid.squid.svc:3128` instead.
@@ -281,7 +281,7 @@ To prevent unwanted changes and/or commits to existing source code, the original
 - **Access Token**:For any actions later we will need an access token
 
     ```bash
-    export GITEA_ADMIN_TOKEN=$(curl -s -H "Content-Type: application/json" -d '{"name":"admin_token","scopes":["all"]}' -u 'gitea-admin:giteaftw!' "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/users/gitea-admin/tokens" | jq -r '.sha1')
+    export GITEA_ADMIN_TOKEN=$(curl -k -s -H "Content-Type: application/json" -d '{"name":"admin_token","scopes":["all"]}' -u 'gitea-admin:giteaftw!' "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/users/gitea-admin/tokens" | jq -r '.sha1')
     ```
     To verify that the token works run
     ```bash
@@ -323,7 +323,7 @@ To prevent unwanted changes and/or commits to existing source code, the original
         "must_change_password": false
     }'
 
-    export GITEA_OWNERS_TEAM_ID=$(curl -s "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/orgs/jboss/teams"   -H "Authorization: token ${GITEA_ADMIN_TOKEN}" | jq '.[].id')
+    export GITEA_OWNERS_TEAM_ID=$(curl -k -s "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/orgs/jboss/teams"   -H "Authorization: token ${GITEA_ADMIN_TOKEN}" | jq '.[].id')
 
     curl -k -s -X PUT "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/teams/${GITEA_OWNERS_TEAM_ID}/members/jboss-dev"   -H "Authorization: token ${GITEA_ADMIN_TOKEN}"
     ```
@@ -835,7 +835,7 @@ export MTA_URL="https://$(oc get route mta -n openshift-mta -o jsonpath='{.spec.
 ##### Creating Stakeholders, Stakeholder Groups and Business Service
 Create a stakeholder and assign him to the stakeholder group named **JBoss Quickstarts** and a business service named **JBoss Onboarding**.
 ```bash
-MTA_USER_ID=$(curl -s -X POST "${MTA_URL}/hub/stakeholders"   -u admin:admin   -H "Content-Type: application/json"   -d '{
+MTA_USER_ID=$(curl -k -s -X POST "${MTA_URL}/hub/stakeholders"   -u admin:admin   -H "Content-Type: application/json"   -d '{
 "name": "John Doe",
 "email": "john@example.com",
 "jobFunction": {"id": 1, "name": "IT"}
@@ -884,7 +884,7 @@ curl -k -s -X POST "${MTA_URL}/hub/identities" \
     \"settings\": \"${MAVEN_SETTINGS}\"
   }"
 
-export MAVEN_IDENTITY_ID=$(curl -s "${MTA_URL}/hub/identities" -u admin:admin \
+export MAVEN_IDENTITY_ID=$(curl -k -s "${MTA_URL}/hub/identities" -u admin:admin \
   | jq -r '.[] | select(.name=="maven-redhat-ga-settings") | .id')
 ```
 
@@ -896,7 +896,7 @@ Note that a `maven`-kind identity is only consumed by analyses. The analyzer res
 curl -k -s -X PUT "${MTA_URL}/hub/applications/${APP_ID}" \
   -u admin:admin \
   -H "Content-Type: application/json" \
-  -d "$(curl -s "${MTA_URL}/hub/applications/${APP_ID}" -u admin:admin \
+  -d "$(curl -k -s "${MTA_URL}/hub/applications/${APP_ID}" -u admin:admin \
     | jq --argjson id "${MAVEN_IDENTITY_ID}" \
         '.identities = (((.identities // []) | map(select(.id != $id))) + [{id: $id, role: "maven"}])')"
 ```
@@ -942,9 +942,9 @@ The record layout follows the Hub's import format: column 1 is the record type `
 >
 >   ```bash
 >   # list edges with ids
->   curl -s "${MTA_URL}/hub/dependencies" -u admin:admin | \
+>   curl -k -s "${MTA_URL}/hub/dependencies" -u admin:admin | \
 >     jq -r '.[] | "\(.id)|\(.from.name) -> \(.to.name)"'
->   curl -s -X DELETE "${MTA_URL}/hub/dependencies/:id" -u admin:admin
+>   curl -k -s -X DELETE "${MTA_URL}/hub/dependencies/:id" -u admin:admin
 >   ```
 >
 > Also note the importer resolves application names with a `LIKE` match — a name that is a prefix of another application's name can resolve to the wrong row, which the quickstarts' exact names avoid.
@@ -968,7 +968,7 @@ curl -k -s -X POST "${MTA_URL}/hub/identities" \
     "default": true
   }'
 
-export GIT_CREDENTIALS_ID=$(curl -s "${MTA_URL}/hub/identities" -u admin:admin \
+export GIT_CREDENTIALS_ID=$(curl -k -s "${MTA_URL}/hub/identities" -u admin:admin \
   | jq -r '.[] | select(.name=="git-credentials") | .id')
 ```
 
@@ -987,7 +987,7 @@ curl -k -s -X POST "${MTA_URL}/hub/identities" \
     "default": false
   }')"
 
-export GIT_SSH_IDENTITY_ID=$(curl -s "${MTA_URL}/hub/identities" -u admin:admin \
+export GIT_SSH_IDENTITY_ID=$(curl -k -s "${MTA_URL}/hub/identities" -u admin:admin \
   | jq -r '.[] | select(.name=="git-ssh-credentials") | .id')
 ```
 
@@ -1024,7 +1024,7 @@ Then create the identity and register the tracker:
 
 ```bash
 # Identity carrying the Jira credentials (the Hub encrypts them at rest)
-IDENTITY_ID=$(curl -s -u admin:admin -H "Content-Type: application/json" \
+IDENTITY_ID=$(curl -k -s -u admin:admin -H "Content-Type: application/json" \
   -d "{\"name\":\"jira-cloud\",\"kind\":\"basic-auth\",\"user\":\"${JIRA_EMAIL}\",\"password\":\"${JIRA_API_TOKEN}\"}" \
   "${MTA_URL}/hub/identities" | jq -r '.id')
 
@@ -1041,7 +1041,7 @@ curl -k -s -u admin:admin -H "Content-Type: application/json" \
 Verify the integration: the tracker's `connected` field (checked by the background manager against `/rest/api/2/myself` through the rewriter), the Jira projects reachable with the credentials, and the issue types of the project tickets should be filed in (non-subtask, non-Epic types are eligible):
 
 ```bash
-TRK_ID=$(curl -s -u admin:admin "${MTA_URL}/hub/trackers" | jq -r '.[0].id')
+TRK_ID=$(curl -k -s -u admin:admin "${MTA_URL}/hub/trackers" | jq -r '.[0].id')
 curl -k -s -u admin:admin "${MTA_URL}/hub/trackers/${TRK_ID}/projects" | jq
 # pick a project ID from the list, then:
 curl -k -s -u admin:admin "${MTA_URL}/hub/trackers/${TRK_ID}/projects/<project-id>" | jq '.issueTypes'
@@ -1105,7 +1105,7 @@ To use it, create an assessment for an application or archetype in the `Assessme
 
 ##### Create an Archetype
 
-An **archetype** groups applications that share common characteristics — determined by *criteria tags* the applications must carry — and lets you configure the group once instead of per application: analyses and assessments can be created for the archetype and apply to all its member applications, the archetype links stakeholders and stakeholder groups (which assessments inherit), its *target profiles* reference the analysis profiles that apply to the group, and its *review* (the recorded migration decision) is inherited by all member applications. The following example creates an archetype for the EAP 7 → 8 migration, with the `JBoss EAP` tag (id 427) as the criteria tag, the existing stakeholder and stakeholder group, and a target profile referencing the analysis profile from [Define an Analysis Profile](#define-an-analysis-profile). On this portfolio the tag exists already because the application import carries it: the CSV's `Tag 2` column (`Runtime` category) creates the `JBoss EAP` tag and applies it to all 123 applications during the import (verify the id with `curl -s "${MTA_URL}/hub/tags" -u admin:admin | jq '.[] | select(.name=="JBoss EAP") | .id'` and substitute it) — applications can also pick the tag up from analysis findings, which is what the archetype description below anticipates:
+An **archetype** groups applications that share common characteristics — determined by *criteria tags* the applications must carry — and lets you configure the group once instead of per application: analyses and assessments can be created for the archetype and apply to all its member applications, the archetype links stakeholders and stakeholder groups (which assessments inherit), its *target profiles* reference the analysis profiles that apply to the group, and its *review* (the recorded migration decision) is inherited by all member applications. The following example creates an archetype for the EAP 7 → 8 migration, with the `JBoss EAP` tag (id 427) as the criteria tag, the existing stakeholder and stakeholder group, and a target profile referencing the analysis profile from [Define an Analysis Profile](#define-an-analysis-profile). On this portfolio the tag exists already because the application import carries it: the CSV's `Tag 2` column (`Runtime` category) creates the `JBoss EAP` tag and applies it to all 123 applications during the import (verify the id with `curl -k -s "${MTA_URL}/hub/tags" -u admin:admin | jq '.[] | select(.name=="JBoss EAP") | .id'` and substitute it) — applications can also pick the tag up from analysis findings, which is what the archetype description below anticipates:
 
 ```bash
 curl -k -s -X POST "${MTA_URL}/hub/archetypes" \
@@ -1142,7 +1142,7 @@ The POST returns `201 Created` with the assessment (`status: "empty"`, `risk: "u
 ```bash
 curl -k -s "${MTA_URL}/hub/assessments/1" -u admin:admin \
   | jq '.stakeholders = [{"id": 1}] | .stakeholderGroups = [{"id": 1}]' \
-  | curl -s -X PUT "${MTA_URL}/hub/assessments/1" -u admin:admin -H "Content-Type: application/json" -d @- -o /dev/null -w "PUT HTTP %{http_code}\n"
+  | curl -k -s -X PUT "${MTA_URL}/hub/assessments/1" -u admin:admin -H "Content-Type: application/json" -d @- -o /dev/null -w "PUT HTTP %{http_code}\n"
 ```
 
 Answer the questions in the `Assessments` view of the MTA UI (or via `PUT /hub/assessments/{id}` by selecting answers), and the Hub aggregates the risk over all 123 member applications, computing a group-wide rating from the questionnaire's `thresholds`. Answering via the REST API works by setting `selected: true` on the chosen answers and PUT-ing the full assessment — the following answers the 14 questions for the quickstart group (grounded in the actual repositories: the applications track the `7.4.x` branch, so EAP 7.4 with the default Java 8 compiler target):
@@ -1230,7 +1230,7 @@ curl -k -s -X POST "${MTA_URL}/hub/migrationwaves" \
 The POST returns `201 Created` with the wave (id 1 here). Assign applications via a full-object `PUT /hub/migrationwaves/{id}` — the Hub sets each application's `migrationWave` back-link automatically. The application id is DB-generated and differs per cluster (on a fresh import `helloworld` is id 1), so look it up by name instead of hardcoding it:
 
 ```bash
-APP_ID=$(curl -s "${MTA_URL}/hub/applications" -u admin:admin \
+APP_ID=$(curl -k -s "${MTA_URL}/hub/applications" -u admin:admin \
   | jq -r '.[] | select(.name=="helloworld") | .id')
 
 curl -k -s -X PUT "${MTA_URL}/hub/migrationwaves/1" \
@@ -1372,16 +1372,16 @@ Unlike the git push credentials, which the harness resolves from the application
 - **Start the Workflow Run**: The migration is triggered by creating an `AgentWorkflowRun`, which can be done in the MTA UI (agentic migrations) or via the Hub API as described in the preceding [Start an Agent Workflow Run](#start-an-agent-workflow-run) section. No credential linking is needed: the run's spec does not carry credentials; the harness resolves the push credential from the Hub at runtime, preferring an identity linked to the application over the global default — and the `git-credentials` identity created above is the default, so it resolves for every application. To override the credential for a specific application (e.g. per-repo credentials), link a basic-auth identity to it with the role `source`. The application update is a full-object `PUT`, so the application is fetched, modified, and written back — the `jq` removes any existing link for the same identity before appending, since the Hub enforces a unique constraint on `(ApplicationID, IdentityID, Role)` and a plain append fails if the identity is already linked.
 
     ```bash
-    APP_ID=$(curl -s "${MTA_URL}/hub/applications" -u admin:admin \
+    APP_ID=$(curl -k -s "${MTA_URL}/hub/applications" -u admin:admin \
       | jq -r '.[] | select(.name=="helloworld") | .id')
 
-    IDENTITY_ID=$(curl -s "${MTA_URL}/hub/identities" -u admin:admin \
+    IDENTITY_ID=$(curl -k -s "${MTA_URL}/hub/identities" -u admin:admin \
       | jq -r '.[] | select(.name=="git-credentials") | .id')
 
     curl -k -s -X PUT "${MTA_URL}/hub/applications/${APP_ID}" \
       -u admin:admin \
       -H "Content-Type: application/json" \
-      -d "$(curl -s "${MTA_URL}/hub/applications/${APP_ID}" -u admin:admin \
+      -d "$(curl -k -s "${MTA_URL}/hub/applications/${APP_ID}" -u admin:admin \
         | jq --argjson id "${IDENTITY_ID}" \
             '.identities = (((.identities // []) | map(select(.id != $id))) + [{id: $id, role: "source"}])')"
     ```
@@ -1566,7 +1566,7 @@ the `params` array of `{name, value}` objects (verified live: a run without
 set`, and one without `APP_ID` fails the same way before any stage starts):
 
 ```bash
-APP_ID=$(curl -s "${MTA_URL}/hub/applications" -u admin:admin \
+APP_ID=$(curl -k -s "${MTA_URL}/hub/applications" -u admin:admin \
   | jq -r '.[] | select(.name=="helloworld") | .id')
 
 curl -k -s -X POST "${MTA_URL}/hub/agentic/workflowruns" \
@@ -1595,7 +1595,7 @@ Verify the run with:
 ```bash
 oc get agentworkflow rhda -n openshift-mta
 # after a run - the analysis with ruleset rhda insights:
-oc exec deploy/mta-ui -n openshift-mta -- curl -s -u admin:admin \
+oc exec deploy/mta-ui -n openshift-mta -- curl -k -s -u admin:admin \
   "http://mta-hub.openshift-mta.svc:8080/applications/<app-id>/analyses" | jq .
 ```
 
@@ -1655,7 +1655,7 @@ the `params` array (the CRD's `params` is a list of `{name, value}`
 objects, not a map):
 
 ```bash
-APP_ID=$(curl -s "${MTA_URL}/hub/applications" -u admin:admin \
+APP_ID=$(curl -k -s "${MTA_URL}/hub/applications" -u admin:admin \
   | jq -r '.[] | select(.name=="helloworld") | .id')
 
 curl -k -s -X POST "${MTA_URL}/hub/agentic/workflowruns" \
@@ -1742,7 +1742,7 @@ Launch it like the other workflows (the harness requires `APP_ID` and
 repository path):
 
 ```bash
-APP_ID=$(curl -s "${MTA_URL}/hub/applications" -u admin:admin \
+APP_ID=$(curl -k -s "${MTA_URL}/hub/applications" -u admin:admin \
   | jq -r '.[] | select(.name=="helloworld-rs") | .id')
 
 curl -k -s -X POST "${MTA_URL}/hub/agentic/workflowruns" \
@@ -1960,7 +1960,7 @@ the entire analysis and transformation to that directory. Launch it like
 the other workflows (the harness requires `APP_ID` and `TARGET_BRANCH`):
 
 ```bash
-APP_ID=$(curl -s "${MTA_URL}/hub/applications" -u admin:admin \
+APP_ID=$(curl -k -s "${MTA_URL}/hub/applications" -u admin:admin \
   | jq -r '.[] | select(.name=="helloworld") | .id')
 
 curl -k -s -X POST "${MTA_URL}/hub/agentic/workflowruns" \

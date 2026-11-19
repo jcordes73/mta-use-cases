@@ -152,7 +152,7 @@ was created, which silently produces an identity with `user: ""`. Diagnose by
 testing the credential pair directly, outside the cluster:
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}\n" -u "${JIRA_EMAIL}:${JIRA_API_TOKEN}" \
+curl -k -s -o /dev/null -w "%{http_code}\n" -u "${JIRA_EMAIL}:${JIRA_API_TOKEN}" \
   "https://${JIRA_HOST}/rest/api/2/myself"
 ```
 
@@ -285,11 +285,11 @@ the taskgroup object, as the UI sends it) fails silently or returns
 `400 EOF`:
 
 ```bash
-curl -s "${MTA_URL}/hub/tasks" -u admin:admin | jq '.[] | select(.state=="Failed")'
-NEW=$(curl -s -X POST "${MTA_URL}/hub/tasks" -u admin:admin -H "Content-Type: application/json" \
+curl -k -s "${MTA_URL}/hub/tasks" -u admin:admin | jq '.[] | select(.state=="Failed")'
+NEW=$(curl -k -s -X POST "${MTA_URL}/hub/tasks" -u admin:admin -H "Content-Type: application/json" \
   -d '{"name": "<app>.<id>.tech-discovery", "kind": "tech-discovery", "priority": 1,
        "application": {"id": <id>, "name": "<app>"}, "data": <data-from-the-failed-task>}')
-curl -s -X PUT "${MTA_URL}/hub/tasks/$(echo $NEW | jq -r .id)/submit" -u admin:admin \
+curl -k -s -X PUT "${MTA_URL}/hub/tasks/$(echo $NEW | jq -r .id)/submit" -u admin:admin \
   -H "Content-Type: application/json" -d "$NEW"
 ```
 
@@ -411,6 +411,8 @@ sees it — from inside the cluster, with verification on (the `mta-hub` pod has
 header was missing, while `curl exit 60` means verification failed):
 
 ```bash
+# deliberately WITHOUT -k: this command tests certificate verification
+# itself (curl exit 60 / ssl_verify_result) — -k would defeat the check
 oc exec -n openshift-mta deploy/mta-hub -- \
   curl -s -o /dev/null -w '%{http_code} ssl_verify=%{ssl_verify_result}\n' \
   --max-time 15 https://${OPENAI_HOST}/v1/models
