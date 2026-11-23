@@ -6,7 +6,13 @@ metadata:
   labels:
     konveyor.io/managed: "true"
 spec:
-  image: registry.redhat.io/mta/mta-agent-java-rhel9:8.3.1
+  # Derived image (plan-agent-image/Containerfile): stock mta-agent-java +
+  # the hub-report entrypoint wrapper and eap-hub-report.py reporter, so the
+  # plan stage can report its migration findings to the MTA Hub (the same
+  # mechanism as the rhda agent image). The execute and verify agents keep
+  # the stock image - their sandboxes get no Hub token file, so the reporter
+  # no-ops there.
+  image: image-registry.openshift-image-registry.svc:5000/openshift-mta/mta-jboss-eap-7-to-8-plan-agent:latest
   skillCards:
     - ref: plan
     - ref: jboss-eap-7-to-8

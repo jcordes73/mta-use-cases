@@ -1,0 +1,30 @@
+# Derived PLAN-agent image for the jboss-eap-7-to-8 workflow: the stock
+# mta-agent-java image + Hub reporting for the plan stage. The entrypoint
+# wrapper provisions the Hub credentials and application metadata (hub URL,
+# app id, bearer token, application name and repository path) as files under
+# /tmp/konveyor/hub-report/ while the HUB_* env is still set - the migration
+# harness clears that env before the agent starts. (/run/konveyor is mounted
+# READ-ONLY in the sandbox - it carries the harness's stage infrastructure -
+# so the directory lives under /tmp.) eap-hub-report.py then converts the
+# plan stage's findings JSON into the hub's GS-delimited analysis manifest
+# and POSTs it, making the planning issues appear in the application's
+# Issues/Reports views - the same mechanism the rhda agent image uses.
+#
+# The execute and verify agents deliberately keep the stock image: their
+# sandboxes get no token file, so even a misplaced reporter invocation
+# no-ops with exit 0.
+#
+# Build (the documented binary-build pattern):
+#   oc new-build --name mta-jboss-eap-7-to-8-plan-agent --strategy=docker --binary -n openshift-mta
+#   oc patch bc mta-jboss-eap-7-to-8-plan-agent -n openshift-mta --type=json \
+#     -p='[{"op":"add","path":"/spec/strategy/dockerStrategy/dockerfilePath","value":"Containerfile"}]'
+#   oc start-build mta-jboss-eap-7-to-8-plan-agent -n openshift-mta \
+#     --from-dir=mta-ui/agentic-workflow/jboss-eap-7-to-8/plan-agent-image --follow
+FROM registry.redhat.io/mta/mta-agent-java-rhel9:8.3.1
+USER root
+COPY hub-report.py /usr/local/bin/eap-hub-report.py
+COPY entrypoint-wrapper.sh /usr/local/bin/entrypoint-wrapper.sh
+RUN chmod 0755 /usr/local/bin/eap-hub-report.py /usr/local/bin/entrypoint-wrapper.sh
+USER 1001
+ENTRYPOINT ["/usr/local/bin/entrypoint-wrapper.sh", "migration-harness"]
+CMD ["run"]

@@ -53,3 +53,70 @@ After completing each phase:
 2. Run the build
 3. If it fails, fix the issue before proceeding
 4. If you cannot fix it, stop and report to the user
+
+## Report planning findings to the MTA Hub (plan stage only)
+
+This step belongs to **planning only** — run it once `docs/plan.md` has
+been written, never during the execute or verify stages.
+
+While building the plan you identified which of this skill's migration
+items (phase modules and reference mapping rows) apply to the application's
+code. Every applicable item is a **finding**: the exact change needed, in
+the exact file, with its phase. Report them to the MTA Hub so they appear
+as first-class issues in the application's Issues view — alongside the
+static-analysis findings the plan was grounded in.
+
+1. Collect the findings into a JSON file at `/tmp/eap-findings.json` — a
+   list of objects, one per (migration item, affected file) pair:
+   ```json
+   [
+     {
+       "rule": "javax-to-jakarta-namespace",
+       "name": "javax.servlet imports",
+       "description": "EAP 8 upgrades to Jakarta EE 10; all javax.* EE imports must become jakarta.*.",
+       "file": "src/main/java/com/example/web/ExampleServlet.java",
+       "message": "replace javax.servlet.* imports with jakarta.servlet.*",
+       "category": "mandatory",
+       "effort": 3,
+       "phase": "code"
+     }
+   ]
+   ```
+   Field rules:
+   - `rule` (mandatory) — short slug for the migration item, e.g.
+     `javax-to-jakarta-namespace`, `picketbox-to-elytron`,
+     `log4j1-removal`, `hibernate-orm-6`. Derive it from the phase module
+     or mapping row; keep it stable and lowercase.
+   - `file` (mandatory) — the affected file, relative to the repository
+     root. If `/tmp/konveyor/hub-report/app-path` exists, prefix every
+     path with it (`<app-path>/<relative path>`) — the Hub record is
+     authoritative for the application's location in the checkout.
+   - `category` — `mandatory` for breaking-change items (the default),
+     `potential` for advisory ones.
+   - `phase` — the skill phase the item belongs to (`build-system`,
+     `code`, `config`, `testing`, `additional`, `cleanup`).
+   - `name`, `description`, `message`, `effort` — fill from the plan;
+     do not invent values you did not determine while planning.
+2. ALWAYS run the deterministic reporter once the findings file exists —
+   do **not** decide yourself whether Hub reporting applies (the token
+   file's presence is the decision, and the model has historically gotten
+   that wrong). The script makes the decision and no-ops safely (exit 0)
+   when the run is not provisioned for reporting or when there are no
+   findings:
+   ```bash
+   python3 /usr/local/bin/eap-hub-report.py --findings /tmp/eap-findings.json
+   ```
+   It reads the Hub URL, application ID and bearer token from
+   `/tmp/konveyor/hub-report/` (provisioned by this image's entrypoint).
+   With zero findings, still write the file (as `[]`) and run the
+   reporter — it prints "no planning findings" and exits 0.
+3. Record the outcome in `docs/plan.md` (a `## Hub reporting` section)
+   and the handoff, verbatim from the script's output:
+   - `reported to the MTA Hub as analysis <id>` (when it printed the JSON
+     with an `analysis_id`), or
+   - `hub reporting skipped: <the script's line>` (no token / no findings).
+4. If the POST fails, report the error in the plan and continue — the
+   git-committed plan still carries the findings.
+
+Never hand-write the analysis manifest YAML — the reporter owns the
+format.

@@ -1343,6 +1343,27 @@ For Agentic Migrations, MTA composes agent workloads from **Skills** (SKILL.md f
     oc wait --for jsonpath='{.status.conditions[0].status}'="True" skillcard jboss-eap-7-to-8 -n openshift-mta --timeout=600s
     ```
 
+- **Plan-stage Hub reporting (derived plan-agent image)**: The plan stage can report the migration issues it identifies back to the MTA Hub, so they appear as first-class issues in the application's Issues view — the same mechanism the [RHDA workflow](#rhda-dependency-cvelicense-scanner-with-hub-reporting) uses for CVEs (`POST /applications/:id/analyses` accepts the GS-delimited Analysis/Insight manifest the static analyzer writes; no new hub endpoints). Two pieces, mirroring the rhda pattern:
+    - A **derived agent image** (`plan-agent-image/Containerfile`) — the stock `mta-agent-java` image plus an ENTRYPOINT wrapper and the deterministic reporter. The wrapper runs *before* `migration-harness`, while the run's `HUB_BASE_URL`/`HUB_TOKEN`/`APP_ID` env is still set (the harness clears it before the agent starts), and provisions `/tmp/konveyor/hub-report/{hub-url,app-id,token,app-name,app-path}`; the reporter converts a findings JSON into the manifest and POSTs it. The manifest groups incidents per rule (one Insight per migration item, one incident per affected file — the static analyzer's own shape, so the Issues view shows one issue per rule). Only the **plan agent** runs this image: the execute and verify agents keep the stock image, whose sandboxes have no token file, so even a misplaced reporter invocation no-ops with exit 0 — the decision lives in the script, not in the model.
+    - A **skill step** (`agents/skills/jboss-eap-7-to-8/skill/SKILL.md`, *Report planning findings to the MTA Hub*): while planning, the agent transcribes every applicable migration item into the findings JSON (rule slug, repository-relative file path prefixed with the provisioned `app-path`, category, phase, effort) and always runs `python3 /usr/local/bin/eap-hub-report.py --findings /tmp/eap-findings.json` — with zero findings as `[]` too. The model never hand-writes the manifest YAML.
+
+    Build the image before applying the plan agent (the plan-agent manifest below references the internal registry tag):
+
+    ```bash
+    oc new-build --name mta-jboss-eap-7-to-8-plan-agent --strategy=docker --binary -n openshift-mta
+
+    oc patch bc mta-jboss-eap-7-to-8-plan-agent -n openshift-mta --type=json \
+    -p='[{"op":"add","path":"/spec/strategy/dockerStrategy/dockerfilePath","value":"Containerfile"}]'
+
+    oc start-build mta-jboss-eap-7-to-8-plan-agent -n openshift-mta \
+    --from-dir=mta-ui/agentic-workflow/jboss-eap-7-to-8/plan-agent-image --follow
+    ```
+
+    Verify the build:
+
+    ```bash
+    oc get imagestreamtag mta-jboss-eap-7-to-8-plan-agent:latest -n openshift-mta
+    ```
 - **Create the Agent**: An Agent is a template — it declares the container image, skills, and turn limits but executes nothing. Omitting `spec.gateways` is intentional: the Gateway is then named at run time on the `AgentRun`/`AgentWorkflowRun` (this is what the [Konveyor Gateway](#create-a-konveyor-gateway) set up earlier is used for).
 
     ```bash
