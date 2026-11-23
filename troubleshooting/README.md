@@ -431,3 +431,152 @@ run via `spec.env` + `spec.fileMounts`). When verifying the fix, remember the
 env-var trap: `curl` honors `CURL_CA_BUNDLE`, not `SSL_CERT_FILE`; Go
 additionally merges `SSL_CERT_FILE` with the default certificate directories
 (golang/go#79496), so restrict `SSL_CERT_DIR` too when testing with Go.
+
+## ODF: StorageCluster stuck in `Error`/`Initializing` — `ocs-storagecluster-cephfs` never appears
+
+During a fresh internal-mode ODF install, OLM can fail to generate the
+`ocs-client-operator-config` ConfigMap (and `ocs-client-operator-webhook-server`
+Service) while installing the `ocs-client-operator` CSV. The ocs-operator's
+StorageCluster reconcile then aborts at its client-config checkpoint — right
+after *prometheus rules deployed* and **before creating the CephFilesystem** —
+so no MDS pods are ever scheduled and the `ocs-storagecluster-cephfs` storage
+class never appears. The StorageCluster reports:
+
+```text
+ReconcileComplete=False: Error while reconciling: ConfigMap "ocs-client-operator-config" not found
+Available=False: Initializing StorageCluster
+```
+
+Ceph core (mons/mgrs/OSDs) is healthy in this state — check `cephfilesystem`
+and MDS pods to confirm the reconcile is stuck at the checkpoint:
+
+```bash
+oc -n openshift-storage get cephfilesystem   # empty = reconcile never reached FS creation
+oc -n openshift-storage get pods | grep mds  # 0 MDS pods
+```
+
+### Fix
+
+Create the two resources manually (documented in the IBM support note *ODF
+Client operator stuck in Installing state* — ibm17255373); the ConfigMap is
+legitimately empty:
+
+```bash
+cat <<'EOF' | oc create -n openshift-storage -f -
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    service.beta.openshift.io/serving-cert-secret-name: webhook-cert-secret
+  name: ocs-client-operator-webhook-server
+spec:
+  ports:
+  - name: https
+    port: 443
+    protocol: TCP
+    targetPort: 7443
+  selector:
+    app: ocs-client-operator
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ocs-client-operator-config
+EOF
+```
+
+The next StorageCluster reconcile creates the CephFilesystem, MDS pods come
+up, and the storage class appears within a few minutes. Note that the CSV
+upgrade of `ocs-operator` itself stays `Pending` with *not upgradeable:
+Initializing StorageCluster* until the cluster is `Ready` — that is by design
+and resolves on its own once the fix lands; don't force it.
+
+## MTA: operator stuck in leader-election loop after applying `allow-egress-to-image-registry`
+
+The `mta-ui/allow-egress-to-image-registry.yaml` NetworkPolicy uses an
+empty `podSelector: {}` — it selects **every pod in `openshift-mta`**,
+including the `mta-operator` itself. That is harmless *after* the Tackle
+stack is deployed, because the operator then also selects its pods with the
+`mta-egress` default-deny policy (egress 443/80/6443/8443/8081/8082) and
+NetworkPolicy rules from multiple policies selecting the same pod are a
+**union**. But if the policy is applied *before* the stack exists (or if
+`mta-egress` is missing), the registry policy is the *only* egress policy,
+and all other egress — including the Kubernetes API endpoint — is denied.
+
+Symptom — the operator pod can't acquire its lease, `oc wait` on the
+`mta-ui`/`mta-hub`/... deployments times out, and the Tackle CR sits in
+`Running reconciliation` forever:
+
+```text
+E1123 06:57:26 ... error retrieving resource lock openshift-mta/mta-operator:
+Get "https://172.30.0.1:443/apis/coordination.k8s.io/v1/namespaces/openshift-mta/leases/mta-operator":
+dial tcp 172.30.0.1:443: i/o timeout
+```
+
+### Fix
+
+Delete the policy and re-apply it only once the Tackle stack (and its
+`mta-egress` policy) is up — the README's own ordering, which puts the
+policy in the agentic section, *after* the stack installation:
+
+```bash
+oc delete netpol allow-egress-to-image-registry -n openshift-mta
+# after the stack is Ready:
+cat mta-ui/allow-egress-to-image-registry.yaml | envsubst | oc apply -f -
+```
+
+The operator recovers on its own leader-election retry (~30 s), then
+reconciles the Tackle CR and the deployments appear.
+
+## ODF 4.22: CSI pods missing — PVCs stuck in `ExternalProvisioning`, `mta-hub` never schedules
+
+In ODF 4.22 the CSI drivers are deployed by the `ceph-csi-operator` from
+`Driver` custom resources (`csi.ceph.io/v1`). If the handover between the
+ocs-operator and the ceph-csi-operator stalls (observed on a fresh install
+where the `ocs-operator` CSV upgrade to 4.22.9 sat `Pending` behind an
+initializing StorageCluster), **no `Driver` CRs are ever created** and
+consequently no `ctrlplugin` deployments / `nodeplugin` daemonsets exist —
+for *either* driver. Ceph itself is healthy (`HEALTH_OK`, CephFilesystem
+`Ready`, MDS pods running, rook has created the csi cephx secrets and the
+`csi` subvolume group), but nothing provisions volumes:
+
+```bash
+oc -n openshift-storage get pods | grep -c csi        # 0 csi-* pods (only the operators)
+oc -n openshift-storage get drivers.csi.ceph.io       # empty
+# PVC events show:
+#   ExternalProvisioning: waiting for a volume to be created by 'openshift-storage.cephfs.csi.ceph.com'
+```
+
+Any pod that needs a Ceph PVC is then unschedulable — e.g. `mta-hub`
+(`PersistentVolumeClaim "mta-cache-volume-claim" not found`), which also
+blocks the gp3-csi PVCs via `WaitForFirstConsumer`.
+
+### Fix
+
+Create the two `Driver` CRs manually. The names must match the provisioner
+prefixes the storage classes reference (`openshift-storage.cephfs.csi.ceph.com`,
+`openshift-storage.rbd.csi.ceph.com`), and the CRs live in the same namespace
+as the existing `CephConnection`/`ClientProfile` (`openshift-storage`) — the
+operator associates them by namespace:
+
+```bash
+cat <<'EOF' | oc apply -n openshift-storage -f -
+apiVersion: csi.ceph.io/v1
+kind: Driver
+metadata:
+  name: openshift-storage.cephfs.csi.ceph.com
+  namespace: openshift-storage
+---
+apiVersion: csi.ceph.io/v1
+kind: Driver
+metadata:
+  name: openshift-storage.rbd.csi.ceph.com
+  namespace: openshift-storage
+EOF
+```
+
+The ceph-csi-operator immediately creates the `*-ctrlplugin` deployments and
+`*-nodeplugin` daemonsets; within a few minutes the pending PVCs bind and the
+blocked pods schedule. The Driver spec has no required fields (default images
+apply), and the operator owns the created workloads' lifecycle from then on.
