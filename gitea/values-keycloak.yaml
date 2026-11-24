@@ -32,3 +32,16 @@ gitea:
       key: gitea
       secret: "${KEYCLOAK_GITEA_CLIENT_SECRET}"
       autoDiscoverUrl: "https://mta-openshift-mta.${OPENSHIFT_APPS_DOMAIN}/auth/realms/mta/.well-known/openid-configuration"
+  # SSO-only sign-in: with the Keycloak OAuth source in place, hide the
+  # password login form so users authenticate through Keycloak. NOTE the
+  # section: in Gitea 1.27 these two settings live under [service], not
+  # [security] (and DISABLE_USERNAME_PASSWORD_LOGIN no longer exists at
+  # all - a 1.19-era key silently ignored by 1.27). ENABLE_BASIC_
+  # AUTHENTICATION stays at its default true - it governs HTTP BASIC auth
+  # with passwords for git-over-HTTP, which the agentic harness requires
+  # (jboss-dev, via the Hub's git-credentials identity). Verify both after
+  # applying:
+  #   git clone https://jboss-dev%40example.com:jboss-dev@git.<domain>/jboss/jboss-quickstarts
+  config:
+    service:
+      ENABLE_PASSWORD_SIGNIN_FORM: false
