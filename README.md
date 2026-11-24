@@ -14,7 +14,7 @@ In practice MTA works in two modes: the **web console** (portfolio analysis, pro
 This PoC is divided into two parts:
 
 1. **[Automated Migration Using the MTA UI](#automated-migration-using-the-mta-ui)** — portfolio analysis, agentic migrations, and wave management through the MTA web console.
-2. **[Developer-Infused Migration Using OpenShift Dev Spaces and the MTA Plugin](#developer-infused-migration-using-openshift-dev-spaces-and-the-mta-plugin)** — developers drive the analysis and remediation of their applications from within their IDE.
+2. **[Developer-Infused Migration Using OpenShift Dev Spaces and the MTA Plugin](#developer-infused-migration-using-openshift-dev-spaces-and-the-mta-plugin)** — developers drive the analysis and remediation of their applications from within their IDE — in a [Dev Spaces workspace](#mta-plugin-setup) or [locally in desktop VS Code](#local-installation-desktop-vs-code-without-dev-spaces).
 
 ## Architecture Overview
 
@@ -393,6 +393,7 @@ To prevent unwanted changes and/or commits to existing source code, the original
     >
     > The init container fails with *"Non-success code for Discovery URL: 503"* if the discovery URL's host has no matching Route — the MTA UI route's host is `mta-openshift-mta.${OPENSHIFT_APPS_DOMAIN}`, not `mta.${OPENSHIFT_APPS_DOMAIN}`. The failed init crash-loops the Gitea pod until the URL is corrected (fix the values and `helm upgrade` again).
 
+<a id="ssh-keys"></a>
 - **SSH Keys**: If SSH keys should be used for authentication against the Git repository in addition to basic auth, first generate a keypair (skip this step if you already have one):
 
   ```bash
@@ -2031,7 +2032,7 @@ workflow above).
 
 ## Developer-Infused Migration Using OpenShift Dev Spaces and the MTA Plugin
 
-While the [MTA UI](#automated-migration-using-the-mta-ui) covers the automated, portfolio-wide migration, developers can drive the migration of their individual applications themselves from within their IDE. **OpenShift Dev Spaces** provides Kubernetes-based cloud development environments and is installed on the OpenShift Container Platform using the OpenShift Dev Spaces Operator via OperatorHub. The **MTA plugin** (Visual Studio Code extension) then brings inline analysis, remediation hints, and AI-assisted code refactoring (Developer Lightspeed) into the editor, backed by the MTA Hub and Solution Server deployed in the [automated migration](#automated-migration-using-the-mta-ui) part.
+While the [MTA UI](#automated-migration-using-the-mta-ui) covers the automated, portfolio-wide migration, developers can drive the migration of their individual applications themselves from within their IDE. **OpenShift Dev Spaces** provides Kubernetes-based cloud development environments and is installed on the OpenShift Container Platform using the OpenShift Dev Spaces Operator via OperatorHub. The **MTA plugin** (Visual Studio Code extension) then brings inline analysis, remediation hints, and AI-assisted code refactoring (Developer Lightspeed) into the editor, backed by the MTA Hub and Solution Server deployed in the [automated migration](#automated-migration-using-the-mta-ui) part. The same plugin flow also runs without Dev Spaces, directly in desktop VS Code on the workstation — see [Local Installation](#local-installation-desktop-vs-code-without-dev-spaces).
 
 ### OpenShift Dev Spaces Installation
 
@@ -2578,6 +2579,57 @@ cat devspaces/hub-connection-secret.yaml | sed "s/<workspace-namespace>/${WORKSP
     >
     > The Hub URL and credentials are stored in the extension's own state and cannot be pre-seeded via the devfile — the configuration and sign-in are per user and workspace.
 - **Run an analysis**: Clone the application source code (e.g. from the Gitea instance) into the workspace, create a run configuration, and run an analysis. The results, issue descriptions, and suggested code changes are presented inline in the editor, and AI-assisted remediation (Developer Lightspeed) can resolve the issues directly. Select the analysis profile created in [Define an Analysis Profile](#define-an-analysis-profile) in the run configuration — without a profile the analysis runs with no rule selection and does not surface the EAP 8 findings, which the agentic workflow's plan stage builds the migration plan from.
+
+### Local Installation (Desktop VS Code Without Dev Spaces)
+
+The flow above uses OpenShift Dev Spaces as the editor host, but the MTA plugin is a plain VS Code extension — the same experience (analysis, Hub profiles, Developer Lightspeed remediation, OpenCode) runs in desktop VS Code on the workstation. The difference is where each piece executes: the editor and the **analysis** run locally (the extension drives the MTA analyzer RPC binary in containerless mode for Java — no Podman/Docker needed), while the Hub connection, the analysis profiles synced from the Hub, and the Solution Server (the LLM proxy behind Developer Lightspeed) still point at the same cluster deployment from the [automated migration](#automated-migration-using-the-mta-ui) part. Nothing extra is deployed on the cluster for this variant, and the Dev Spaces-specific mechanics (devfile, postStart commands, mounted Secrets, the che-code CLI paths) do not apply — the workstation's own shell, `~/.config`, and VS Code `settings.json` take their place.
+
+**Prerequisites** (per the [Visual Studio Code extension guide](https://docs.redhat.com/en/documentation/migration_toolkit_for_applications/8.3/html/configuring_and_using_the_visual_studio_code_extension_for_mta)):
+
+- **JDK 17 or later** with `JAVA_HOME` set (the containerless analyzer runs the Java analysis in-process; only non-Java languages need a container runtime). The analysis itself wants **8 GB of RAM** available.
+- **Visual Studio Code** (desktop) with network access to the cluster's Routes: the MTA UI route (Hub, profiles, Solution Server) and the Gitea routes (source clone/push). All Routes present the cluster's self-signed certificate, which matters for the Hub setting below.
+- The `OPENAI_*` variables from the [Prerequisites](#prerequisites) exported in the shell that launches VS Code — only needed if OpenCode is used; the MTA plugin itself needs no LLM credentials (see the note under the Hub connection step of the [Dev Spaces flow](#mta-plugin-setup)).
+
+**Install the extensions**: the extension IDs are the same ones the devfile installs — from the VS Code Marketplace (or the [Open VSX registry](https://open-vsx.org), which desktop VS Code can be pointed at via `extensions.experimental.useOpenVSXRegistry` if Marketplace access is restricted):
+
+```bash
+code --install-extension redhat.mta-core --install-extension redhat.mta-java
+code --install-extension redhat.fabric8-analytics
+code --install-extension sst-dev.opencode   # optional: the OpenCode AI agent in the IDE
+```
+
+On first activation the MTA extension downloads the **analyzer RPC binary** of the latest version from the Red Hat Developer portal. In a restricted network where that link is not reachable, download the MTA 8.3 analyzer RPC manually, then configure its path either via the **Analyzer Path** field of the extension settings or the `mta-vscode-extension.analyzerPath` setting (the `MTA: Override Analyzer Binary` Command Palette entry does the same), and reload the window.
+
+**Configure the plugin settings**: write the same two settings the devfile creates into the user-level `settings.json` (they are editor-level, not workspace-level, so a repository `.vscode/settings.json` works equally well):
+
+```json
+{
+  "mta-core.genai.enabled": true,
+  "mta-core.genai.agentMode": true
+}
+```
+
+**Configure the connection to the MTA Hub**: identical to the Dev Spaces flow — Command Palette → `MTA: Konveyor Analysis View` → settings icon → **Configure Hub Settings** → enable the Hub, enter the MTA UI URL (`${MTA_URL}`), enable **Skip SSL certificate verification** (the Route certificate is the cluster's self-signed CA), enable authentication with the `admin`/`admin` credentials, and enable **Solution Server** and **Profile Sync**. The environment-variable overrides the extension reads at activation (`HUB_URL`, `HUB_USERNAME`, `HUB_PASSWORD`, `HUB_INSECURE`, …) work on the desktop as well — export them in the shell that launches VS Code to skip the dialog entirely.
+
+**Clone the application source**: the Hub profile-sync matches the workspace repository against the Hub's application records by git remote URL, with the same constraints as in Dev Spaces — the fetch remote must be the **HTTPS web URL** the records carry (`https://git.${OPENSHIFT_APPS_DOMAIN}/jboss/jboss-quickstarts`), and the folder opened in the editor must be the **application subfolder** (`helloworld`), since the extension supports a single workspace folder and matches its path relative to the repository root against the application's repository path. Two workstation-friendly clone options:
+
+- **HTTPS basic auth** (simplest): `git clone https://jboss-dev%40example.com:jboss-dev@git.${OPENSHIFT_APPS_DOMAIN}/jboss/jboss-quickstarts` — the `jboss-dev` service account's password works over git HTTP even though the web UI's password login is disabled (SSO-only, see the [Gitea SSO configuration](#gitea-installation)). Fetches and pushes both work, and the remote URL matches the Hub records.
+- **SSH** (per the [SSH clone test](#ssh-keys), the Route is TLS-passthrough and needs the `openssl` `ProxyCommand`): clone via SSH, then keep the fetch remote in the HTTPS form and rewrite only pushes, exactly like the devfile's `clone-git` does with `pushInsteadOf`:
+
+  ```bash
+  GIT_SSH_COMMAND="ssh -i ~/.ssh/mta-gitea -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ProxyCommand='openssl s_client -quiet -connect %h:443 -servername %h'" \
+    git clone git@git-ssh.${OPENSHIFT_APPS_DOMAIN}:jboss/jboss-quickstarts ~/jboss-quickstarts
+  cd ~/jboss-quickstarts
+  git remote set-url origin "https://git.${OPENSHIFT_APPS_DOMAIN}/jboss/jboss-quickstarts"
+  git config url."git@git-ssh.${OPENSHIFT_APPS_DOMAIN}:jboss/jboss-quickstarts".pushInsteadOf \
+    "https://git.${OPENSHIFT_APPS_DOMAIN}/jboss/jboss-quickstarts"
+  ```
+
+  With an SSH fetch remote the profile sync logs `No Hub applications match repository URL` and no profiles download (verified live in the Dev Spaces setup) — the `set-url` above avoids that while pushes still traverse the SSH route with the key.
+
+Then open the application subfolder (e.g. `~/jboss-quickstarts/helloworld`) as the workspace folder — `File → Open Folder` — so the profile sync resolves to the `helloworld` application record; opening the repository root fails the sync with `Multiple Hub applications found for this repository`.
+
+**Run an analysis and remediate**: select the Hub-synced profile in the run configuration and run the analysis — same as in Dev Spaces, the results appear inline and **Developer Lightspeed** proposes resolutions through the Solution Server. Optionally configure [OpenCode](https://opencode.ai/v2/docs/) as a separate AI agent in the IDE: install the CLI with `curl -fsSL https://opencode.ai/install | bash` and write the same `~/.config/opencode/opencode.json` the devfile's `configure-opencode` command generates (same field-name caveats — `npm`, `options.baseURL`, top-level `provider`), with the literal `baseURL`/model values expanded from the `OPENAI_*` variables and the API key read from the environment via `"env": ["OPENAI_API_KEY"]`.
 
 ## Appendix
 
