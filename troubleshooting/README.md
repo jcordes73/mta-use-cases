@@ -580,3 +580,104 @@ The ceph-csi-operator immediately creates the `*-ctrlplugin` deployments and
 `*-nodeplugin` daemonsets; within a few minutes the pending PVCs bind and the
 blocked pods schedule. The Driver spec has no required fields (default images
 apply), and the operator owns the created workloads' lifecycle from then on.
+
+## Agentic run: the stage wrote its files but the target branch has no commits
+
+The plan (or execute) stage logs success and wrote its output (e.g.
+`docs/plan.md`), but the target branch on the git server has no new commit —
+the next stage, which starts by cloning that branch, cannot see the files and
+the workflow delivers nothing.
+
+Root cause: the harness pushes **committed** work only — a stage that ends
+without commits pushes nothing, by design. The stage skills describe
+committing, but the model's own finish condition can stop at "the file is
+written", and nothing enforces a final commit.
+
+Fix: the `commit-when-done` rule — a `SkillCard` with `spec.type: rule`,
+which is always-loaded and injected into every stage prompt ahead of the
+skill instructions (a `type: skill` card is read on demand, so a commit
+instruction there is easy for the model to skip once it considers its task
+done). It is plain cluster YAML, no image rebuild; shipped at
+`mta-ui/agentic-rules/commit-when-done.yaml` and referenced from all three
+`jboss-eap-7-to-8` agents' `spec.skillCards`:
+
+```bash
+oc apply -f mta-ui/agentic-rules/commit-when-done.yaml
+```
+
+## Agentic run: verify stage fails in seconds with a shell syntax error — Maven never starts
+
+The verify stage exits 2 after ~0s. The log shows the run's verification
+command handed to `sh` verbatim — including any parenthesized prose, e.g.
+`mvn clean package -DskipTests (then without -DskipTests ...)`. `sh` dies on
+the `(`; Maven never starts, and the failure looks like a build failure but
+is a shell syntax error.
+
+Root cause: the harness passes the verification command to a shell
+unmodified — there is no parsing or splitting of "(then ...)"-style
+instructions.
+
+Upstream: [agentic-controller#359](https://github.com/konveyor/agentic-controller/issues/359).
+
+Workaround: keep the run's verification command paren-free — a plain Maven
+invocation (`mvn clean package -DskipTests`), with any additional steps as
+separate commands.
+
+## Agentic run: a Gerrit-hosted application repository cannot receive the result
+
+The run clones the application fine but can never deliver its result, on any
+stage.
+
+Root cause: the harness chains stages by pushing each stage's work to a
+plain branch `refs/heads/konveyor/migration-<run-id>` and starting the next
+stage by cloning that same branch back. On Gerrit, ordinary users cannot
+create `refs/heads/*` branches — contributions go to `refs/for/<target>`
+with a Change-Id, and the harness has no mode for that. The agent cannot
+push in the harness's place either: the SSH key only ever exists inside the
+harness process.
+
+Upstream: [agentic-controller#360](https://github.com/konveyor/agentic-controller/issues/360).
+
+Workaround: mirror the Gerrit project to a Gitea/GitHub-style git server
+(this PoC's [Gitea setup](README.md#gitea-installation)) and point the
+Hub application record at the mirror; sync the resulting migration branch
+back to Gerrit manually after the run.
+
+## Agentic run: spurious "dirty git state" warning on every plan stage
+
+The stage-end log warns about uncommitted paths even though the agent
+committed everything it changed.
+
+Root cause: the harness itself writes `.konveyor/analysis.json` into the
+repository before the agent runs and never commits it, so the stage-end
+check always counts that path as uncommitted — the warning fires on
+basically every plan stage.
+
+Upstream: [agentic-controller#257](https://github.com/konveyor/agentic-controller/issues/257).
+
+Action: ignore the warning when it lists only harness-generated paths
+(`.konveyor/*`). A warning listing agent-authored files is real — see
+[the commit-when-done rule](#agentic-run-the-stage-wrote-its-files-but-the-target-branch-has-no-commits).
+
+## Agentic run: multi-module Maven builds — what to watch
+
+Nothing here is a single diagnosed failure; these are the failure modes that
+appear as module counts grow (verified behaviors from a two-module `-SNAPSHOT`
+reactor against a cold local repository):
+
+- **Cold `~/.m2` in every stage pod**: each stage runs in a fresh Sandbox,
+  so plugins and dependencies re-download every stage. For large reactors
+  this is a lot of downloading before any build output.
+- **Inter-module `-SNAPSHOT` dependencies resolve from the reactor only in a
+  root build**: `mvn package` from the repository root resolves sibling
+  modules with no remote fetches, but the same build from a single module's
+  directory fails immediately on resolving its siblings. Make the plan build
+  from the repository root (rule/plan-review material).
+- **Parent POMs or snapshot dependencies in an internal Nexus**: these need
+  a `settings.xml` (the Hub's `maven`-kind identity, see
+  [Configure Maven settings](README.md#configure-maven-settings)) **plus**
+  egress from the sandbox namespace to the Nexus host.
+- **The harness re-runs the build itself after the agent**, with default
+  timeouts of 10m per command and 30m total. For big reactors, raise them on
+  the run's `spec.env`:
+  `HARNESS_VERIFY_TIMEOUT_SECONDS` / `HARNESS_VERIFY_TOTAL_TIMEOUT_SECONDS`.

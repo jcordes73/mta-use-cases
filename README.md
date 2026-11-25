@@ -1645,7 +1645,7 @@ For Agentic Migrations, MTA composes agent workloads from **Skills**:
     oc get imagestreamtag mta-jboss-eap-7-to-8-plan-agent:latest -n openshift-mta
     ```
 
-- **Create the Agent**: an Agent is a template — it declares the container image, skills, and turn limits but executes nothing. Omitting `spec.gateways` is intentional: the Gateway is then named at run time on the `AgentRun`/`AgentWorkflowRun` (this is what the [Konveyor Gateway](#create-a-konveyor-gateway) set up earlier is used for).
+- **Create the Agent**: an Agent is a template — it declares the container image, skills, and turn limits but executes nothing. Omitting `spec.gateways` is intentional: the Gateway is then named at run time on the `AgentRun`/`AgentWorkflowRun` (this is what the [Konveyor Gateway](#create-a-konveyor-gateway) set up earlier is used for). All three agents also reference the `commit-when-done` **rule** (`mta-ui/agentic-rules/commit-when-done.yaml`, `type: rule`): a stage that ends without commits pushes nothing — the harness pushes committed work only — so the always-loaded commit instruction keeps the plan's `docs/plan.md` (and every execute-stage change) off the "written but never pushed" path (see the [troubleshooting notes](troubleshooting/README.md#agentic-run-the-stage-wrote-its-files-but-the-target-branch-has-no-commits)).
 
     ```bash
     oc apply -f mta-ui/agentic-workflow/jboss-eap-7-to-8/agents/jboss-eap-7-to-8-plan-agent.yaml
