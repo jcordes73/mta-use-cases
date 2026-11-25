@@ -18,8 +18,9 @@ This PoC has two parts:
 
 ## Contents
 
-<!-- TOC: regenerate with the heading-extraction script if sections change; slugs follow GitHub's anchor rules -->
+<!-- TOC: regenerate from the headings after structural edits; slugs follow GitHub's anchor rules -->
 
+- [Contents](#contents)
 - [Architecture Overview](#architecture-overview)
 - [Components and Versions](#components-and-versions)
   - [Platform & Infrastructure](#platform--infrastructure)
@@ -27,28 +28,47 @@ This PoC has two parts:
   - [Developer-Infused Migration](#developer-infused-migration)
   - [Workstation Tooling](#workstation-tooling)
 - [Prerequisites](#prerequisites)
-- [Squid proxy deployment (disconnected environments)](#squid-proxy-deployment-disconnected-environments)
+- [Squid proxy deployment (optional, disconnected environments)](#squid-proxy-deployment-optional-disconnected-environments)
 - [Gitea installation](#gitea-installation)
+  - [Install Gitea with Helm](#install-gitea-with-helm)
+  - [Verify the OpenAPI endpoint](#verify-the-openapi-endpoint)
+  - [Create an admin access token](#create-an-admin-access-token)
+  - [Clone the application repositories](#clone-the-application-repositories)
+  - [Migrating SSH-key-authenticated source repositories](#migrating-ssh-key-authenticated-source-repositories)
+  - [Proxy settings (disconnected environments)](#proxy-settings-disconnected-environments)
+  - [OIDC SSO login via Keycloak](#oidc-sso-login-via-keycloak)
+  - [SSH Keys](#ssh-keys)
 - [Automated Migration Using the MTA UI](#automated-migration-using-the-mta-ui)
   - [Agent Sandbox Installation](#agent-sandbox-installation)
   - [Keycloak for MTA](#keycloak-for-mta)
   - [Migration Toolkit for Applications (MTA) 8.3](#migration-toolkit-for-applications-mta-83)
     - [Installation](#installation)
-    - [Proxy settings for disconnected environments](#proxy-settings-for-disconnected-environments)
+      - [Deploy the Migration Toolkit for Applications Operator](#deploy-the-migration-toolkit-for-applications-operator)
+      - [Create the Model Secret](#create-the-model-secret)
+      - [Configure RWX storage](#configure-rwx-storage)
+      - [Configure the Tackle Instance](#configure-the-tackle-instance)
+      - [Workaround for a stuck cache PVC](#workaround-for-a-stuck-cache-pvc)
+      - [Automate cleanup of dead task pods](#automate-cleanup-of-dead-task-pods)
+      - [Create a Konveyor Gateway](#create-a-konveyor-gateway)
+      - [Trusting a private root CA on the LLM endpoint (optional)](#trusting-a-private-root-ca-on-the-llm-endpoint-optional)
+      - [Accessing the MTA UI](#accessing-the-mta-ui)
+      - [Add an MTA entry to the OpenShift console](#add-an-mta-entry-to-the-openshift-console)
+      - [Add a Gitea entry to the OpenShift console](#add-a-gitea-entry-to-the-openshift-console)
+    - [Proxy settings for disconnected environments (optional)](#proxy-settings-for-disconnected-environments-optional)
     - [Setting the Hub proxy via the Tackle Hub API](#setting-the-hub-proxy-via-the-tackle-hub-api)
     - [Automation via REST API](#automation-via-rest-api)
       - [Creating Stakeholders, Stakeholder Groups and Business Service](#creating-stakeholders-stakeholder-groups-and-business-service)
       - [Configure Maven settings](#configure-maven-settings)
       - [Bulk Uploading Applications](#bulk-uploading-applications)
-        - [Importing dependencies for an existing portfolio](#importing-dependencies-for-an-existing-portfolio)
+      - [Importing dependencies for an existing portfolio](#importing-dependencies-for-an-existing-portfolio)
       - [Create default Git credentials](#create-default-git-credentials)
-      - [Issue Tracking (Jira integration)](#issue-tracking-jira-integration)
+      - [Issue Tracking (Jira integration, optional)](#issue-tracking-jira-integration-optional)
       - [Define an Analysis Profile](#define-an-analysis-profile)
       - [Create an Assessment Questionnaire](#create-an-assessment-questionnaire)
       - [Create an Archetype](#create-an-archetype)
       - [Add a Review to the Archetype](#add-a-review-to-the-archetype)
       - [Create a Migration Wave](#create-a-migration-wave)
-      - [Create custom Skills and Rules](#create-custom-skills-and-rules)
+      - [Assemble the Agentic Workflow components](#assemble-the-agentic-workflow-components)
       - [Start an Agent Workflow Run](#start-an-agent-workflow-run)
   - [Additional Agentic Workflows](#additional-agentic-workflows)
     - [Spring Boot to Quarkus](#spring-boot-to-quarkus)
@@ -68,13 +88,12 @@ This PoC has two parts:
     - [Create the LLM credentials Secret](#create-the-llm-credentials-secret)
     - [Create the clone-config Secret](#create-the-clone-config-secret)
     - [Create the hub-config Secret](#create-the-hub-config-secret)
-    - [Git Authentication with SSH Keys](#git-authentication-with-ssh-keys)
+  - [Git Authentication with SSH Keys](#git-authentication-with-ssh-keys)
   - [Local Installation (Desktop VS Code Without Dev Spaces)](#local-installation-desktop-vs-code-without-dev-spaces)
 - [Appendix](#appendix)
   - [Create your own skills](#create-your-own-skills)
   - [Create your own rules](#create-your-own-rules)
   - [Suggested design: Agentic run observability and a persistent event log](#suggested-design-agentic-run-observability-and-a-persistent-event-log)
-
 ## Architecture Overview
 
 How the components of this PoC relate:
@@ -133,7 +152,7 @@ Both parts share the same **self-hosted LLM**:
 - The MTA plugin reaches it through the Hub's LLM proxy, agentic workflows through the Konveyor Gateway, and the OpenCode agent directly via `OPENAI_BASE_URL` in `opencode.json`.
 - **Keycloak** (Red Hat build of Keycloak) is the shared identity provider: MTA UI logins use OIDC SSO against the `mta` realm, and Gitea uses the same realm as an OIDC auth source.
 - **ODF** provides the RWX storage class for the Tackle instance's PVCs (Maven cache, Hub bucket) — auto-detected, or installed via ODF when the platform ships none (see the *Configure RWX storage* step in the [MTA installation](#migration-toolkit-for-applications-mta-83)).
-- The **Jira integration** exports migration tickets from the Hub to Jira Cloud. Jira Cloud removed the `/rest/api/2/search` endpoint the Hub still calls for status sync, so this traffic flows through a small in-cluster rewriter (see [Issue Tracking (Jira integration)](#issue-tracking-jira-integration)).
+- The **Jira integration** exports migration tickets from the Hub to Jira Cloud. Jira Cloud removed the `/rest/api/2/search` endpoint the Hub still calls for status sync, so this traffic flows through a small in-cluster rewriter (see [Issue Tracking (Jira integration)](#issue-tracking-jira-integration-optional)).
 - The **Squid proxy** is optional, only deployed in disconnected environments, and provides allowlisted outbound egress — GitHub, Open VSX, the Maven repositories (`repo.maven.apache.org`, `maven.repository.redhat.com`), Atlassian, and the LLM endpoint — for the workspaces, Gitea repo migration, the Hub (LLM calls, Jira sync), and agentic Maven builds. In a connected environment these components reach external hosts directly.
 
 ## Components and Versions
@@ -264,7 +283,7 @@ The response should contain the model's completion, e.g.:
 >
 > The expected output is `200`.
 
-## Squid proxy deployment (disconnected environments)
+## Squid proxy deployment (optional, disconnected environments)
 
 In a disconnected environment, workloads still need controlled outbound access to external hosts. Deploy an in-cluster Squid proxy for this egress:
 
@@ -301,7 +320,7 @@ The Squid configuration only permits `CONNECT` (HTTPS) requests to port 443, res
 - `.developers.redhat.com` and `access.cdn.redhat.com` — Red Hat product documentation and CDN content.
 - `rhda.rhcloud.com` — the Red Hat Dependency Analytics backend; the `redhat.fabric8-analytics` extension sends dependency manifests there for vulnerability and license analysis. The extension supports HTTP proxies since 0.10.0, so the workspace's `HTTPS_PROXY` routes it through Squid.
 - `repo.maven.apache.org` (Maven Central) and `maven.repository.redhat.com` (Red Hat GA/EAP artifacts) — needed for the Maven builds and the `eap-maven-plugin` server provisioning in the agentic workflow's verify stage. Without them the build fails with `403 Forbidden` from the proxy and the agent has to bypass the proxy in its own `~/.m2/settings.xml`.
-- `.atlassian.net` — Jira Cloud, used by the Hub's [tracker](#issue-tracking-jira-integration); the Hub routes its egress through the proxy.
+- `.atlassian.net` — Jira Cloud, used by the Hub's [tracker](#issue-tracking-jira-integration-optional); the Hub routes its egress through the proxy.
 - The **OpenCode LLM endpoint** host (`$OPENAI_HOST`, rendered from the `llm-endpoint` Secret) — the workspace containers' `HTTPS_PROXY` routes all external HTTPS traffic through the proxy, so without it every OpenCode request fails with `Proxy refused to open a tunnel: 403 Forbidden` even though the model is configured correctly.
 
 > Verified live: the model appeared in `opencode models`, but the request still died at the proxy with `Proxy refused to open a tunnel: 403 Forbidden` — the LLM endpoint host was missing from the allowlist.
@@ -321,7 +340,7 @@ oc exec -n squid deploy/squid -- curl -k -s -o /dev/null -w '%{http_code}\n' -x 
 
 The command should return `200`. Note that requests from inside the Squid pod match the unrestricted `http_access allow localhost` ACL, so this check does not exercise the `cluster_networks` and `allowed_domains` restrictions — to verify the proxy the way a workload sees it, run the same check from a Dev Spaces workspace terminal against `http://squid.squid.svc:3128` instead.
 
-Finally, export the `MTA_`-prefixed proxy environment variables to point at the in-cluster service (used by the [Gitea](#gitea-installation), [MTA](#proxy-settings-for-disconnected-environments) and Dev Spaces proxy sections). The `MTA_` prefix avoids conflicts with the proxy settings of the shell you run the subsequent commands from:
+Finally, export the `MTA_`-prefixed proxy environment variables to point at the in-cluster service (used by the [Gitea](#gitea-installation), [MTA](#proxy-settings-for-disconnected-environments-optional) and Dev Spaces proxy sections). The `MTA_` prefix avoids conflicts with the proxy settings of the shell you run the subsequent commands from:
 
 ```bash
 export MTA_HTTP_PROXY=http://squid.squid.svc:3128
@@ -340,207 +359,223 @@ export MTA_NO_PROXY=localhost,127.0.0.1,.svc,.cluster.local,.${OPENSHIFT_APPS_DO
 
 To protect the original source code from unwanted changes, the repos are cloned into a Gitea instance running on OpenShift.
 
-- **Gitea Helmchart**: To install the Gitea Helmchart run
-    ```bash
-    oc apply -f gitea/gitea-namespace.yaml
-    helm repo add gitea-charts https://dl.gitea.com/charts/
-    helm repo update
-    cat gitea/values.yaml | envsubst | helm install -n gitea -f - gitea gitea-charts/gitea --version 12.7.0
-    oc wait --for=jsonpath='{.status.readyReplicas}'=1 statefulset gitea-valkey-primary -n gitea --timeout=600s
-    oc wait --for=jsonpath='{.status.readyReplicas}'=1 statefulset gitea-postgresql -n gitea --timeout=600s
-    cat gitea/create-db.sh | oc exec statefulset/gitea-postgresql -n gitea -i -t -- bash -il
-    oc wait --for=jsonpath='{.status.readyReplicas}'=1 deployment gitea -n gitea --timeout=600s
-    ```
-    Verify the deployment by opening the URL printed by:
-    ```bash
-    echo "Gitea URL: https://$(oc get route gitea -n gitea -o jsonpath='{.spec.host}')"
-    ``` 
-    You should see the following page:
-    ![image](images/gitea_ui.png)
+### Install Gitea with Helm
 
-    Log in via `Sign in` with `gitea-admin/giteaftw!`.    
+To install the Gitea Helmchart run
+```bash
+oc apply -f gitea/gitea-namespace.yaml
+helm repo add gitea-charts https://dl.gitea.com/charts/
+helm repo update
+cat gitea/values.yaml | envsubst | helm install -n gitea -f - gitea gitea-charts/gitea --version 12.7.0
+oc wait --for=jsonpath='{.status.readyReplicas}'=1 statefulset gitea-valkey-primary -n gitea --timeout=600s
+oc wait --for=jsonpath='{.status.readyReplicas}'=1 statefulset gitea-postgresql -n gitea --timeout=600s
+cat gitea/create-db.sh | oc exec statefulset/gitea-postgresql -n gitea -i -t -- bash -il
+oc wait --for=jsonpath='{.status.readyReplicas}'=1 deployment gitea -n gitea --timeout=600s
+```
+Verify the deployment by opening the URL printed by:
+```bash
+echo "Gitea URL: https://$(oc get route gitea -n gitea -o jsonpath='{.spec.host}')"
+``` 
+You should see the following page:
+![image](images/gitea_ui.png)
 
-    > ⚠️ NOTE
-    >
-    > The chart defaults to `RollingUpdate`, which deadlocks on the single RWO data PVC — the new pod waits with *"Multi-Attach error for volume ... Volume is already used by pod(s) ..."* while the old pod keeps serving. `gitea/values.yaml` sets `strategy.type: Recreate`; without it a later `helm upgrade` stalls the rollout.
-- **Verify Open API endpoint**: Check the Gitea Open API endpoint with
-    ```bash
-    curl -k -s -o /dev/null -w "%{http_code}\n" https://git.${OPENSHIFT_APPS_DOMAIN}/api/swagger
-    ```
-    Expected output: `200`.
-- **Access Token**: You'll need an access token for later steps.
+Log in via `Sign in` with `gitea-admin/giteaftw!`.    
 
-    ```bash
-    export GITEA_ADMIN_TOKEN=$(curl -k -s -H "Content-Type: application/json" -d '{"name":"admin_token","scopes":["all"]}' -u 'gitea-admin:giteaftw!' "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/users/gitea-admin/tokens" | jq -r '.sha1')
-    ```
-    Verify the token works:
-    ```bash
-    curl -k -s -o /dev/null -w "%{http_code}\n" \
-    "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/user" \
-    -H "Authorization: token ${GITEA_ADMIN_TOKEN}"
-    ```
-    This should return `200`.
+> ⚠️ NOTE
+>
+> The chart defaults to `RollingUpdate`, which deadlocks on the single RWO data PVC — the new pod waits with *"Multi-Attach error for volume ... Volume is already used by pod(s) ..."* while the old pod keeps serving. `gitea/values.yaml` sets `strategy.type: Recreate`; without it a later `helm upgrade` stalls the rollout.
+### Verify the OpenAPI endpoint
 
-    To delete the token:
-    ```bash
-    curl -k --request DELETE https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/users/gitea-admin/tokens/admin_token   --header "Authorization: Basic $(echo -n 'gitea-admin:giteaftw!' | base64)"
-    ```
+Check the Gitea Open API endpoint with
+```bash
+curl -k -s -o /dev/null -w "%{http_code}\n" https://git.${OPENSHIFT_APPS_DOMAIN}/api/swagger
+```
+Expected output: `200`.
+### Create an admin access token
 
-- **Cloning Repositories**: Clone the [JBoss EAP Quickstarts](https://github.com/jboss-developer/jboss-eap-quickstarts) repository into Gitea via the REST API. This also creates the organization `jboss`.
+You'll need an access token for later steps.
 
-    ```bash
-    curl -k -s -X POST "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/orgs" \
-    -H "Authorization: token ${GITEA_ADMIN_TOKEN}" \
-    -H "Content-Type: application/json" \
-    -d '{"username": "jboss", "visibility": "public"}'
+```bash
+export GITEA_ADMIN_TOKEN=$(curl -k -s -H "Content-Type: application/json" -d '{"name":"admin_token","scopes":["all"]}' -u 'gitea-admin:giteaftw!' "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/users/gitea-admin/tokens" | jq -r '.sha1')
+```
+Verify the token works:
+```bash
+curl -k -s -o /dev/null -w "%{http_code}\n" \
+"https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/user" \
+-H "Authorization: token ${GITEA_ADMIN_TOKEN}"
+```
+This should return `200`.
 
-    curl -k -X POST "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/repos/migrate" \
-    -H "Authorization: token ${GITEA_ADMIN_TOKEN}" \
-    -H "Content-Type: application/json" \
-    -d '{
-        "clone_addr": "https://github.com/jboss-developer/jboss-eap-quickstarts",
-        "repo_name": "jboss-quickstarts",
-        "repo_owner": "jboss"
-    }'
+To delete the token:
+```bash
+curl -k --request DELETE https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/users/gitea-admin/tokens/admin_token   --header "Authorization: Basic $(echo -n 'gitea-admin:giteaftw!' | base64)"
+```
 
-    curl -k -s -X POST "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/admin/users" \
-    -H "Authorization: token ${GITEA_ADMIN_TOKEN}" \
-    -H "Content-Type: application/json" \
-    -d '{
-        "username": "jboss-dev",
-        "email": "jboss-dev@example.com",
-        "password": "jboss-dev",
-        "must_change_password": false
-    }'
+### Clone the application repositories
 
-    export GITEA_OWNERS_TEAM_ID=$(curl -k -s "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/orgs/jboss/teams"   -H "Authorization: token ${GITEA_ADMIN_TOKEN}" | jq '.[].id')
+Clone the [JBoss EAP Quickstarts](https://github.com/jboss-developer/jboss-eap-quickstarts) repository into Gitea via the REST API. This also creates the organization `jboss`.
 
-    curl -k -s -X PUT "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/teams/${GITEA_OWNERS_TEAM_ID}/members/jboss-dev"   -H "Authorization: token ${GITEA_ADMIN_TOKEN}"
-    ```
-    Verify the clone succeeded:
-    ```bash
-    git clone https://git.${OPENSHIFT_APPS_DOMAIN}/jboss/jboss-quickstarts ~/jboss-quickstarts
-    ```
-- **When working with your Git instance that is using ssh-key based authentication then follow these steps**: The `repos/migrate` endpoint authenticates the source with `auth_username`/`auth_password` — credentials Gitea injects **only into HTTP(S) clone addresses**. Migrating an `ssh://` `clone_addr` from a key-authenticated repository fails with a public-key error: the API has no field for an SSH private key, and Gitea's server-side `git clone` has no agent to offer one. If your source authenticates via SSH keys but **also serves HTTPS with a personal-access token** (most SSH-only setups do), migrate over that HTTPS path instead — the SSH keys stay irrelevant to the migration:
+```bash
+curl -k -s -X POST "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/orgs" \
+-H "Authorization: token ${GITEA_ADMIN_TOKEN}" \
+-H "Content-Type: application/json" \
+-d '{"username": "jboss", "visibility": "public"}'
 
-    ```bash
-    curl -k -s -X POST "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/repos/migrate" \
-    -H "Authorization: token ${GITEA_ADMIN_TOKEN}" \
-    -H "Content-Type: application/json" \
-    -d '{
-        "clone_addr": "https://source-git.internal.example.com/team/the-repo.git",
-        "auth_username": "<source-user>",
-        "auth_password": "<source-personal-access-token>",
-        "repo_name": "the-repo",
-        "repo_owner": "jboss",
-        "mirror": false
-    }'
-    ```
+curl -k -X POST "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/repos/migrate" \
+-H "Authorization: token ${GITEA_ADMIN_TOKEN}" \
+-H "Content-Type: application/json" \
+-d '{
+    "clone_addr": "https://github.com/jboss-developer/jboss-eap-quickstarts",
+    "repo_name": "jboss-quickstarts",
+    "repo_owner": "jboss"
+}'
 
-    Set `mirror: false` deliberately: the Gitea copy is frozen (it is MTA's migration source), so Gitea should not re-fetch from the original. If the source serves HTTPS **without** token auth (SSH only), the migrate API can't be used at all — clone locally with the SSH key and push the mirror into Gitea over HTTPS with the `gitea-admin` token. After migrating, verify as above and reference the repo by its **HTTPS web URL** (`https://git.${OPENSHIFT_APPS_DOMAIN}/...`) in the application records — the analyzer and agentic harness clone with HTTP basic auth only (see [Bulk Uploading Applications](#bulk-uploading-applications)).
-- **Proxy settings (disconnected environments)**: Gitea needs outbound access to GitHub for the migration. In a disconnected environment, route this through a proxy: define the `MTA_`-prefixed proxy variables (see [Proxy configuration](#proxy-configuration)) and install with the extra values file `gitea/values-proxy.yaml`. Both values files go through `envsubst`, so the `MTA_`-prefixed shell variables resolve automatically while the Gitea container receives standard `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY`:
+curl -k -s -X POST "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/admin/users" \
+-H "Authorization: token ${GITEA_ADMIN_TOKEN}" \
+-H "Content-Type: application/json" \
+-d '{
+    "username": "jboss-dev",
+    "email": "jboss-dev@example.com",
+    "password": "jboss-dev",
+    "must_change_password": false
+}'
 
-    ```bash
-    oc apply -f gitea/gitea-namespace.yaml
-    helm repo add gitea-charts https://dl.gitea.com/charts/
-    helm repo update
-    helm install -n gitea \
-      -f <(envsubst < gitea/values.yaml) \
-      -f <(envsubst < gitea/values-proxy.yaml) \
-      gitea gitea-charts/gitea --version 12.7.0
-    oc wait --for=jsonpath='{.status.readyReplicas}'=1 statefulset gitea-valkey-primary -n gitea --timeout=600s
-    oc wait --for=jsonpath='{.status.readyReplicas}'=1 statefulset gitea-postgresql -n gitea --timeout=600s
-    cat gitea/create-db.sh | oc exec statefulset/gitea-postgresql -n gitea -i -t -- bash -il
-    oc wait --for=jsonpath='{.status.readyReplicas}'=1 deployment gitea -n gitea --timeout=600s
-    ```
+export GITEA_OWNERS_TEAM_ID=$(curl -k -s "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/orgs/jboss/teams"   -H "Authorization: token ${GITEA_ADMIN_TOKEN}" | jq '.[].id')
 
-    The chart sets the proxy variables on all Gitea containers via its `deployment.env` property. Verify they propagated:
+curl -k -s -X PUT "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/teams/${GITEA_OWNERS_TEAM_ID}/members/jboss-dev"   -H "Authorization: token ${GITEA_ADMIN_TOKEN}"
+```
+Verify the clone succeeded:
+```bash
+git clone https://git.${OPENSHIFT_APPS_DOMAIN}/jboss/jboss-quickstarts ~/jboss-quickstarts
+```
+### Migrating SSH-key-authenticated source repositories
 
-    ```bash
-    oc get pod -n gitea -o yaml | grep -iE 'proxy'
-    ```
+The `repos/migrate` endpoint authenticates the source with `auth_username`/`auth_password` — credentials Gitea injects **only into HTTP(S) clone addresses**. Migrating an `ssh://` `clone_addr` from a key-authenticated repository fails with a public-key error: the API has no field for an SSH private key, and Gitea's server-side `git clone` has no agent to offer one. If your source authenticates via SSH keys but **also serves HTTPS with a personal-access token** (most SSH-only setups do), migrate over that HTTPS path instead — the SSH keys stay irrelevant to the migration:
 
-- **OIDC SSO login via Keycloak**: Gitea can authenticate users against MTA's Keycloak (see [Keycloak for MTA](#keycloak-for-mta)) — users log in with their MTA credentials, and Gitea auto-creates the local account from the token's email on first login. The chart's `configure-gitea` init container runs `gitea admin auth add-oauth` for each `gitea.oauth` entry in `gitea/values-keycloak.yaml` (its `autoDiscoverUrl` points at the MTA UI route's `/auth` path, so the MTA route must exist — deploy MTA first or re-run the `helm upgrade` afterwards). Install with all three values files (this also upgrades an existing installation):
+```bash
+curl -k -s -X POST "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/repos/migrate" \
+-H "Authorization: token ${GITEA_ADMIN_TOKEN}" \
+-H "Content-Type: application/json" \
+-d '{
+    "clone_addr": "https://source-git.internal.example.com/team/the-repo.git",
+    "auth_username": "<source-user>",
+    "auth_password": "<source-personal-access-token>",
+    "repo_name": "the-repo",
+    "repo_owner": "jboss",
+    "mirror": false
+}'
+```
 
-    ```bash
-    # OPENSHIFT_APPS_DOMAIN and KEYCLOAK_GITEA_CLIENT_SECRET from the
-    # prerequisites section must be set
-    helm upgrade -n gitea \
-      -f <(envsubst < gitea/values.yaml) \
-      -f <(envsubst < gitea/values-proxy.yaml) \
-      -f <(envsubst < gitea/values-keycloak.yaml) \
-      gitea gitea-charts/gitea --version 12.7.0
-    oc wait --for=jsonpath='{.status.readyReplicas}'=1 deployment gitea -n gitea --timeout=600s
-    ```
+Set `mirror: false` deliberately: the Gitea copy is frozen (it is MTA's migration source), so Gitea should not re-fetch from the original. If the source serves HTTPS **without** token auth (SSH only), the migrate API can't be used at all — clone locally with the SSH key and push the mirror into Gitea over HTTPS with the `gitea-admin` token. After migrating, verify as above and reference the repo by its **HTTPS web URL** (`https://git.${OPENSHIFT_APPS_DOMAIN}/...`) in the application records — the analyzer and agentic harness clone with HTTP basic auth only (see [Bulk Uploading Applications](#bulk-uploading-applications)).
+### Proxy settings (disconnected environments)
 
-    Verify the auth source was registered (the `configure-gitea` init log ends with `...installed.`):
+Gitea needs outbound access to GitHub for the migration. In a disconnected environment, route this through a proxy: define the `MTA_`-prefixed proxy variables (see [Proxy configuration](#proxy-configuration)) and install with the extra values file `gitea/values-proxy.yaml`. Both values files go through `envsubst`, so the `MTA_`-prefixed shell variables resolve automatically while the Gitea container receives standard `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY`:
 
-    ```bash
-    oc logs -n gitea deploy/gitea -c configure-gitea | grep -E 'oauth|installed'
-    ```
+```bash
+oc apply -f gitea/gitea-namespace.yaml
+helm repo add gitea-charts https://dl.gitea.com/charts/
+helm repo update
+helm install -n gitea \
+  -f <(envsubst < gitea/values.yaml) \
+  -f <(envsubst < gitea/values-proxy.yaml) \
+  gitea gitea-charts/gitea --version 12.7.0
+oc wait --for=jsonpath='{.status.readyReplicas}'=1 statefulset gitea-valkey-primary -n gitea --timeout=600s
+oc wait --for=jsonpath='{.status.readyReplicas}'=1 statefulset gitea-postgresql -n gitea --timeout=600s
+cat gitea/create-db.sh | oc exec statefulset/gitea-postgresql -n gitea -i -t -- bash -il
+oc wait --for=jsonpath='{.status.readyReplicas}'=1 deployment gitea -n gitea --timeout=600s
+```
 
-    > ⚠️ NOTE
-    >
-    > The init container fails with *"Non-success code for Discovery URL: 503"* if the discovery URL's host has no matching Route — the host is `mta-openshift-mta.${OPENSHIFT_APPS_DOMAIN}`, not `mta.${OPENSHIFT_APPS_DOMAIN}`. The failed init crash-loops the Gitea pod until you fix the values and `helm upgrade` again.
+The chart sets the proxy variables on all Gitea containers via its `deployment.env` property. Verify they propagated:
+
+```bash
+oc get pod -n gitea -o yaml | grep -iE 'proxy'
+```
+
+### OIDC SSO login via Keycloak
+
+Gitea can authenticate users against MTA's Keycloak (see [Keycloak for MTA](#keycloak-for-mta)) — users log in with their MTA credentials, and Gitea auto-creates the local account from the token's email on first login. The chart's `configure-gitea` init container runs `gitea admin auth add-oauth` for each `gitea.oauth` entry in `gitea/values-keycloak.yaml` (its `autoDiscoverUrl` points at the MTA UI route's `/auth` path, so the MTA route must exist — deploy MTA first or re-run the `helm upgrade` afterwards). Install with all three values files (this also upgrades an existing installation):
+
+```bash
+# OPENSHIFT_APPS_DOMAIN and KEYCLOAK_GITEA_CLIENT_SECRET from the
+# prerequisites section must be set
+helm upgrade -n gitea \
+  -f <(envsubst < gitea/values.yaml) \
+  -f <(envsubst < gitea/values-proxy.yaml) \
+  -f <(envsubst < gitea/values-keycloak.yaml) \
+  gitea gitea-charts/gitea --version 12.7.0
+oc wait --for=jsonpath='{.status.readyReplicas}'=1 deployment gitea -n gitea --timeout=600s
+```
+
+Verify the auth source was registered (the `configure-gitea` init log ends with `...installed.`):
+
+```bash
+oc logs -n gitea deploy/gitea -c configure-gitea | grep -E 'oauth|installed'
+```
+
+> ⚠️ NOTE
+>
+> The init container fails with *"Non-success code for Discovery URL: 503"* if the discovery URL's host has no matching Route — the host is `mta-openshift-mta.${OPENSHIFT_APPS_DOMAIN}`, not `mta.${OPENSHIFT_APPS_DOMAIN}`. The failed init crash-loops the Gitea pod until you fix the values and `helm upgrade` again.
 
 <a id="ssh-keys"></a>
-- **SSH Keys**: To use SSH key authentication against the Git server in addition to basic auth, first generate a keypair (skip if you already have one):
+### SSH Keys
 
-  ```bash
-  ssh-keygen -t ed25519 -f ~/.ssh/mta-gitea -N "" -C "mta-agents"
-  ```
+To use SSH key authentication against the Git server in addition to basic auth, first generate a keypair (skip if you already have one):
 
-  Then add the public key to the Git server (for Gitea, also possible via the REST API). `jq` passes the key to `curl` to ensure proper expansion and JSON escaping:
+```bash
+ssh-keygen -t ed25519 -f ~/.ssh/mta-gitea -N "" -C "mta-agents"
+```
 
-  ```bash
-  curl -k -s -X POST "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/user/keys" \
-    -H "Authorization: token ${GITEA_ADMIN_TOKEN}" \
-    -H "Content-Type: application/json" \
-    -d "{
-      \"title\": \"mta-agents\",
-      \"key\": \"$(cat ~/.ssh/mta-gitea.pub)\"
-    }"
-  ```
+Then add the public key to the Git server (for Gitea, also possible via the REST API). `jq` passes the key to `curl` to ensure proper expansion and JSON escaping:
 
-  To verify the key works, clone a repository over SSH. Three details of the deployed Gitea matter:
+```bash
+curl -k -s -X POST "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/user/keys" \
+  -H "Authorization: token ${GITEA_ADMIN_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"title\": \"mta-agents\",
+    \"key\": \"$(cat ~/.ssh/mta-gitea.pub)\"
+  }"
+```
 
-  - **SSH is exposed through a TLS-passthrough Route**: Routes carry HTTP(S) only, so the plain-SSH server (the chart's `gitea-ssh` Service, container port 2222) is wrapped in TLS by a socat proxy and published via a passthrough Route on `git-ssh.${OPENSHIFT_APPS_DOMAIN}`. The Route doesn't terminate TLS — the socat proxy presents the certificate, so a cert for the Route host is generated explicitly (the service CA operator only issues for `<service>.<namespace>.svc` names, not Route hosts):
+To verify the key works, clone a repository over SSH. Three details of the deployed Gitea matter:
 
-      ```bash
-      openssl req -x509 -newkey rsa:4096 -sha256 -days 365 -nodes \
-        -keyout gitea-ssh-route-key.pem -out gitea-ssh-route-cert.pem \
-        -subj "/CN=git-ssh.${OPENSHIFT_APPS_DOMAIN}" \
-        -addext "subjectAltName=DNS:git-ssh.${OPENSHIFT_APPS_DOMAIN}"
+- **SSH is exposed through a TLS-passthrough Route**: Routes carry HTTP(S) only, so the plain-SSH server (the chart's `gitea-ssh` Service, container port 2222) is wrapped in TLS by a socat proxy and published via a passthrough Route on `git-ssh.${OPENSHIFT_APPS_DOMAIN}`. The Route doesn't terminate TLS — the socat proxy presents the certificate, so a cert for the Route host is generated explicitly (the service CA operator only issues for `<service>.<namespace>.svc` names, not Route hosts):
 
-      oc create secret tls gitea-ssh-route-cert -n gitea \
-        --cert=gitea-ssh-route-cert.pem --key=gitea-ssh-route-key.pem
-      ```
+    ```bash
+    openssl req -x509 -newkey rsa:4096 -sha256 -days 365 -nodes \
+      -keyout gitea-ssh-route-key.pem -out gitea-ssh-route-cert.pem \
+      -subj "/CN=git-ssh.${OPENSHIFT_APPS_DOMAIN}" \
+      -addext "subjectAltName=DNS:git-ssh.${OPENSHIFT_APPS_DOMAIN}"
 
-      Deploy the tunnel:
+    oc create secret tls gitea-ssh-route-cert -n gitea \
+      --cert=gitea-ssh-route-cert.pem --key=gitea-ssh-route-key.pem
+    ```
 
-      ```bash
-      cat gitea/gitea-ssh-route.yaml | envsubst | oc apply -f -
-      oc wait --for=jsonpath='{.status.readyReplicas}'=1 deployment gitea-ssh-tunnel -n gitea --timeout=300s
-      ```
+    Deploy the tunnel:
 
-      The self-signed cert expires after a fixed 365 days and doesn't auto-renew — re-run the `openssl` and `oc create secret` commands (and restart the tunnel deployment) to rotate it. Verify the presented cert's subject matches the Route host:
+    ```bash
+    cat gitea/gitea-ssh-route.yaml | envsubst | oc apply -f -
+    oc wait --for=jsonpath='{.status.readyReplicas}'=1 deployment gitea-ssh-tunnel -n gitea --timeout=300s
+    ```
 
-      ```bash
-      echo "" | openssl s_client -connect git-ssh.${OPENSHIFT_APPS_DOMAIN}:443 -servername git-ssh.${OPENSHIFT_APPS_DOMAIN} 2>/dev/null | openssl x509 -noout -subject
-      ```
+    The self-signed cert expires after a fixed 365 days and doesn't auto-renew — re-run the `openssl` and `oc create secret` commands (and restart the tunnel deployment) to rotate it. Verify the presented cert's subject matches the Route host:
 
-      In-cluster consumers (e.g. the agentic Sandboxes) bypass the tunnel and reach the SSH server directly at `gitea-ssh.gitea.svc:2222` — the Service is **headless**, so its DNS resolves straight to the pod IP with no port translation: the URL must use the container port 2222 (the same port the tunnel's socat forwards to), not the Service's 22. Cross-namespace egress on port 2222 also requires the `allow-egress-git-ssh` NetworkPolicy (see [Allow egress on port 22 for SSH-based git](#allow-egress-on-port-22-for-ssh-based-git)).
+    ```bash
+    echo "" | openssl s_client -connect git-ssh.${OPENSHIFT_APPS_DOMAIN}:443 -servername git-ssh.${OPENSHIFT_APPS_DOMAIN} 2>/dev/null | openssl x509 -noout -subject
+    ```
 
-  - **The SSH username is `git`**: Gitea's built-in SSH server requires one fixed username for all git operations — the `[server] BUILTIN_SSH_SERVER_USER` setting, which defaults to the OS user running Gitea. On OpenShift that's the random container UID (e.g. `1000810000`), so `gitea/values.yaml` pins it to `git` (`gitea.config.server.BUILTIN_SSH_SERVER_USER: git`, plus `SSH_USER: git` for the clone URLs the UI shows). Any other username is rejected with `Permission denied (publickey)`; the server log records `Invalid SSH username <name> - must use ...`. The username is only a gate — the key is matched against the Gitea account it's registered with (`gitea-admin` here), not the username.
+    In-cluster consumers (e.g. the agentic Sandboxes) bypass the tunnel and reach the SSH server directly at `gitea-ssh.gitea.svc:2222` — the Service is **headless**, so its DNS resolves straight to the pod IP with no port translation: the URL must use the container port 2222 (the same port the tunnel's socat forwards to), not the Service's 22. Cross-namespace egress on port 2222 also requires the `allow-egress-git-ssh` NetworkPolicy (see [Allow egress on port 22 for SSH-based git](#allow-egress-on-port-22-for-ssh-based-git)).
 
-  Clone the migrated repository over SSH. Because the Route is TLS-passthrough, ssh unwraps the TLS layer with an `openssl` ProxyCommand — `%h` expands to the clone URL's host (the Route host). `GIT_SSH_COMMAND` also pins the key — `IdentitiesOnly=yes` stops ssh from offering the agent's other keys first — and skips the host-key prompt and TLS verification, since the self-signed cert isn't in a trust store (verify it separately with the `openssl s_client` check above if needed):
+- **The SSH username is `git`**: Gitea's built-in SSH server requires one fixed username for all git operations — the `[server] BUILTIN_SSH_SERVER_USER` setting, which defaults to the OS user running Gitea. On OpenShift that's the random container UID (e.g. `1000810000`), so `gitea/values.yaml` pins it to `git` (`gitea.config.server.BUILTIN_SSH_SERVER_USER: git`, plus `SSH_USER: git` for the clone URLs the UI shows). Any other username is rejected with `Permission denied (publickey)`; the server log records `Invalid SSH username <name> - must use ...`. The username is only a gate — the key is matched against the Gitea account it's registered with (`gitea-admin` here), not the username.
 
-  ```bash
-  GIT_SSH_COMMAND="ssh -i ~/.ssh/mta-gitea -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ProxyCommand='openssl s_client -quiet -connect %h:443 -servername %h'" \
-  git clone git@git-ssh.${OPENSHIFT_APPS_DOMAIN}:jboss/jboss-quickstarts ~/jboss-quickstarts-ssh
-  ```
+Clone the migrated repository over SSH. Because the Route is TLS-passthrough, ssh unwraps the TLS layer with an `openssl` ProxyCommand — `%h` expands to the clone URL's host (the Route host). `GIT_SSH_COMMAND` also pins the key — `IdentitiesOnly=yes` stops ssh from offering the agent's other keys first — and skips the host-key prompt and TLS verification, since the self-signed cert isn't in a trust store (verify it separately with the `openssl s_client` check above if needed):
 
-  On success git prints `Cloning into ...` and the working tree appears under the target directory; the server greeting (`Hi there, gitea-admin! You've successfully authenticated with the key named mta-agents ...`) confirms the key matched.
+```bash
+GIT_SSH_COMMAND="ssh -i ~/.ssh/mta-gitea -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ProxyCommand='openssl s_client -quiet -connect %h:443 -servername %h'" \
+git clone git@git-ssh.${OPENSHIFT_APPS_DOMAIN}:jboss/jboss-quickstarts ~/jboss-quickstarts-ssh
+```
+
+On success git prints `Cloning into ...` and the working tree appears under the target directory; the server greeting (`Hi there, gitea-admin! You've successfully authenticated with the key named mta-agents ...`) confirms the key matched.
 
 ## Automated Migration Using the MTA UI
 
@@ -607,230 +642,251 @@ MTA 8.3 automates analysis, assessment, and refactoring for application moderniz
     - OpenShift with cluster-admin privileges
     - Storage: 1 RWO PV (10Gi) for the Hub database, 2 RWX PVs (100Gi each) for Maven cache and Hub bucket storage (if `rwx_supported` is enabled), 1 RWO PV (5Gi) for the Developer Lightspeed database
     - Access to a Large Language Model
-- **Deploy the Migration Toolkit for Applications Operator**: via the CLI, creating the target namespace, OperatorGroup, and Subscription:
+##### Deploy the Migration Toolkit for Applications Operator
 
-    ```bash
-    oc apply -f mta-ui/mta-operator.yaml
-    ```
-    Verify the operator deployment:
-    ```bash
-    oc wait --for=create csv mta-operator.v8.3.3 -n openshift-mta --timeout=600s
-    oc wait --for=jsonpath='{.status.phase}'=Succeeded csv mta-operator.v8.3.3 -n openshift-mta --timeout=600s
-    oc wait --for=create deployment mta-operator -n openshift-mta --timeout=600s
-    oc wait --for=jsonpath='{.status.readyReplicas}'=1 deployment mta-operator -n openshift-mta --timeout=600s
-    ```
-    Each command should return **`condition met`**.
-- **Create the Model Secret**: a Secret with the API key and Base URL for the self-hosted LLM provider, needed by the Solution Server (an MCP server with persistent memory of refactoring resolutions, reaching LLMs via Retrieval-Augmented Generation, RAG):
-    ```bash
-    cat mta-ui/mta-ls-llm-provider-secret.yaml | envsubst | oc apply -f -
-    ```
-    > ⚠️ NOTE
-    >
-    > The Solution Server's LLM proxy also consumes a Secret named **`kai-api-keys`** in `openshift-mta` — the operator's built-in default name, not referenced by the Tackle CR. Its keys become the environment variable names injected into the `kai-api` and LLM-proxy pods (e.g. an `OPENAI_API_KEY` key). Without it, the Tackle CR reports `KaiAPIKeysConfigured=False` with *"No API keys secret found"*. A template is at `mta-ui/kai-api-keys-secret.yaml`, applied with the same envsubst pattern:
-    > ```bash
-    > cat mta-ui/kai-api-keys-secret.yaml | envsubst | oc apply -f -
-    > ```
-    > The condition only updates on the operator's next reconciliation — delete the operator pod (OLM reverts `oc rollout restart` on its own deployment) to trigger one.
-- **Configure RWX storage**: Tackle provisions 2 RWX PVCs (100Gi each: Maven cache, Hub bucket) on top of its RWO databases, so you need an RWX-capable (`ReadWriteMany`) storage class. Many platforms ship one out of the box (Amazon EFS, Azure Files, Google Filestore, NFS, existing ODF/CephFS). Storage classes don't declare access modes, so the probe below tests each class with a throwaway `ReadWriteMany` PVC and keeps the first that binds:
+via the CLI, creating the target namespace, OperatorGroup, and Subscription:
 
-    ```bash
-    RWX_SC=""
-    for SC in $(oc get sc -o json | jq -r '.items[].metadata.name'); do
-      cat <<EOF | oc apply -f - > /dev/null
-    apiVersion: v1
-    kind: PersistentVolumeClaim
-    metadata:
-      name: rwx-probe
-      namespace: default
-    spec:
-      accessModes: ["ReadWriteMany"]
-      storageClassName: $SC
-      resources:
-        requests:
-          storage: 1Gi
-    EOF
-      if oc wait --for=jsonpath='{.status.phase}'=Bound pvc/rwx-probe -n default --timeout=90s > /dev/null 2>&1; then
-        RWX_SC=$SC
-      fi
-      oc delete pvc rwx-probe -n default --ignore-not-found --wait=false > /dev/null 2>&1
-      [ -n "$RWX_SC" ] && break
-    done
-    echo "RWX-capable storage class: ${RWX_SC:-none found}"
-    ```
+```bash
+oc apply -f mta-ui/mta-operator.yaml
+```
+Verify the operator deployment:
+```bash
+oc wait --for=create csv mta-operator.v8.3.3 -n openshift-mta --timeout=600s
+oc wait --for=jsonpath='{.status.phase}'=Succeeded csv mta-operator.v8.3.3 -n openshift-mta --timeout=600s
+oc wait --for=create deployment mta-operator -n openshift-mta --timeout=600s
+oc wait --for=jsonpath='{.status.readyReplicas}'=1 deployment mta-operator -n openshift-mta --timeout=600s
+```
+Each command should return **`condition met`**.
+##### Create the Model Secret
 
-    When a class binds, export it for the Tackle instance:
+a Secret with the API key and Base URL for the self-hosted LLM provider, needed by the Solution Server (an MCP server with persistent memory of refactoring resolutions, reaching LLMs via Retrieval-Augmented Generation, RAG):
+```bash
+cat mta-ui/mta-ls-llm-provider-secret.yaml | envsubst | oc apply -f -
+```
+> ⚠️ NOTE
+>
+> The Solution Server's LLM proxy also consumes a Secret named **`kai-api-keys`** in `openshift-mta` — the operator's built-in default name, not referenced by the Tackle CR. Its keys become the environment variable names injected into the `kai-api` and LLM-proxy pods (e.g. an `OPENAI_API_KEY` key). Without it, the Tackle CR reports `KaiAPIKeysConfigured=False` with *"No API keys secret found"*. A template is at `mta-ui/kai-api-keys-secret.yaml`, applied with the same envsubst pattern:
+> ```bash
+> cat mta-ui/kai-api-keys-secret.yaml | envsubst | oc apply -f -
+> ```
+> The condition only updates on the operator's next reconciliation — delete the operator pod (OLM reverts `oc rollout restart` on its own deployment) to trigger one.
+##### Configure RWX storage
 
-    ```bash
-    export STORAGECLASS_RWX=$RWX_SC
-    ```
+Tackle provisions 2 RWX PVCs (100Gi each: Maven cache, Hub bucket) on top of its RWO databases, so you need an RWX-capable (`ReadWriteMany`) storage class. Many platforms ship one out of the box (Amazon EFS, Azure Files, Google Filestore, NFS, existing ODF/CephFS). Storage classes don't declare access modes, so the probe below tests each class with a throwaway `ReadWriteMany` PVC and keeps the first that binds:
 
-    When **no class binds** (`none found`), detect the platform and install ODF (OpenShift Data Foundation), which provides the RWX class `ocs-storagecluster-cephfs`:
+```bash
+RWX_SC=""
+for SC in $(oc get sc -o json | jq -r '.items[].metadata.name'); do
+  cat <<EOF | oc apply -f - > /dev/null
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rwx-probe
+  namespace: default
+spec:
+  accessModes: ["ReadWriteMany"]
+  storageClassName: $SC
+  resources:
+    requests:
+      storage: 1Gi
+EOF
+  if oc wait --for=jsonpath='{.status.phase}'=Bound pvc/rwx-probe -n default --timeout=90s > /dev/null 2>&1; then
+    RWX_SC=$SC
+  fi
+  oc delete pvc rwx-probe -n default --ignore-not-found --wait=false > /dev/null 2>&1
+  [ -n "$RWX_SC" ] && break
+done
+echo "RWX-capable storage class: ${RWX_SC:-none found}"
+```
 
-    ```bash
-    oc get infrastructure cluster -o jsonpath='{.status.platformStatus.type}{"\n"}'
-    ```
+When a class binds, export it for the Tackle instance:
 
-    On **AWS** the shipped manifests work as-is (3 OSDs × 512Gi on `gp3-csi`, portable across workers): label the workers so the ODF scheduler can place Ceph, install the pinned ODF operator, create the StorageCluster, wait for the storage class (~15-20 minutes). The first `oc apply` of the StorageCluster can fail with `error: unable to recognize ... ensure CRDs are installed first` — the `odf-operator` CSV only installs the OCS CRDs (incl. `storageclusters.ocs.openshift.io`) after reporting `Succeeded`, and the apply can race that. Verify the CRD exists and re-apply if needed:
+```bash
+export STORAGECLASS_RWX=$RWX_SC
+```
 
-    ```bash
-    oc label nodes -l node-role.kubernetes.io/worker cluster.ocs.openshift.io/openshift-storage="" --overwrite
-    oc apply -f storage/odf-subscription.yaml
-    oc wait --for=create csv odf-operator.v4.22.7-rhodf -n openshift-storage --timeout=900s
-    oc wait --for=jsonpath='{.status.phase}'=Succeeded csv odf-operator.v4.22.7-rhodf -n openshift-storage --timeout=900s
-    until oc get crd storageclusters.ocs.openshift.io > /dev/null 2>&1; do sleep 10; done
-    oc apply -f storage/storage-cluster.yaml
-    oc wait --for=create sc ocs-storagecluster-cephfs --timeout=1800s
-    export STORAGECLASS_RWX=ocs-storagecluster-cephfs
-    ```
+When **no class binds** (`none found`), detect the platform and install ODF (OpenShift Data Foundation), which provides the RWX class `ocs-storagecluster-cephfs`:
 
-    Other platforms (Azure, GCP, vSphere, bare metal): same flow, but the `storage/storage-cluster.yaml` StorageCluster must reference the platform's block storage class for the OSD data PVCs (`spec.storageDeviceSets[].dataPVCTemplate.spec.storageClassName` — e.g. `managed-csi` or `premium_LRS` on Azure, `pd-balanced` on GCP); worker labeling is identical. See the [ODF documentation](https://docs.redhat.com/en/documentation/openshift_data_foundation) for sizing, then export `STORAGECLASS_RWX=ocs-storagecluster-cephfs` as above.
+```bash
+oc get infrastructure cluster -o jsonpath='{.status.platformStatus.type}{"\n"}'
+```
 
-- **Configure the Tackle Instance**: create a Tackle instance with the storage sizing, Developer Lightspeed enabled, and the LLM configured:
+On **AWS** the shipped manifests work as-is (3 OSDs × 512Gi on `gp3-csi`, portable across workers): label the workers so the ODF scheduler can place Ceph, install the pinned ODF operator, create the StorageCluster, wait for the storage class (~15-20 minutes). The first `oc apply` of the StorageCluster can fail with `error: unable to recognize ... ensure CRDs are installed first` — the `odf-operator` CSV only installs the OCS CRDs (incl. `storageclusters.ocs.openshift.io`) after reporting `Succeeded`, and the apply can race that. Verify the CRD exists and re-apply if needed:
 
-    ```bash
-    cat mta-ui/tackle.yaml | envsubst | oc apply -f -
-    ```
-    Wait for the installation to finish:
-    ```bash
-    oc wait --for=create deployment mta-ui -n openshift-mta --timeout=600s
-    oc wait --for=create deployment mta-hub -n openshift-mta --timeout=600s
-    oc wait --for=create deployment kai-db -n openshift-mta --timeout=600s
-    oc wait --for=create deployment kai-api -n openshift-mta --timeout=600s
-    oc wait --for=create deployment agentic-controller -n openshift-mta --timeout=600s
-    oc wait --for=jsonpath='{.status.readyReplicas}'=1 deployment mta-ui -n openshift-mta --timeout=600s
-    oc wait --for=create deployment mta-hub -n openshift-mta --timeout=600s
-    oc wait --for=jsonpath='{.status.readyReplicas}'=1 deployment mta-hub -n openshift-mta --timeout=600s
-    oc wait --for=jsonpath='{.status.readyReplicas}'=1 deployment kai-db -n openshift-mta --timeout=600s
-    oc wait --for=jsonpath='{.status.readyReplicas}'=1 deployment kai-api -n openshift-mta --timeout=600s
-    oc wait --for=jsonpath='{.status.readyReplicas}'=1 deployment agentic-controller -n openshift-mta --timeout=600s
-    ```
-    All commands should return `condition met`.
-- **Workaround for Storage issue**: sometimes the cache PVC has an issue (`/cache/m2 can't be created`). Fix it like this:
+```bash
+oc label nodes -l node-role.kubernetes.io/worker cluster.ocs.openshift.io/openshift-storage="" --overwrite
+oc apply -f storage/odf-subscription.yaml
+oc wait --for=create csv odf-operator.v4.22.7-rhodf -n openshift-storage --timeout=900s
+oc wait --for=jsonpath='{.status.phase}'=Succeeded csv odf-operator.v4.22.7-rhodf -n openshift-storage --timeout=900s
+until oc get crd storageclusters.ocs.openshift.io > /dev/null 2>&1; do sleep 10; done
+oc apply -f storage/storage-cluster.yaml
+oc wait --for=create sc ocs-storagecluster-cephfs --timeout=1800s
+export STORAGECLASS_RWX=ocs-storagecluster-cephfs
+```
 
-    ```bash
-    oc apply -f mta-ui/cache-pvc-inspector.yaml
-    oc wait --for=create deployment cache-pvc-inspector -n openshift-mta --timeout=600s
-    oc wait --for=jsonpath='{.status.readyReplicas}'=1 deployment cache-pvc-inspector -n openshift-mta --timeout=600s
-    echo "mkdir /cache/m2 && chmod 777 /cache/m2" | oc exec deployment/cache-pvc-inspector -n openshift-mta -i -t -- bash -il
-    ```
-    Verify the directory exists and is writable — task pods run as random UIDs, so the directory **must** be world-writable, not just owned by the creating pod's UID:
-    ```
-    oc exec deployment/cache-pvc-inspector -n openshift-mta -- \
+Other platforms (Azure, GCP, vSphere, bare metal): same flow, but the `storage/storage-cluster.yaml` StorageCluster must reference the platform's block storage class for the OSD data PVCs (`spec.storageDeviceSets[].dataPVCTemplate.spec.storageClassName` — e.g. `managed-csi` or `premium_LRS` on Azure, `pd-balanced` on GCP); worker labeling is identical. See the [ODF documentation](https://docs.redhat.com/en/documentation/openshift_data_foundation) for sizing, then export `STORAGECLASS_RWX=ocs-storagecluster-cephfs` as above.
+
+##### Configure the Tackle Instance
+
+create a Tackle instance with the storage sizing, Developer Lightspeed enabled, and the LLM configured:
+
+```bash
+cat mta-ui/tackle.yaml | envsubst | oc apply -f -
+```
+Wait for the installation to finish:
+```bash
+oc wait --for=create deployment mta-ui -n openshift-mta --timeout=600s
+oc wait --for=create deployment mta-hub -n openshift-mta --timeout=600s
+oc wait --for=create deployment kai-db -n openshift-mta --timeout=600s
+oc wait --for=create deployment kai-api -n openshift-mta --timeout=600s
+oc wait --for=create deployment agentic-controller -n openshift-mta --timeout=600s
+oc wait --for=jsonpath='{.status.readyReplicas}'=1 deployment mta-ui -n openshift-mta --timeout=600s
+oc wait --for=create deployment mta-hub -n openshift-mta --timeout=600s
+oc wait --for=jsonpath='{.status.readyReplicas}'=1 deployment mta-hub -n openshift-mta --timeout=600s
+oc wait --for=jsonpath='{.status.readyReplicas}'=1 deployment kai-db -n openshift-mta --timeout=600s
+oc wait --for=jsonpath='{.status.readyReplicas}'=1 deployment kai-api -n openshift-mta --timeout=600s
+oc wait --for=jsonpath='{.status.readyReplicas}'=1 deployment agentic-controller -n openshift-mta --timeout=600s
+```
+All commands should return `condition met`.
+##### Workaround for a stuck cache PVC
+
+sometimes the cache PVC has an issue (`/cache/m2 can't be created`). Fix it like this:
+
+```bash
+oc apply -f mta-ui/cache-pvc-inspector.yaml
+oc wait --for=create deployment cache-pvc-inspector -n openshift-mta --timeout=600s
+oc wait --for=jsonpath='{.status.readyReplicas}'=1 deployment cache-pvc-inspector -n openshift-mta --timeout=600s
+echo "mkdir /cache/m2 && chmod 777 /cache/m2" | oc exec deployment/cache-pvc-inspector -n openshift-mta -i -t -- bash -il
+```
+Verify the directory exists and is writable — task pods run as random UIDs, so the directory **must** be world-writable, not just owned by the creating pod's UID:
+```
+oc exec deployment/cache-pvc-inspector -n openshift-mta -- \
   bash -c "if [ -d /cache/m2 ] && [ -w /cache/m2 ]; then echo '/cache/m2 exists and is writable'; else echo '/cache/m2 missing or not writable'; fi"
-    ```
-    Expected output: `/cache/m2 exists`.
+```
+Expected output: `/cache/m2 exists`.
 
-    Then delete the PVC inspector deployment:
-    ```bash
-    oc delete -f mta-ui/cache-pvc-inspector.yaml
-    ```
-- **Automate the cleanup of dead task pods**: the hub's task scheduler enforces a pod limit (10 here) counted over **existing** task pods, including `Error` ones — dead pods block the queue: the scheduler logs `quota=10/10 requested=N scheduled=0` and no task, even explicitly triggered analyses, is ever scheduled again (the hub reaps pods of succeeded tasks but never failed ones). The hourly `CronJob` in `mta-ui/task-pod-cleanup-cronjob.yaml` deletes terminal-state task pods, so the queue can never wedge permanently:
+Then delete the PVC inspector deployment:
+```bash
+oc delete -f mta-ui/cache-pvc-inspector.yaml
+```
+##### Automate cleanup of dead task pods
 
-    ```bash
-    oc apply -f mta-ui/task-pod-cleanup-cronjob.yaml
-    ```
+the hub's task scheduler enforces a pod limit (10 here) counted over **existing** task pods, including `Error` ones — dead pods block the queue: the scheduler logs `quota=10/10 requested=N scheduled=0` and no task, even explicitly triggered analyses, is ever scheduled again (the hub reaps pods of succeeded tasks but never failed ones). The hourly `CronJob` in `mta-ui/task-pod-cleanup-cronjob.yaml` deletes terminal-state task pods, so the queue can never wedge permanently:
 
-    It creates a `ServiceAccount`, a `Role` (pods get/list/delete in `openshift-mta`), a `RoleBinding`, and the `CronJob` — the job container uses the cluster's own CLI imagestream (`openshift/cli:latest` from the internal registry, matching the running OpenShift version, so no external pulls). Trigger a run manually to verify:
+```bash
+oc apply -f mta-ui/task-pod-cleanup-cronjob.yaml
+```
 
-    ```bash
-    oc create job --from=cronjob/task-pod-cleanup task-pod-cleanup-manual -n openshift-mta
-    oc logs job/task-pod-cleanup-manual -n openshift-mta
-    oc delete job task-pod-cleanup-manual -n openshift-mta
-    ```
+It creates a `ServiceAccount`, a `Role` (pods get/list/delete in `openshift-mta`), a `RoleBinding`, and the `CronJob` — the job container uses the cluster's own CLI imagestream (`openshift/cli:latest` from the internal registry, matching the running OpenShift version, so no external pulls). Trigger a run manually to verify:
 
-    Full failure mode and manual fix: [the troubleshooting section](troubleshooting/README.md#mta-analyses-and-discovery-tasks-fail-or-never-start).
+```bash
+oc create job --from=cronjob/task-pod-cleanup task-pod-cleanup-manual -n openshift-mta
+oc logs job/task-pod-cleanup-manual -n openshift-mta
+oc delete job task-pod-cleanup-manual -n openshift-mta
+```
+
+Full failure mode and manual fix: [the troubleshooting section](troubleshooting/README.md#mta-analyses-and-discovery-tasks-fail-or-never-start).
 <a id="create-a-konveyor-gateway"></a>
-- **Create a Konveyor Gateway**: abstracts access to the LLM.
-    ```bash
-    cat mta-ui/llm-gateway.yaml | envsubst | oc apply -f -
-    ```
-    Verify the gateway instantiation:
-    ```bash
-    oc wait --for create gateways.konveyor.io openai -n openshift-mta --timeout=600s
-    oc wait --for=jsonpath='{.status.connectionVerified}'="true" gateways.konveyor.io openai -n openshift-mta --timeout=600s
-    ```
-    Both commands should return `condition met`.
+##### Create a Konveyor Gateway
 
-    To change the model, edit the current `Konveyor Gateway` or create another one. When you later run an `Agentic Migration`, you're prompted for the gateway and the target branch, prefilled with the UI default `konveyor/migration-<timestamp>` (hardcoded as `TARGET_BRANCH_PREFIX` in the MTA UI) but editable per run — any valid git refname except the application's source branch is accepted (the harness refuses to push onto it). Results, including committed handoff files, go to this branch.
-- **Trusting a private root CA on the LLM endpoint (optional)**: only needed if the endpoint presents a certificate from a private/corporate CA. The `maas.apps...` endpoint this PoC uses serves a public Let's Encrypt chain (leaf → `YR1` → `ISRG Root YR`, cross-signed by `ISRG Root X1`, in every standard trust store), so none of this is required for it — but the procedure was validated end-to-end against that endpoint and is ready if it ever moves behind a private CA. To see the chain the endpoint serves (the last certificate is the root to install):
+abstracts access to the LLM.
+```bash
+cat mta-ui/llm-gateway.yaml | envsubst | oc apply -f -
+```
+Verify the gateway instantiation:
+```bash
+oc wait --for create gateways.konveyor.io openai -n openshift-mta --timeout=600s
+oc wait --for=jsonpath='{.status.connectionVerified}'="true" gateways.konveyor.io openai -n openshift-mta --timeout=600s
+```
+Both commands should return `condition met`.
 
-    ```bash
-    echo | openssl s_client -connect ${OPENAI_HOST}:443 -servername ${OPENAI_HOST} -showcerts 2>/dev/null \
-      | awk '/BEGIN CERT/,/END CERT/{print}' > /tmp/llm-chain.pem
-    ```
+To change the model, edit the current `Konveyor Gateway` or create another one. When you later run an `Agentic Migration`, you're prompted for the gateway and the target branch, prefilled with the UI default `konveyor/migration-<timestamp>` (hardcoded as `TARGET_BRANCH_PREFIX` in the MTA UI) but editable per run — any valid git refname except the application's source branch is accepted (the harness refuses to push onto it). Results, including committed handoff files, go to this branch.
+##### Trusting a private root CA on the LLM endpoint (optional)
 
-    The `Gateway` CRD has no CA bundle field (`spec` is only `provider`, `endpoint`, `credentialRef`, `model`), and the Gateway doesn't need one: its probe runs `curl -sk` (verification disabled), so it reports `Ready` with `connectionVerified=true` regardless of the chain. The client that enforces TLS is the agent runtime (goose) inside the Agent Sandbox pod — the CA must reach that container. Two mechanisms, in order of preference:
+only needed if the endpoint presents a certificate from a private/corporate CA. The `maas.apps...` endpoint this PoC uses serves a public Let's Encrypt chain (leaf → `YR1` → `ISRG Root YR`, cross-signed by `ISRG Root X1`, in every standard trust store), so none of this is required for it — but the procedure was validated end-to-end against that endpoint and is ready if it ever moves behind a private CA. To see the chain the endpoint serves (the last certificate is the root to install):
 
-    - **Bake the CA into the agent image (recommended — also covers UI-launched runs).** Derive from the agent base image and extract the trust store at *build* time — the sandbox runs with a random UID under the restricted SCC and cannot run `update-ca-trust` at pod start:
+```bash
+echo | openssl s_client -connect ${OPENAI_HOST}:443 -servername ${OPENAI_HOST} -showcerts 2>/dev/null \
+  | awk '/BEGIN CERT/,/END CERT/{print}' > /tmp/llm-chain.pem
+```
 
-      ```dockerfile
-      FROM registry.redhat.io/mta/mta-agent-java-rhel9:8.3.1
-      COPY corp-root-ca.crt /etc/pki/ca-trust/source/anchors/
-      RUN update-ca-trust extract
-      ```
+The `Gateway` CRD has no CA bundle field (`spec` is only `provider`, `endpoint`, `credentialRef`, `model`), and the Gateway doesn't need one: its probe runs `curl -sk` (verification disabled), so it reports `Ready` with `connectionVerified=true` regardless of the chain. The client that enforces TLS is the agent runtime (goose) inside the Agent Sandbox pod — the CA must reach that container. Two mechanisms, in order of preference:
 
-      Build with the same `oc new-build --binary` pattern as the custom agent images (see the workflow sections below) and point the workflow's `Agent` manifests' `spec.image` at it. Each workflow owns its agent images, so this is per-workflow with no run-time changes — verified live: an image built this way reaches the endpoint with no environment variables set (`ssl_verify=0`).
-    - **Mount the CA per run.** `AgentRun` and `AgentWorkflowRun` support `spec.env`, `spec.envFrom` and `spec.fileMounts`, forwarded to every stage run the workflow run creates (the `AgentWorkflow`/`Agent` definition CRs deliberately carry none — execution-time concerns). Create a ConfigMap with the root CA and reference it on the run:
+- **Bake the CA into the agent image (recommended — also covers UI-launched runs).** Derive from the agent base image and extract the trust store at *build* time — the sandbox runs with a random UID under the restricted SCC and cannot run `update-ca-trust` at pod start:
 
-      ```bash
-      oc create configmap corp-root-ca --from-file=corp-root-ca.crt=/path/to/root-ca.pem -n openshift-mta
-      ```
+  ```dockerfile
+  FROM registry.redhat.io/mta/mta-agent-java-rhel9:8.3.1
+  COPY corp-root-ca.crt /etc/pki/ca-trust/source/anchors/
+  RUN update-ca-trust extract
+  ```
 
-      ```yaml
-      # on the AgentWorkflowRun / AgentRun spec, alongside gateway/params/agentRef
-      env:
-        - name: SSL_CERT_FILE
-          value: /etc/certs/corp-root-ca.crt
-      fileMounts:
-        - configMapName: corp-root-ca
-          mountPath: /etc/certs/corp-root-ca.crt
-          subPath: corp-root-ca.crt
-      ```
+  Build with the same `oc new-build --binary` pattern as the custom agent images (see the workflow sections below) and point the workflow's `Agent` manifests' `spec.image` at it. Each workflow owns its agent images, so this is per-workflow with no run-time changes — verified live: an image built this way reaches the endpoint with no environment variables set (`ssl_verify=0`).
+- **Mount the CA per run.** `AgentRun` and `AgentWorkflowRun` support `spec.env`, `spec.envFrom` and `spec.fileMounts`, forwarded to every stage run the workflow run creates (the `AgentWorkflow`/`Agent` definition CRs deliberately carry none — execution-time concerns). Create a ConfigMap with the root CA and reference it on the run:
 
-      The mount path must not collide with the controller-managed mounts (`/opt/skills`, `/opt/skills-src`, `/run/konveyor`, `/workspace`, `/tmp`) — a collision fails the run terminally with `InvalidFileMounts`; a missing ConfigMap retries until it appears. Applies only to YAML/CLI-launched runs — the MTA UI's run dialog creates the run resource itself.
+  ```bash
+  oc create configmap corp-root-ca --from-file=corp-root-ca.crt=/path/to/root-ca.pem -n openshift-mta
+  ```
 
-    Which variable switches a client to the mounted file is client-specific — a classic verification trap: `curl` ignores `SSL_CERT_FILE` (its variable is `CURL_CA_BUNDLE`; missing file → exit 77, verification failure → exit 60), while `SSL_CERT_FILE` is honored by OpenSSL-default-path clients, Go, and goose's TLS stack. Go's `crypto/x509` also merges `SSL_CERT_FILE` with the default certificate directories (upstream golang/go#79496), so a Go diagnostic that "passes despite a bogus `SSL_CERT_FILE`" proves nothing — set `SSL_CERT_DIR=/nonexistent` alongside to actually restrict the pool (verified: unrelated CA → `x509: certificate signed by unknown authority`; endpoint's root → succeeds).
-- **Accessing the MTA UI**:
+  ```yaml
+  # on the AgentWorkflowRun / AgentRun spec, alongside gateway/params/agentRef
+  env:
+    - name: SSL_CERT_FILE
+      value: /etc/certs/corp-root-ca.crt
+  fileMounts:
+    - configMapName: corp-root-ca
+      mountPath: /etc/certs/corp-root-ca.crt
+      subPath: corp-root-ca.crt
+  ```
 
-    ```bash
-    echo "MTA UI: https://$(oc get route mta -n openshift-mta -o jsonpath='{.spec.host}')"
-    ``` 
-    You should see a screen like this:
+  The mount path must not collide with the controller-managed mounts (`/opt/skills`, `/opt/skills-src`, `/run/konveyor`, `/workspace`, `/tmp`) — a collision fails the run terminally with `InvalidFileMounts`; a missing ConfigMap retries until it appears. Applies only to YAML/CLI-launched runs — the MTA UI's run dialog creates the run resource itself.
 
-    ![image](images/mta_login.png)    
+Which variable switches a client to the mounted file is client-specific — a classic verification trap: `curl` ignores `SSL_CERT_FILE` (its variable is `CURL_CA_BUNDLE`; missing file → exit 77, verification failure → exit 60), while `SSL_CERT_FILE` is honored by OpenSSL-default-path clients, Go, and goose's TLS stack. Go's `crypto/x509` also merges `SSL_CERT_FILE` with the default certificate directories (upstream golang/go#79496), so a Go diagnostic that "passes despite a bogus `SSL_CERT_FILE`" proves nothing — set `SSL_CERT_DIR=/nonexistent` alongside to actually restrict the pool (verified: unrelated CA → `x509: certificate signed by unknown authority`; endpoint's root → succeeds).
+##### Accessing the MTA UI
 
-    Login with `admin/admin`.
-- **Add an MTA entry to the OpenShift console**: a `ConsoleLink` puts an MTA entry into the web console's application menu, so users don't need the route URL. The manifest is cluster-independent — the `href` carries the same `${OPENSHIFT_APPS_DOMAIN}` placeholder as the other manifests (the domain already includes `apps.`, so the URL is `https://mta-openshift-mta.${OPENSHIFT_APPS_DOMAIN}`); apply with the usual envsubst pattern (plain `oc apply -f -` would store the placeholder literally):
 
-    ```bash
-    cat console/console-link.yaml | envsubst | oc apply -f -
-    ```
+```bash
+echo "MTA UI: https://$(oc get route mta -n openshift-mta -o jsonpath='{.spec.host}')"
+``` 
+You should see a screen like this:
 
-    The entry appears under **Red Hat Applications** in the application launcher, effective immediately (a console reload may be needed). The manifest embeds the MTA logo as a data URI in `spec.applicationMenu.imageURL` — the MTA UI's own favicon, fetched from the live deployment, so the launcher needs no external URL. Verify the icon round-trips with
+![image](images/mta_login.png)    
 
-    ```bash
-    oc get consolelink mta-ui -o jsonpath='{.spec.applicationMenu.imageURL}' | \
-      sed 's|^data:image/x-icon;base64,||' | base64 -d | file -
-    ```
+Login with `admin/admin`.
+##### Add an MTA entry to the OpenShift console
 
-    Two field-name pitfalls, both verified live: the CRD field is `imageURL` (capital `URL`) — an `imageUrl` typo is **silently pruned** by CRD validation while `oc apply` reports success, like the CheCluster v2 pruning ([Devfile registry](#devfile-registry)); and the `.ico` data URI mediatype is `image/x-icon` (a `png`/`svg` label renders nothing). The `ConsoleLink` is cluster-scoped and shown to all console users; `oc delete consolelink mta-ui` removes the entry. Verify with
+a `ConsoleLink` puts an MTA entry into the web console's application menu, so users don't need the route URL. The manifest is cluster-independent — the `href` carries the same `${OPENSHIFT_APPS_DOMAIN}` placeholder as the other manifests (the domain already includes `apps.`, so the URL is `https://mta-openshift-mta.${OPENSHIFT_APPS_DOMAIN}`); apply with the usual envsubst pattern (plain `oc apply -f -` would store the placeholder literally):
 
-    ```bash
-    oc get consolelink mta-ui -o jsonpath='{.spec.href}'
-    ```
-- **Add a Gitea entry to the OpenShift console**: a second `ConsoleLink` adds Gitea to the same menu section, pointing at the Gitea web UI route (`https://git.${OPENSHIFT_APPS_DOMAIN}`):
+```bash
+cat console/console-link.yaml | envsubst | oc apply -f -
+```
 
-    ```bash
-    cat console/gitea-console-link.yaml | envsubst | oc apply -f -
-    ```
+The entry appears under **Red Hat Applications** in the application launcher, effective immediately (a console reload may be needed). The manifest embeds the MTA logo as a data URI in `spec.applicationMenu.imageURL` — the MTA UI's own favicon, fetched from the live deployment, so the launcher needs no external URL. Verify the icon round-trips with
 
-    Same pattern — the icon is Gitea's own favicon (`assets/img/favicon.png` served by the Gitea route) inlined as a PNG data URI. `envsubst` pitfall: it only substitutes **exported** shell variables — sourcing an env file that sets `OPENSHIFT_APPS_DOMAIN` without `export` leaves the placeholder empty (href becomes `https://git.`), so `export` first or pipe through `envsubst '$OPENSHIFT_APPS_DOMAIN'` with it exported. Verify with
+```bash
+oc get consolelink mta-ui -o jsonpath='{.spec.applicationMenu.imageURL}' | \
+  sed 's|^data:image/x-icon;base64,||' | base64 -d | file -
+```
 
-    ```bash
-    oc get consolelink gitea -o jsonpath='{.spec.href}'
-    ```
+Two field-name pitfalls, both verified live: the CRD field is `imageURL` (capital `URL`) — an `imageUrl` typo is **silently pruned** by CRD validation while `oc apply` reports success, like the CheCluster v2 pruning ([Devfile registry](#devfile-registry)); and the `.ico` data URI mediatype is `image/x-icon` (a `png`/`svg` label renders nothing). The `ConsoleLink` is cluster-scoped and shown to all console users; `oc delete consolelink mta-ui` removes the entry. Verify with
 
-#### Proxy settings for disconnected environments
+```bash
+oc get consolelink mta-ui -o jsonpath='{.spec.href}'
+```
+##### Add a Gitea entry to the OpenShift console
+
+a second `ConsoleLink` adds Gitea to the same menu section, pointing at the Gitea web UI route (`https://git.${OPENSHIFT_APPS_DOMAIN}`):
+
+```bash
+cat console/gitea-console-link.yaml | envsubst | oc apply -f -
+```
+
+Same pattern — the icon is Gitea's own favicon (`assets/img/favicon.png` served by the Gitea route) inlined as a PNG data URI. `envsubst` pitfall: it only substitutes **exported** shell variables — sourcing an env file that sets `OPENSHIFT_APPS_DOMAIN` without `export` leaves the placeholder empty (href becomes `https://git.`), so `export` first or pipe through `envsubst '$OPENSHIFT_APPS_DOMAIN'` with it exported. Verify with
+
+```bash
+oc get consolelink gitea -o jsonpath='{.spec.href}'
+```
+
+#### Proxy settings for disconnected environments (optional)
 
 The `Tackle` and `Konveyor Gateway` CRs provide no proxy settings. The MTA Operator does propagate the standard `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` from its own pod environment to the `mta-hub` container on reconciliation. In a disconnected environment:
 
@@ -1037,7 +1093,7 @@ The template uses **HTTPS repository URLs** (`https://git.${OPENSHIFT_APPS_DOMAI
 >
 > Repository URLs must use the **HTTPS scheme**: the agentic harness clones/pushes in-process with the Go git library, whose only auth method is HTTP basic auth. An `ssh://git@git-ssh.${OPENSHIFT_APPS_DOMAIN}:443/...` URL (the SSH route from the [SSH clone test](#ssh-keys)) fails the agentic run at the clone step — the harness cannot traverse the TLS-passthrough SSH route. SSH URLs serve the workstation-side SSH flow only. Likewise, a `source`-kind SSH-key identity (e.g. `git-ssh-credentials`) linked to an application or set as default does not affect the harness; it authenticates the analyzer's clone, which over HTTPS uses the basic-auth identity instead.
 
-###### Importing dependencies for an existing portfolio
+##### Importing dependencies for an existing portfolio
 
 The bulk upload imports **applications** (record type `1`) — no dependency data:
 
@@ -1142,13 +1198,13 @@ This should return `200`. Identities live in the MTA Hub database, not as Kubern
 curl -k -s "${MTA_URL}/hub/identities" -u admin:admin | jq '[.[] | select(.kind=="source") | {name, user}]'
 ```
 
-##### Issue Tracking (Jira integration)
+##### Issue Tracking (Jira integration, optional)
 
 MTA synchronizes migration tickets with Jira Cloud through the Hub's `jira-cloud` tracker kind:
 
 - The connector talks to the Jira Cloud REST API (`rest/api/2` — `myself` for the connection test, `project`, `issue`, `search` for the ticket lifecycle).
 - Auth is Basic: the **Atlassian account email** and an **API token** (create the token at [id.atlassian.com](https://id.atlassian.com) → Security → API tokens).
-- The Hub routes egress through the Squid proxy, so the proxy allowlist must cover the Jira host — `.atlassian.net` is already in the list (see [Squid proxy deployment](#squid-proxy-deployment-disconnected-environments)).
+- The Hub routes egress through the Squid proxy, so the proxy allowlist must cover the Jira host — `.atlassian.net` is already in the list (see [Squid proxy deployment](#squid-proxy-deployment-optional-disconnected-environments)).
 
 The `JIRA_HOST`, `JIRA_EMAIL`, and `JIRA_API_TOKEN` environment variables from the [prerequisites](#prerequisites) are used throughout.
 
@@ -1461,9 +1517,11 @@ curl -k -s "${MTA_URL}/hub/applications/${APP_ID}" -u admin:admin | jq -c '{id, 
 
 Bulk assignment also works: retrieve the ids (e.g. via `GET /hub/applications` filtered by the archetype's criteria tags) and send them all in the wave's `applications` array. `DELETE /hub/migrationwaves/{id}` removes the wave and clears the assigned applications' `migrationWave` links.
 
-##### Create custom Skills and Rules
+##### Assemble the Agentic Workflow components
 
 For Agentic Migrations, MTA composes agent workloads from **Skills**:
+
+> Authoring a new skill is covered in [Create your own skills](#create-your-own-skills); authoring analysis rules in [Create your own rules](#create-your-own-rules). This section wires finished skills into the cluster: SkillCard, Agent, and AgentWorkflow.
 
 - SKILL.md files following the [Agent Skills](https://agentskills.io) format, packaged as OCI images or defined inline.
 - Referenced via `SkillCard`, `Agent`, and `AgentWorkflow` custom resources.
@@ -2161,8 +2219,8 @@ spec:
 
 Set `openVSXURL: ''` to switch back to the embedded curated registry — the editor queries exactly **one** Open VSX endpoint at a time. In the disconnected environment, `open-vsx.org` traffic goes through the Squid proxy, which already allowlists it. Caveats:
 
-- Extension installs are fetched by the **workspaces**; their proxy env must cover `open-vsx.org` — the [Squid allowlist](#squid-proxy-deployment-disconnected-environments) does.
-- The [factory devfile fetch](#squid-proxy-deployment-disconnected-environments) additionally needs `raw.githubusercontent.com`.
+- Extension installs are fetched by the **workspaces**; their proxy env must cover `open-vsx.org` — the [Squid allowlist](#squid-proxy-deployment-optional-disconnected-environments) does.
+- The [factory devfile fetch](#squid-proxy-deployment-optional-disconnected-environments) additionally needs `raw.githubusercontent.com`.
 - For full catalog control (strictly air-gapped), deploy a standalone Open VSX registry in-cluster via `spec.components.openVSXRegistry.enable: true` and publish extensions manually from `.vsix` files.
 
 #### Devfile registry
@@ -2236,7 +2294,7 @@ This PoC configures the proxy at the CheCluster level (see `devspaces/che-cluste
 
 > Verified live: the operator renders `spec.components.cheServer.proxy` as Java system properties (`-Dhttp.proxyHost=...`) into the `che` ConfigMap consumed by the che-server pod, and che-server **syncs the proxy environment variables into the `che-user-settings` ConfigMap** of each workspace namespace, which is `envFrom`-mounted into every workspace container. Proxy entries set directly in `che-user-settings` are overwritten by the reconcile (deleting the proxy keys re-adds them within seconds, with the CheCluster `nonProxyHosts` merged into `NO_PROXY`). Changing the CheCluster `proxy` rolls the che-server, dashboard, and gateway pods automatically; running workspaces pick up the new env on their next restart.
 
-The proxy configuration below (and in the [Gitea](#gitea-installation) and [MTA](#proxy-settings-for-disconnected-environments) proxy sections) uses the standard HTTP proxy environment variables, exported with an `MTA_` prefix to avoid conflicts with your shell's own proxy settings. Export them if not already defined. If the [Squid proxy](#squid-proxy-deployment-disconnected-environments) is deployed on the cluster, point the proxy URL at the in-cluster service:
+The proxy configuration below (and in the [Gitea](#gitea-installation) and [MTA](#proxy-settings-for-disconnected-environments-optional) proxy sections) uses the standard HTTP proxy environment variables, exported with an `MTA_` prefix to avoid conflicts with your shell's own proxy settings. Export them if not already defined. If the [Squid proxy](#squid-proxy-deployment-optional-disconnected-environments) is deployed on the cluster, point the proxy URL at the in-cluster service:
 
 ```bash
 export MTA_HTTP_PROXY=http://squid.squid.svc:3128
@@ -2332,7 +2390,7 @@ The MTA plugin is the [Migration Toolkit for Applications (MTA) Visual Studio Co
     }
     ```
 
-    This repository ships that file at `.vscode/extensions.json`. The IDs must exist on the Open VSX registry the gallery is served from (see [Extension marketplace configuration](#extension-marketplace-configuration)) — the embedded curated subset is small, hence the public registry here. Gallery *queries* go to `open-vsx.org`, but extension **downloads** (`.vsix`) come from the CDN host `openvsx.eclipsecontent.org` — both must be reachable (add both to the [Squid allowlist](#squid-proxy-deployment-disconnected-environments) when disconnected), or every install fails with `Server returned 403`.
+    This repository ships that file at `.vscode/extensions.json`. The IDs must exist on the Open VSX registry the gallery is served from (see [Extension marketplace configuration](#extension-marketplace-configuration)) — the embedded curated subset is small, hence the public registry here. Gallery *queries* go to `open-vsx.org`, but extension **downloads** (`.vsix`) come from the CDN host `openvsx.eclipsecontent.org` — both must be reachable (add both to the [Squid allowlist](#squid-proxy-deployment-optional-disconnected-environments) when disconnected), or every install fails with `Server returned 403`.
 
 #### Create the LLM credentials Secret
 
@@ -2424,116 +2482,118 @@ cat devspaces/hub-connection-secret.yaml | sed "s/<workspace-namespace>/${WORKSP
     >
     > With this variant the cloned project is the Gitea repository, which lacks this repository's `.vscode/extensions.json` — only the startup recommendation prompt is lost; the extensions install via `install-extensions`, independent of the cloned repository. Private Gitea repositories still require Git credentials in the workspace for the project clone to succeed — SSH keys (see [Git Authentication with SSH Keys](#git-authentication-with-ssh-keys)) or an HTTPS credentials secret mounted the same way.
 
-    #### Git Authentication with SSH Keys
+- **Run an analysis**: Clone the application source (e.g. from the Gitea instance) into the workspace, create a run configuration, and run an analysis. The results, issue descriptions, and suggested code changes appear inline in the editor, and AI-assisted remediation (Developer Lightspeed) can resolve the issues directly. Select the analysis profile created in [Define an Analysis Profile](#define-an-analysis-profile) in the run configuration — without a profile the analysis runs with no rule selection and does not surface the EAP 8 findings, which the agentic workflow's plan stage builds the migration plan from.
 
-    SSH keys are not carried in the devfile — they are provisioned as secrets in the workspace namespace, and the DevWorkspace Operator injects them into the project-clone container and all workspace containers. Two secrets are required:
+### Git Authentication with SSH Keys
 
-    - **`git-ssh-key`** — the private key (`dwo_ssh_key`), the public key (`dwo_ssh_key.pub`), and an explicit `ssh_config` key carrying the `IdentityFile`. The Dev Spaces server's `SshConfigConfigurator` is *supposed* to auto-generate that key (`Host *` + `IdentityFile /etc/ssh/dwo_ssh_key` + `StrictHostKeyChecking = no` + `Include /etc/ssh/ssh_config.d/*.conf`), but it does not run in this setup: the Secret keeps only the keys it was created with, `/etc/ssh/ssh_config` stays the stock file, and SSH then offers only the default identity keys (`~/.ssh/id_*`), failing every clone with `Permission denied (publickey)` even though the tunnel, `ProxyCommand`, and Gitea key registration are all fine. Ship the `ssh_config` in the Secret explicitly (the same content the configurator would generate — but do **not** put a `ProxyCommand` here, the `git-ssh-proxy` Secret owns that; see below). Create the key Secret in the workspace namespace (e.g. `admin-devspaces`):
 
-    ```bash
-    oc create secret -n admin-devspaces generic git-ssh-key \
-      --from-file=dwo_ssh_key="$SSH_KEY" \
-      --from-file=dwo_ssh_key.pub="$SSH_PUB_KEY"
+SSH keys are not carried in the devfile — they are provisioned as secrets in the workspace namespace, and the DevWorkspace Operator injects them into the project-clone container and all workspace containers. Two secrets are required:
 
-    oc patch secret -n admin-devspaces git-ssh-key --type merge -p '{
-      "stringData": {
-        "ssh_config": "Host *\n  IdentityFile /etc/ssh/dwo_ssh_key\n  StrictHostKeyChecking no\n  Include /etc/ssh/ssh_config.d/*.conf\n"
-      },
-      "metadata": {
-        "labels": {
-          "controller.devfile.io/mount-to-devworkspace": "true",
-          "controller.devfile.io/watch-secret": "true"
-        },
-        "annotations": {
-          "controller.devfile.io/mount-path": "/etc/ssh/",
-          "controller.devfile.io/mount-as": "subpath"
-        }
-      }
-    }'
-    ```
+- **`git-ssh-key`** — the private key (`dwo_ssh_key`), the public key (`dwo_ssh_key.pub`), and an explicit `ssh_config` key carrying the `IdentityFile`. The Dev Spaces server's `SshConfigConfigurator` is *supposed* to auto-generate that key (`Host *` + `IdentityFile /etc/ssh/dwo_ssh_key` + `StrictHostKeyChecking = no` + `Include /etc/ssh/ssh_config.d/*.conf`), but it does not run in this setup: the Secret keeps only the keys it was created with, `/etc/ssh/ssh_config` stays the stock file, and SSH then offers only the default identity keys (`~/.ssh/id_*`), failing every clone with `Permission denied (publickey)` even though the tunnel, `ProxyCommand`, and Gitea key registration are all fine. Ship the `ssh_config` in the Secret explicitly (the same content the configurator would generate — but do **not** put a `ProxyCommand` here, the `git-ssh-proxy` Secret owns that; see below). Create the key Secret in the workspace namespace (e.g. `admin-devspaces`):
 
-    The `watch-secret` label propagates the change into running workspaces (which restart to pick up the new mount). Verify inside the workspace: `ssh -G git-ssh.${OPENSHIFT_APPS_DOMAIN} | grep identityfile` should show `identityfile /etc/ssh/dwo_ssh_key` alongside the defaults. A workspace started before the Secret existed or was patched fails its clone once with the public-key error; restarting the workspace (or re-running `clone-git` from a terminal) completes it.
+```bash
+oc create secret -n admin-devspaces generic git-ssh-key \
+  --from-file=dwo_ssh_key="$SSH_KEY" \
+  --from-file=dwo_ssh_key.pub="$SSH_PUB_KEY"
 
-    - **`git-ssh-proxy`** — the `ProxyCommand`, mounted as a config file into `/etc/ssh/ssh_config.d/` and included by the `ssh_config` above. A ready-to-use template ships at `devspaces/git-ssh-proxy-secret.yaml`:
-
-    ```bash
-    cat devspaces/git-ssh-proxy-secret.yaml | sed "s/<workspace-namespace>/${WORKSPACE_NAMESPACE}/" | envsubst | oc apply -f -
-    ```
-
-    The file is scoped with `Host git-ssh.*`, so other SSH hosts are unaffected. `controller.devfile.io/mount-to-devworkspace` mounts both secrets into every DevWorkspace in the namespace — creating `/etc/ssh/dwo_ssh_key`, `/etc/ssh/dwo_ssh_key.pub`, and `/etc/ssh/ssh_config.d/99-git-proxy.conf` (the image's own `50-redhat.conf` remains alongside) — and the generated `/etc/ssh/ssh_config` includes the directory, so git and the project-clone container use the key and the `ProxyCommand` automatically. `watch-secret` updates the mounts when the secrets change; new automount secrets apply on workspace restart.
-
-    The SSH URL is consumed by `clone-git` (via `PROJECT_REPO_URL` from the clone-config Secret, see [Create the clone-config Secret](#create-the-clone-config-secret)) or by the `remotes=` factory URL parameter — this devfile has no `projects` element (see the note on why below). `remotes=` accepts SSH URLs directly: the dashboard builds the project from the SSH URL (the `FactoryLocationAdapter` handles `ssh://` locations), and the project-clone container clones it with the mounted secrets — the mounts apply to the clone container too.
-
-    The Gitea SSH route is a **TLS-passthrough route backed by a TLS tunnel**: a `gitea-ssh-tunnel` deployment (socat with an `OPENSSL-LISTEN:8443` listener) forwards TLS-wrapped traffic to Gitea's plain SSH port 2222. TLS is required because passthrough routes route by TLS SNI, which plain SSH does not send — a plain `ssh -p 443 git@git-ssh...` is closed immediately (the tunnel expects a TLS handshake). `99-git-proxy.conf` carries a `ProxyCommand` (`openssl s_client -quiet`, in the UDI image) that unwraps TLS before speaking SSH. Since the scp-like `git@host:path` syntax cannot carry a port, the `ssh://` form with port 443 is required — otherwise `%p` expands to port 22 and the TLS client fails with `wrong version number`:
-
-    ```bash
-    export PROJECT_REPO_URL="ssh://git@git-ssh.${OPENSHIFT_APPS_DOMAIN}:443/jboss/jboss-quickstarts.git"
-    ```
-
-    The username is pinned to `git` (Gitea's SSH username convention); add the public key to the Gitea user's `SSH / GPG Keys` settings.
-
-    Notes:
-
-    - `StrictHostKeyChecking = no` (from the che-server-generated `ssh_config`) disables host-key verification — acceptable for a PoC. For production, add Gitea's host key to a `known_hosts` file in the secret referenced via `UserKnownHostsFile /etc/ssh/known_hosts`.
-    - Passphrase-protected keys are an experimental DevWorkspace Operator feature: `enableExperimentalFeatures: true` in the DevWorkspaceOperatorConfig, a `passphrase` key in the secret, and an operator-added `postStart` event that starts the ssh-agent and exports `SSH_AGENT_PID`/`SSH_AUTH_SOCK`.
-    - The Hub's `git-ssh-credentials` identity (id 3) is the *Hub-side* SSH credential for agentic clones via the Solution Server — separate from the mounted workspace secret above; both are needed when the MTA agentic workflow clones the repository.
-    - The Gitea SSH route is on the cluster's apps domain, covered by Dev Spaces' `nonProxyHosts` — no Squid allowlist change is needed for SSH git access.
-    - **Why a `postStart` command instead of a `projects` element**: the DevWorkspace Operator resolves `projects` git URLs as literal arguments in a dedicated init container that runs before any workspace container exists — no env expansion applies (Kubernetes `$(VAR)` expansion only applies to `env:` values in the same `env:` list, never to command arguments, and no user secret is env-mounted into the clone container). `clone-git` runs inside the workspace container, where the secret-injected `PROJECT_REPO_URL` is expanded by the shell. This also keeps the devfile cluster-independent: the clone URL is set per cluster by re-creating the clone-config Secret, not by editing the committed devfile. And don't replace `project-clone: disable` with a `postStart` `rm -rf` of the injected use-case repository: the init container re-clones it on every restart before postStart commands run (DWO runs `project-clone` first for exactly this reason, see devworkspace-operator#1454).
-
-    At workspace start, `install-extensions` installs the MTA extension from Open VSX — verify via `Extensions: Show Installed Extensions` (or `/checode/checode-linux-libc/ubi9/bin/che-code --list-extensions` in the terminal); the **Migration Toolkit for Applications (MTA)** extension should be listed. The `sst-dev.opencode` extension additionally provides the [OpenCode](https://opencode.ai/v2/docs/) AI coding agent in the IDE. The devfile:
-    - relies on the `OPENAI_*` variables provided by the mounted [llm-credentials Secret](#create-the-llm-credentials-secret),
-    - installs the extensions and the OpenCode CLI via `postStart` commands,
-    - configures `~/.config/opencode/opencode.json` with a custom OpenAI-compatible provider pointing at the same LLM endpoint used by the [MTA UI](#automated-migration-using-the-mta-ui) part,
-    - creates the MTA plugin settings via a third `postStart` command (see below) — the repository's `.vscode/extensions.json` additionally makes the editor recommend both extensions at startup — and
-    - clones the application source from the Gitea instance via `clone-git`, using `PROJECT_REPO_URL` from the mounted clone-config Secret.
-
-    The MTA extension settings (see below) are IDE-specific configuration, written by `configure-mta-settings` into the che-code **machine-level settings file** (`/checode/remote/data/Machine/settings.json`). The file applies to all workspace folders, persists on the per-user PVC, and is merged with the existing settings (e.g. `git.defaultCloneDirectory`, set by Dev Spaces) using `jq` (in the UDI image), so it is idempotent. Being editor-level rather than repo-level, this also works when the workspace clones a different repository than the one hosting the devfile (see the [`remotes=` factory URL variant](#mta-plugin-setup)):
-
-    The settings pre-configure the plugin's AI-assisted remediation (the setting IDs were verified against `redhat.mta-core` 8.3.1):
-
-    ```json
-    {
-      "mta-core.genai.enabled": true,
-      "mta-core.genai.agentMode": true
+oc patch secret -n admin-devspaces git-ssh-key --type merge -p '{
+  "stringData": {
+    "ssh_config": "Host *\n  IdentityFile /etc/ssh/dwo_ssh_key\n  StrictHostKeyChecking no\n  Include /etc/ssh/ssh_config.d/*.conf\n"
+  },
+  "metadata": {
+    "labels": {
+      "controller.devfile.io/mount-to-devworkspace": "true",
+      "controller.devfile.io/watch-secret": "true"
+    },
+    "annotations": {
+      "controller.devfile.io/mount-path": "/etc/ssh/",
+      "controller.devfile.io/mount-as": "subpath"
     }
-    ```
+  }
+}'
+```
 
-    - `mta-core.genai.enabled` enables the GenAI functionality (Solution Server) of the extension.
-    - `mta-core.genai.agentMode` enables the experimental agentic flow for solutions, which requires automatic analysis (`mta-core.analysis.analyzeOnSave`, enabled by default).
+The `watch-secret` label propagates the change into running workspaces (which restart to pick up the new mount). Verify inside the workspace: `ssh -G git-ssh.${OPENSHIFT_APPS_DOMAIN} | grep identityfile` should show `identityfile /etc/ssh/dwo_ssh_key` alongside the defaults. A workspace started before the Secret existed or was patched fails its clone once with the public-key error; restarting the workspace (or re-running `clone-git` from a terminal) completes it.
 
-    No LLM credentials are configured in the extension: with the [Hub connection](#configure-the-connection-to-the-mta-hub) enabled, GenAI requests go through the Solution Server's LLM proxy and the API key stays on the cluster (see the note under the Hub connection step). The direct-LLM configuration (`provider-settings.yaml`, only consulted for analyses run with local profiles without a Hub connection) is deliberately not written — the devfile instead removes any stale copy from earlier revisions, so a local-profile analysis cannot silently fall back to a leftover direct-LLM configuration.
+- **`git-ssh-proxy`** — the `ProxyCommand`, mounted as a config file into `/etc/ssh/ssh_config.d/` and included by the `ssh_config` above. A ready-to-use template ships at `devspaces/git-ssh-proxy-secret.yaml`:
 
-    > ⚠️ NOTE
-    >
-    > The command runs as a `postStart` event, after the workspace (and editor) has started. VS Code applies settings-file changes live, so the MTA extension reads them in the first session; if a setting is not picked up, reload the editor window. Alternatively, define the same settings via a `.vscode/settings.json` file in the cloned repository (workspace-level settings, applied on clone).
+```bash
+cat devspaces/git-ssh-proxy-secret.yaml | sed "s/<workspace-namespace>/${WORKSPACE_NAMESPACE}/" | envsubst | oc apply -f -
+```
 
-    > ℹ️ NOTE
-    >
-    > **OpenCode CLI on the PATH**: no devfile `env` configuration needed. The installer (`install-opencode` command) installs the binary to `~/.opencode/bin` and appends `export PATH=$HOME/.opencode/bin:$PATH` to the shell config file it detects via `$SHELL` (typically `~/.bashrc`, idempotent via an exact-line guard; on the per-user PVC, so it persists across restarts). After the first start, verify the `# opencode` line is present in `~/.bashrc` — if the exec context's `$SHELL` is not `bash`, the installer targets a different config file (or none if unwritable); add the export line to `~/.bashrc` manually or extend `install-opencode`. Adding PATH via the devfile is not possible cleanly: Kubernetes `$(VAR_NAME)` expansion in container `env` values only resolves variables defined earlier in the same `env:` list — never image-provided variables like `PATH` — so `value: "...:$(PATH)"` would replace the image's PATH with a literal, unexpanded string and break the tools on it.
+The file is scoped with `Host git-ssh.*`, so other SSH hosts are unaffected. `controller.devfile.io/mount-to-devworkspace` mounts both secrets into every DevWorkspace in the namespace — creating `/etc/ssh/dwo_ssh_key`, `/etc/ssh/dwo_ssh_key.pub`, and `/etc/ssh/ssh_config.d/99-git-proxy.conf` (the image's own `50-redhat.conf` remains alongside) — and the generated `/etc/ssh/ssh_config` includes the directory, so git and the project-clone container use the key and the `ProxyCommand` automatically. `watch-secret` updates the mounts when the secrets change; new automount secrets apply on workspace restart.
 
-    > ⚠️ NOTE
-    >
-    > The `sst-dev.opencode` extension is not wired into the MTA plugin via settings — the Red Hat build does not provide an ACP agent backend setting. It is a separate AI coding assistant in the IDE, using the LLM configured via the `opencode.json` above. The setting IDs can also be reviewed and changed via `Extensions` > `Migration Toolkit for Applications - Core` > `Settings`.
+The SSH URL is consumed by `clone-git` (via `PROJECT_REPO_URL` from the clone-config Secret, see [Create the clone-config Secret](#create-the-clone-config-secret)) or by the `remotes=` factory URL parameter — this devfile has no `projects` element (see the note on why below). `remotes=` accepts SSH URLs directly: the dashboard builds the project from the SSH URL (the `FactoryLocationAdapter` handles `ssh://` locations), and the project-clone container clones it with the mounted secrets — the mounts apply to the clone container too.
 
-    > ⚠️ NOTE
-    >
-    > In a disconnected environment, Dev Spaces cannot reach the public Open VSX registry. Either route the workspace traffic through a proxy (see [Proxy configuration](#proxy-configuration)) or mirror the extension into your own Open VSX registry and point the `CheCluster` at it via `spec.components.pluginRegistry.openVSXURL`.
+The Gitea SSH route is a **TLS-passthrough route backed by a TLS tunnel**: a `gitea-ssh-tunnel` deployment (socat with an `OPENSSL-LISTEN:8443` listener) forwards TLS-wrapped traffic to Gitea's plain SSH port 2222. TLS is required because passthrough routes route by TLS SNI, which plain SSH does not send — a plain `ssh -p 443 git@git-ssh...` is closed immediately (the tunnel expects a TLS handshake). `99-git-proxy.conf` carries a `ProxyCommand` (`openssl s_client -quiet`, in the UDI image) that unwraps TLS before speaking SSH. Since the scp-like `git@host:path` syntax cannot carry a port, the `ssh://` form with port 443 is required — otherwise `%p` expands to port 22 and the TLS client fails with `wrong version number`:
+
+```bash
+export PROJECT_REPO_URL="ssh://git@git-ssh.${OPENSHIFT_APPS_DOMAIN}:443/jboss/jboss-quickstarts.git"
+```
+
+The username is pinned to `git` (Gitea's SSH username convention); add the public key to the Gitea user's `SSH / GPG Keys` settings.
+
+Notes:
+
+- `StrictHostKeyChecking = no` (from the che-server-generated `ssh_config`) disables host-key verification — acceptable for a PoC. For production, add Gitea's host key to a `known_hosts` file in the secret referenced via `UserKnownHostsFile /etc/ssh/known_hosts`.
+- Passphrase-protected keys are an experimental DevWorkspace Operator feature: `enableExperimentalFeatures: true` in the DevWorkspaceOperatorConfig, a `passphrase` key in the secret, and an operator-added `postStart` event that starts the ssh-agent and exports `SSH_AGENT_PID`/`SSH_AUTH_SOCK`.
+- The Hub's `git-ssh-credentials` identity (id 3) is the *Hub-side* SSH credential for agentic clones via the Solution Server — separate from the mounted workspace secret above; both are needed when the MTA agentic workflow clones the repository.
+- The Gitea SSH route is on the cluster's apps domain, covered by Dev Spaces' `nonProxyHosts` — no Squid allowlist change is needed for SSH git access.
+- **Why a `postStart` command instead of a `projects` element**: the DevWorkspace Operator resolves `projects` git URLs as literal arguments in a dedicated init container that runs before any workspace container exists — no env expansion applies (Kubernetes `$(VAR)` expansion only applies to `env:` values in the same `env:` list, never to command arguments, and no user secret is env-mounted into the clone container). `clone-git` runs inside the workspace container, where the secret-injected `PROJECT_REPO_URL` is expanded by the shell. This also keeps the devfile cluster-independent: the clone URL is set per cluster by re-creating the clone-config Secret, not by editing the committed devfile. And don't replace `project-clone: disable` with a `postStart` `rm -rf` of the injected use-case repository: the init container re-clones it on every restart before postStart commands run (DWO runs `project-clone` first for exactly this reason, see devworkspace-operator#1454).
+
+At workspace start, `install-extensions` installs the MTA extension from Open VSX — verify via `Extensions: Show Installed Extensions` (or `/checode/checode-linux-libc/ubi9/bin/che-code --list-extensions` in the terminal); the **Migration Toolkit for Applications (MTA)** extension should be listed. The `sst-dev.opencode` extension additionally provides the [OpenCode](https://opencode.ai/v2/docs/) AI coding agent in the IDE. The devfile:
+- relies on the `OPENAI_*` variables provided by the mounted [llm-credentials Secret](#create-the-llm-credentials-secret),
+- installs the extensions and the OpenCode CLI via `postStart` commands,
+- configures `~/.config/opencode/opencode.json` with a custom OpenAI-compatible provider pointing at the same LLM endpoint used by the [MTA UI](#automated-migration-using-the-mta-ui) part,
+- creates the MTA plugin settings via a third `postStart` command (see below) — the repository's `.vscode/extensions.json` additionally makes the editor recommend both extensions at startup — and
+- clones the application source from the Gitea instance via `clone-git`, using `PROJECT_REPO_URL` from the mounted clone-config Secret.
+
+The MTA extension settings (see below) are IDE-specific configuration, written by `configure-mta-settings` into the che-code **machine-level settings file** (`/checode/remote/data/Machine/settings.json`). The file applies to all workspace folders, persists on the per-user PVC, and is merged with the existing settings (e.g. `git.defaultCloneDirectory`, set by Dev Spaces) using `jq` (in the UDI image), so it is idempotent. Being editor-level rather than repo-level, this also works when the workspace clones a different repository than the one hosting the devfile (see the [`remotes=` factory URL variant](#mta-plugin-setup)):
+
+The settings pre-configure the plugin's AI-assisted remediation (the setting IDs were verified against `redhat.mta-core` 8.3.1):
+
+```json
+{
+  "mta-core.genai.enabled": true,
+  "mta-core.genai.agentMode": true
+}
+```
+
+- `mta-core.genai.enabled` enables the GenAI functionality (Solution Server) of the extension.
+- `mta-core.genai.agentMode` enables the experimental agentic flow for solutions, which requires automatic analysis (`mta-core.analysis.analyzeOnSave`, enabled by default).
+
+No LLM credentials are configured in the extension: with the [Hub connection](#configure-the-connection-to-the-mta-hub) enabled, GenAI requests go through the Solution Server's LLM proxy and the API key stays on the cluster (see the note under the Hub connection step). The direct-LLM configuration (`provider-settings.yaml`, only consulted for analyses run with local profiles without a Hub connection) is deliberately not written — the devfile instead removes any stale copy from earlier revisions, so a local-profile analysis cannot silently fall back to a leftover direct-LLM configuration.
+
+> ⚠️ NOTE
+>
+> The command runs as a `postStart` event, after the workspace (and editor) has started. VS Code applies settings-file changes live, so the MTA extension reads them in the first session; if a setting is not picked up, reload the editor window. Alternatively, define the same settings via a `.vscode/settings.json` file in the cloned repository (workspace-level settings, applied on clone).
+
+> ℹ️ NOTE
+>
+> **OpenCode CLI on the PATH**: no devfile `env` configuration needed. The installer (`install-opencode` command) installs the binary to `~/.opencode/bin` and appends `export PATH=$HOME/.opencode/bin:$PATH` to the shell config file it detects via `$SHELL` (typically `~/.bashrc`, idempotent via an exact-line guard; on the per-user PVC, so it persists across restarts). After the first start, verify the `# opencode` line is present in `~/.bashrc` — if the exec context's `$SHELL` is not `bash`, the installer targets a different config file (or none if unwritable); add the export line to `~/.bashrc` manually or extend `install-opencode`. Adding PATH via the devfile is not possible cleanly: Kubernetes `$(VAR_NAME)` expansion in container `env` values only resolves variables defined earlier in the same `env:` list — never image-provided variables like `PATH` — so `value: "...:$(PATH)"` would replace the image's PATH with a literal, unexpanded string and break the tools on it.
+
+> ⚠️ NOTE
+>
+> The `sst-dev.opencode` extension is not wired into the MTA plugin via settings — the Red Hat build does not provide an ACP agent backend setting. It is a separate AI coding assistant in the IDE, using the LLM configured via the `opencode.json` above. The setting IDs can also be reviewed and changed via `Extensions` > `Migration Toolkit for Applications - Core` > `Settings`.
+
+> ⚠️ NOTE
+>
+> In a disconnected environment, Dev Spaces cannot reach the public Open VSX registry. Either route the workspace traffic through a proxy (see [Proxy configuration](#proxy-configuration)) or mirror the extension into your own Open VSX registry and point the `CheCluster` at it via `spec.components.pluginRegistry.openVSXURL`.
 
 <a id="configure-the-connection-to-the-mta-hub"></a>
 - **Configure the connection to the MTA Hub**: To reuse the MTA Hub deployed as part of the [automated migration](#automated-migration-using-the-mta-ui) part, open the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`), run the `MTA: Konveyor Analysis View` command, click the settings icon and select **Configure Hub Settings**:
-    - Toggle on **Enable connection to MTA Hub**.
-    - Enter the MTA Hub URL (the `${MTA_URL}` from the [automated migration](#automated-migration-using-the-mta-ui) part) in the **Hub URL** field.
-    - Enable **Skip SSL certificate verification** if you want to connect to the Hub by using an insecure connection.
-    - Enable the authentication option and select the method. The plugin supports **basic auth** and **OIDC** (the latter being the plugin's default, `mta-core.hub.auth.method`). This PoC does not configure an OIDC client on the Hub, so use **basic auth** with the Hub credentials `admin`/`admin`.
-    - Click **Save**, then click **Sign In** in the Authentication box.
+- Toggle on **Enable connection to MTA Hub**.
+- Enter the MTA Hub URL (the `${MTA_URL}` from the [automated migration](#automated-migration-using-the-mta-ui) part) in the **Hub URL** field.
+- Enable **Skip SSL certificate verification** if you want to connect to the Hub by using an insecure connection.
+- Enable the authentication option and select the method. The plugin supports **basic auth** and **OIDC** (the latter being the plugin's default, `mta-core.hub.auth.method`). This PoC does not configure an OIDC client on the Hub, so use **basic auth** with the Hub credentials `admin`/`admin`.
+- Click **Save**, then click **Sign In** in the Authentication box.
 
-    After signing in, the Authentication box shows the status as Connected plus the status for **LLM proxy**, **Solution Server**, and **Profile Sync**. The MTA plugin never connects to the LLM directly — the LLM is configured centrally on the cluster via the Konveyor Gateway and reached through the Solution Server's LLM proxy, so a connected **LLM proxy** status confirms the plugin can access the LLM.
+After signing in, the Authentication box shows the status as Connected plus the status for **LLM proxy**, **Solution Server**, and **Profile Sync**. The MTA plugin never connects to the LLM directly — the LLM is configured centrally on the cluster via the Konveyor Gateway and reached through the Solution Server's LLM proxy, so a connected **LLM proxy** status confirms the plugin can access the LLM.
 
-    > ⚠️ NOTE
-    >
-    > The Hub URL and credentials are stored in the extension's own state and cannot be pre-seeded via the devfile — configuration and sign-in are per user and workspace.
+> ⚠️ NOTE
+>
+> The Hub URL and credentials are stored in the extension's own state and cannot be pre-seeded via the devfile — configuration and sign-in are per user and workspace.
 
-- **Run an analysis**: Clone the application source (e.g. from the Gitea instance) into the workspace, create a run configuration, and run an analysis. The results, issue descriptions, and suggested code changes appear inline in the editor, and AI-assisted remediation (Developer Lightspeed) can resolve the issues directly. Select the analysis profile created in [Define an Analysis Profile](#define-an-analysis-profile) in the run configuration — without a profile the analysis runs with no rule selection and does not surface the EAP 8 findings, which the agentic workflow's plan stage builds the migration plan from.
 
 ### Local Installation (Desktop VS Code Without Dev Spaces)
 
@@ -2598,7 +2658,7 @@ Then open the application subfolder (e.g. `~/jboss-quickstarts/helloworld`) as t
 
 ### Create your own skills
 
-Want to create your own skills? Here's how.
+Want to create your own skills? Here's how. To wire a finished skill into a workflow (SkillCard, Agent, AgentWorkflow), see [Assemble the Agentic Workflow components](#assemble-the-agentic-workflow-components).
 
 First, install the `migrations-skills` skill, which helps you create a skill from a migration guide:
 
@@ -2749,15 +2809,4 @@ Once validated, upload the ruleset in the MTA web console (*Migration → Rulese
 
 ### Suggested design: Agentic run observability and a persistent event log
 
-The PoC's agentic architecture has two observability gaps: runs are invisible once no client is attached to the ACP stream, and nothing persists after the sandbox pod dies. [design/agentic-observability-event-log.md](design/agentic-observability-event-log.md) fixes both:
-
-- **Fix**: the in-pod harness keeps driving the run, but its ACP tee pushes a normalized event stream to the Hub — tool calls, HITL permission round-trips, steering, token usage, skill markers.
-- **Storage**: the Hub persists events in its existing PostgreSQL database, serves live subscribers and retrospective replay from that store, and exposes analytics aggregates.
-
-- **Variant decision**: Hub as recorder/broker (chosen) vs. Hub as ACP driver (rejected — breaks the harness-owned git lifecycle, batch playbooks, and fail-closed HITL).
-- **Topology change**: the Hub's pod-dial WebSocket proxy (with its `X-Secret-Key` credential swap) is replaced by an outbound, cursor-resumable uplink from the pod — the per-run ACP key never leaves the pod, the browser keeps the hub token as its only credential, and the controller stays stateless.
-- **Event schema**: append-only, `seq`-ordered, normalized at capture time — including the `skill.loaded` markers only the harness can emit, which enable token-to-skill attribution.
-- **Persistence**: PostgreSQL with JSONB in the Hub's existing database — append-only and idempotent (`(run_id, seq)` upsert), monthly partitions for retention, rollup tables kept forever for analytics; no new datastore in disconnected clusters.
-- **Analytics**: effectiveness measured per successful outcome (tokens per migrated file, tool failure rates, skill-version A/B, HITL friction, loop detection).
-- **Related upstream work**: aligned with open proposals #341 (transcript persistence with a working prototype), #192 (usage accounting/telemetry research), and #282 (usage telemetry ADR) — this design's unique contributions are the normalized event schema, relational persistence/analytics, and skill attribution.
-- **Six implementation phases**; the first two (always-on recorder + Hub persistence) deliver reviewability on their own, before any console change.
+The PoC's agentic architecture has two observability gaps: runs are invisible once no client is attached to the ACP stream, and nothing persists after the sandbox pod dies. The full design proposal — variant decision (Hub as recorder/broker), topology change, normalized event schema, PostgreSQL persistence, analytics, upstream alignment (#341/#192/#282), and six implementation phases — lives in [design/agentic-observability-event-log.md](design/agentic-observability-event-log.md).
