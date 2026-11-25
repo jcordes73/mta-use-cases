@@ -14,6 +14,10 @@ spec:
   # no-ops there.
   image: image-registry.openshift-image-registry.svc:5000/openshift-mta/mta-jboss-eap-7-to-8-plan-agent:latest
   skillCards:
+    # commit-when-done: a type: rule card (see mta-ui/agentic-rules/) - always-loaded
+    # commit instruction; without it a stage can end with uncommitted output
+    # and push nothing (the harness pushes committed work only).
+    - ref: commit-when-done
     - ref: plan
     - ref: jboss-eap-7-to-8
   execution:

@@ -1,0 +1,36 @@
+# A rule-type SkillCard: `type: rule` cards are always-loaded and injected
+# into EVERY stage prompt ahead of the skill instructions (a `type: skill`
+# card is read on demand, so a commit instruction there is easy for the model
+# to skip once it considers its task done). Plain cluster YAML - no image.
+#
+# Why: the harness pushes committed work only - a stage that ends without
+# commits pushes nothing by design, so uncommitted output (e.g. the plan
+# stage's docs/plan.md) never reaches the target branch and the next stage
+# cannot see it. See troubleshooting/README.md ("the stage wrote files but
+# the target branch has no commits").
+#
+# Reference it from every agent's spec.skillCards (the jboss-eap-7-to-8
+# plan/execute/verify agents in this repository already do).
+apiVersion: konveyor.io/v1alpha1
+kind: SkillCard
+metadata:
+  name: commit-when-done
+  namespace: openshift-mta
+spec:
+  displayName: Commit When Done
+  version: "1.0.0"
+  description: The stage is not finished until its output is committed.
+  type: rule
+  inline: |
+    ---
+    name: commit-when-done
+    description: The stage is not finished until its output is committed.
+    ---
+    # Commit When Done
+
+    - Before ending your turn, `git add` and `git commit` everything you
+      changed, with a descriptive message.
+    - Anything left uncommitted is lost when the stage ends: only committed
+      work is pushed to the target branch, and the next stage starts by
+      cloning that branch. Uncommitted output (e.g. `docs/plan.md`) never
+      reaches the branch and is invisible to the following stages.
