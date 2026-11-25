@@ -68,8 +68,9 @@ This PoC has two parts:
       - [Create an Archetype](#create-an-archetype)
       - [Add a Review to the Archetype](#add-a-review-to-the-archetype)
       - [Create a Migration Wave](#create-a-migration-wave)
-      - [Assemble the Agentic Workflow components](#assemble-the-agentic-workflow-components)
-      - [Start an Agent Workflow Run](#start-an-agent-workflow-run)
+  - [Your first Agentic Workflow](#your-first-agentic-workflow)
+    - [Assemble the Agentic Workflow components](#assemble-the-agentic-workflow-components)
+    - [Start an Agent Workflow Run](#start-an-agent-workflow-run)
   - [Additional Agentic Workflows](#additional-agentic-workflows)
     - [Spring Boot to Quarkus](#spring-boot-to-quarkus)
     - [Apache Ant to Apache Maven](#apache-ant-to-apache-maven)
@@ -1517,7 +1518,9 @@ curl -k -s "${MTA_URL}/hub/applications/${APP_ID}" -u admin:admin | jq -c '{id, 
 
 Bulk assignment also works: retrieve the ids (e.g. via `GET /hub/applications` filtered by the archetype's criteria tags) and send them all in the wave's `applications` array. `DELETE /hub/migrationwaves/{id}` removes the wave and clears the assigned applications' `migrationWave` links.
 
-##### Assemble the Agentic Workflow components
+### Your first Agentic Workflow
+
+#### Assemble the Agentic Workflow components
 
 For Agentic Migrations, MTA composes agent workloads from **Skills**:
 
@@ -1645,7 +1648,16 @@ For Agentic Migrations, MTA composes agent workloads from **Skills**:
     oc get imagestreamtag mta-jboss-eap-7-to-8-plan-agent:latest -n openshift-mta
     ```
 
-- **Create the Agent**: an Agent is a template — it declares the container image, skills, and turn limits but executes nothing. Omitting `spec.gateways` is intentional: the Gateway is then named at run time on the `AgentRun`/`AgentWorkflowRun` (this is what the [Konveyor Gateway](#create-a-konveyor-gateway) set up earlier is used for). All three agents also reference the `commit-when-done` **rule** (`mta-ui/agentic-rules/commit-when-done.yaml`, `type: rule`): a stage that ends without commits pushes nothing — the harness pushes committed work only — so the always-loaded commit instruction keeps the plan's `docs/plan.md` (and every execute-stage change) off the "written but never pushed" path (see the [troubleshooting notes](troubleshooting/README.md#agentic-run-the-stage-wrote-its-files-but-the-target-branch-has-no-commits)).
+- **Create the Agent**: an Agent is a template — it declares the container image, skills, and turn limits but executes nothing. Omitting `spec.gateways` is intentional: the Gateway is then named at run time on the `AgentRun`/`AgentWorkflowRun` (this is what the [Konveyor Gateway](#create-a-konveyor-gateway) set up earlier is used for). All three agents also reference the `commit-when-done` **rule** (`mta-ui/agentic-rules/commit-when-done.yaml`, `type: rule`): a stage that ends without commits pushes nothing — the harness pushes committed work only — so the always-loaded commit instruction keeps the plan's `docs/plan.md` (and every execute-stage change) off the "written but never pushed" path (see the [troubleshooting notes](troubleshooting/README.md#agentic-run-the-stage-wrote-its-files-but-the-target-branch-has-no-commits)). The rule is plain cluster YAML (inline, no image, no `envsubst`):
+
+    ```bash
+    oc apply -f mta-ui/agentic-rules/commit-when-done.yaml
+    oc wait --for=create skillcard commit-when-done -n openshift-mta --timeout=120s
+    oc wait --for=jsonpath='{.status.conditions[0].status}'="True" skillcard commit-when-done -n openshift-mta --timeout=300s
+    oc apply -f mta-ui/agentic-workflow/jboss-eap-7-to-8/agents/jboss-eap-7-to-8-plan-agent.yaml
+    oc apply -f mta-ui/agentic-workflow/jboss-eap-7-to-8/agents/jboss-eap-7-to-8-execute-agent.yaml
+    oc apply -f mta-ui/agentic-workflow/jboss-eap-7-to-8/agents/jboss-eap-7-to-8-verify-agent.yaml
+    ```
 
     ```bash
     oc apply -f mta-ui/agentic-workflow/jboss-eap-7-to-8/agents/jboss-eap-7-to-8-plan-agent.yaml
@@ -1679,7 +1691,7 @@ For Agentic Migrations, MTA composes agent workloads from **Skills**:
     oc wait --for jsonpath='{.status.conditions[0].status}'="True" agentworkflow jboss-eap-7-to-8 -n openshift-mta --timeout=600s
     ```
 
-##### Start an Agent Workflow Run
+#### Start an Agent Workflow Run
 
 You can also start a run via the Hub API by creating an `AgentWorkflowRun` at `${MTA_URL}/hub/agentic/workflowruns`.
 
