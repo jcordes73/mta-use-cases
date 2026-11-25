@@ -1652,18 +1652,17 @@ For Agentic Migrations, MTA composes agent workloads from **Skills**:
 
     ```bash
     oc apply -f mta-ui/agentic-rules/commit-when-done.yaml
+    cat mta-ui/agentic-rules/git-tls-verify-off.yaml | envsubst | oc apply -f -
     oc wait --for=create skillcard commit-when-done -n openshift-mta --timeout=120s
+    oc wait --for=create skillcard git-tls-verify-off -n openshift-mta --timeout=120s
     oc wait --for=jsonpath='{.status.conditions[0].status}'="True" skillcard commit-when-done -n openshift-mta --timeout=300s
+    oc wait --for=jsonpath='{.status.conditions[0].status}'="True" skillcard git-tls-verify-off -n openshift-mta --timeout=300s
     oc apply -f mta-ui/agentic-workflow/jboss-eap-7-to-8/agents/jboss-eap-7-to-8-plan-agent.yaml
     oc apply -f mta-ui/agentic-workflow/jboss-eap-7-to-8/agents/jboss-eap-7-to-8-execute-agent.yaml
     oc apply -f mta-ui/agentic-workflow/jboss-eap-7-to-8/agents/jboss-eap-7-to-8-verify-agent.yaml
     ```
 
-    ```bash
-    oc apply -f mta-ui/agentic-workflow/jboss-eap-7-to-8/agents/jboss-eap-7-to-8-plan-agent.yaml
-    oc apply -f mta-ui/agentic-workflow/jboss-eap-7-to-8/agents/jboss-eap-7-to-8-execute-agent.yaml
-    oc apply -f mta-ui/agentic-workflow/jboss-eap-7-to-8/agents/jboss-eap-7-to-8-verify-agent.yaml
-    ```
+    The second rule, `git-tls-verify-off`, scopes `http.sslVerify` off for the git server host only (`https://git.${OPENSHIFT_APPS_DOMAIN}` presents the cluster's self-signed certificate, and the sandbox cannot run `update-ca-trust` at runtime under the restricted SCC). It covers agent-side git network operations (fetch, pull, submodule clone) — the harness's own clone/push never verifies TLS and is unaffected. Verification stays on for every other host. Unlike `commit-when-done`, it carries the `${OPENSHIFT_APPS_DOMAIN}` placeholder and is applied with `envsubst`.
 
     Several Agents sharing skills can reference a `SkillCollection` grouping multiple `SkillCard`s instead.
 

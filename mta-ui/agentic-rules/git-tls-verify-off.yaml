@@ -1,0 +1,48 @@
+# A rule-type SkillCard: `type: rule` cards are always-loaded and injected
+# into EVERY stage prompt ahead of the skill instructions. Plain cluster YAML
+# - no image.
+#
+# Why: the PoC git server (Gitea) is reached over an HTTPS Route that presents
+# the cluster's self-signed certificate, which is not in the sandbox trust
+# store - and the sandbox runs with a random UID under the restricted SCC, so
+# it cannot run `update-ca-trust` at pod start to trust it (see the README's
+# "Trusting a private root CA" section). Agent-side git network operations
+# (fetch, pull, submodule clone) against the git server would fail with an
+# SSL certificate error; the harness's own clone/push is unaffected (it does
+# not verify TLS).
+#
+# The rule disables git TLS verification for the git server host ONLY - never
+# for other TLS endpoints. Carries the ${OPENSHIFT_APPS_DOMAIN} placeholder:
+# apply with envsubst like the rest of the repository's manifests.
+#
+# Reference it from every agent's spec.skillCards (the jboss-eap-7-to-8
+# plan/execute/verify agents in this repository already do).
+apiVersion: konveyor.io/v1alpha1
+kind: SkillCard
+metadata:
+  name: git-tls-verify-off
+  namespace: openshift-mta
+spec:
+  displayName: Git TLS verification off for the PoC git server
+  version: "1.0.0"
+  description: The git server presents a self-signed certificate - disable git TLS verification for that host only.
+  type: rule
+  inline: |
+    ---
+    name: git-tls-verify-off
+    description: The git server presents a self-signed certificate; disable git TLS verification for that host only.
+    ---
+    # Git: TLS verification is off for the application's git server
+
+    - The application's git server at `https://git.${OPENSHIFT_APPS_DOMAIN}`
+      presents a certificate that is not in this sandbox's trust store. Before
+      your first git network operation against it (fetch, pull, submodule
+      clone), disable verification for that host only, local to this clone:
+
+          git config http.https://git.${OPENSHIFT_APPS_DOMAIN}.sslVerify false
+
+    - If a git command still fails with a certificate error, run that single
+      command with `GIT_SSL_NO_VERIFY=true` as a fallback.
+    - Scope: verification stays ON for every other host. Never disable TLS
+      verification for the LLM endpoint, package registries, or image
+      registries, and never set a global `http.sslVerify false`.

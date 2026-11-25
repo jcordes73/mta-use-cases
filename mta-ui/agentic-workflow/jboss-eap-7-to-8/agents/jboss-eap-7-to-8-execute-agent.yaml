@@ -12,6 +12,11 @@ spec:
     # commit instruction; without it a stage can end with uncommitted output
     # and push nothing (the harness pushes committed work only).
     - ref: commit-when-done
+    # git-tls-verify-off: a type: rule card (see mta-ui/agentic-rules/) -
+    # the git server presents a self-signed cert the sandbox cannot trust
+    # (random UID, no update-ca-trust at runtime); scopes http.sslVerify
+    # off to the git host only, for agent-side fetch/pull/submodule ops.
+    - ref: git-tls-verify-off
     - ref: execute
     - ref: jboss-eap-7-to-8
   execution:
