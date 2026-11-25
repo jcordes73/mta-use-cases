@@ -628,20 +628,46 @@ separate commands.
 The run clones the application fine but can never deliver its result, on any
 stage.
 
-Root cause: the harness chains stages by pushing each stage's work to a
-plain branch `refs/heads/konveyor/migration-<run-id>` and starting the next
-stage by cloning that same branch back. On Gerrit, ordinary users cannot
-create `refs/heads/*` branches — contributions go to `refs/for/<target>`
-with a Change-Id, and the harness has no mode for that. The agent cannot
-push in the harness's place either: the SSH key only ever exists inside the
-harness process.
+Root cause (upstream
+[RFE agentic-controller#360](https://github.com/konveyor/agentic-controller/issues/360)):
 
-Upstream: [agentic-controller#360](https://github.com/konveyor/agentic-controller/issues/360).
+- The push refspec is hardcoded in `harness/internal/git/git.go` (`Push`):
+  `refs/heads/%s:refs/heads/%s`. On Gerrit a normal user cannot create refs
+  under `refs/heads/` — contribution pushes go to `refs/for/<target>` and
+  must carry a `Change-Id: I<uuid>` trailer — so the push is rejected and no
+  stage can hand its work to the next one.
+- The agent cannot push in the harness's place: the git credentials built
+  from the Hub identity exist only inside the harness process; nothing
+  provisions them into the sandbox, so a rule cannot delegate the push
+  either.
+- Stage chaining depends on the branch existing on the remote:
+  `CheckoutBranch` creates the next stage's local branch from
+  `origin/<branch>`.
 
-Workaround: mirror the Gerrit project to a Gitea/GitHub-style git server
-(this PoC's [Gitea setup](README.md#gitea-installation)) and point the
-Hub application record at the mirror; sync the resulting migration branch
-back to Gerrit manually after the run.
+What a fix has to decide (per the RFE):
+
+- Where the push target is configured (Agent, AgentRun, or the application),
+  and whether `refs/for/%target` is a mode of its own or one instance of a
+  configurable refspec.
+- Change-Id generation: go-git does not run the `commit-msg` hook, so the
+  harness would append the trailer itself — the trailer is
+  `Change-Id: I<uuid>`, so it is doable in-process.
+- Stage continuity — the part with real design in it: `refs/for/` opens a
+  change for review, it does not create a ref the next stage can clone.
+  Either the working branch goes somewhere the server allows (a namespace
+  the admin opens for runs), or the stages chain without the remote and the
+  review opens once, at the end.
+
+Related upstream work: [#240](https://github.com/konveyor/agentic-controller/issues/240)
+/ [#355](https://github.com/konveyor/agentic-controller/pull/355) (SSH auth
+in the harness — the prerequisite this builds on) and
+[#354](https://github.com/konveyor/agentic-controller/issues/354) (SSH host
+key verification).
+
+Workaround until then: mirror the Gerrit project to a Gitea/GitHub-style
+git server (this PoC's [Gitea setup](README.md#gitea-installation)) and
+point the Hub application record at the mirror; sync the resulting
+migration branch back to Gerrit manually after the run.
 
 ## Agentic run: spurious "dirty git state" warning on every plan stage
 
