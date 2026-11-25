@@ -16,6 +16,65 @@ This PoC has two parts:
 1. **[Automated Migration Using the MTA UI](#automated-migration-using-the-mta-ui)** — portfolio analysis, agentic migrations, and wave management through the MTA web console.
 2. **[Developer-Infused Migration Using OpenShift Dev Spaces and the MTA Plugin](#developer-infused-migration-using-openshift-dev-spaces-and-the-mta-plugin)** — developers drive analysis and remediation from their IDE — in a [Dev Spaces workspace](#mta-plugin-setup) or [locally in desktop VS Code](#local-installation-desktop-vs-code-without-dev-spaces).
 
+## Contents
+
+<!-- TOC: regenerate with the heading-extraction script if sections change; slugs follow GitHub's anchor rules -->
+
+- [Architecture Overview](#architecture-overview)
+- [Components and Versions](#components-and-versions)
+  - [Platform & Infrastructure](#platform--infrastructure)
+  - [MTA Stack](#mta-stack)
+  - [Developer-Infused Migration](#developer-infused-migration)
+  - [Workstation Tooling](#workstation-tooling)
+- [Prerequisites](#prerequisites)
+- [Squid proxy deployment (disconnected environments)](#squid-proxy-deployment-disconnected-environments)
+- [Gitea installation](#gitea-installation)
+- [Automated Migration Using the MTA UI](#automated-migration-using-the-mta-ui)
+  - [Agent Sandbox Installation](#agent-sandbox-installation)
+  - [Keycloak for MTA](#keycloak-for-mta)
+  - [Migration Toolkit for Applications (MTA) 8.3](#migration-toolkit-for-applications-mta-83)
+    - [Installation](#installation)
+    - [Proxy settings for disconnected environments](#proxy-settings-for-disconnected-environments)
+    - [Setting the Hub proxy via the Tackle Hub API](#setting-the-hub-proxy-via-the-tackle-hub-api)
+    - [Automation via REST API](#automation-via-rest-api)
+      - [Creating Stakeholders, Stakeholder Groups and Business Service](#creating-stakeholders-stakeholder-groups-and-business-service)
+      - [Configure Maven settings](#configure-maven-settings)
+      - [Bulk Uploading Applications](#bulk-uploading-applications)
+        - [Importing dependencies for an existing portfolio](#importing-dependencies-for-an-existing-portfolio)
+      - [Create default Git credentials](#create-default-git-credentials)
+      - [Issue Tracking (Jira integration)](#issue-tracking-jira-integration)
+      - [Define an Analysis Profile](#define-an-analysis-profile)
+      - [Create an Assessment Questionnaire](#create-an-assessment-questionnaire)
+      - [Create an Archetype](#create-an-archetype)
+      - [Add a Review to the Archetype](#add-a-review-to-the-archetype)
+      - [Create a Migration Wave](#create-a-migration-wave)
+      - [Create custom Skills and Rules](#create-custom-skills-and-rules)
+      - [Start an Agent Workflow Run](#start-an-agent-workflow-run)
+  - [Additional Agentic Workflows](#additional-agentic-workflows)
+    - [Spring Boot to Quarkus](#spring-boot-to-quarkus)
+    - [Apache Ant to Apache Maven](#apache-ant-to-apache-maven)
+    - [MigIQ](#migiq)
+    - [RHDA (dependency CVE/license scanner with Hub reporting)](#rhda-dependency-cvelicense-scanner-with-hub-reporting)
+    - [Application dependency map (portfolio interdependencies)](#application-dependency-map-portfolio-interdependencies)
+    - [Citrus tests (test authoring via the Citrus MCP server)](#citrus-tests-test-authoring-via-the-citrus-mcp-server)
+  - [The container lane: in-container tests against JBoss EAP](#the-container-lane-in-container-tests-against-jboss-eap)
+    - [JBoss EJB to REST (inter-application EJB couplings to REST)](#jboss-ejb-to-rest-inter-application-ejb-couplings-to-rest)
+- [Developer-Infused Migration Using OpenShift Dev Spaces and the MTA Plugin](#developer-infused-migration-using-openshift-dev-spaces-and-the-mta-plugin)
+  - [OpenShift Dev Spaces Installation](#openshift-dev-spaces-installation)
+    - [Extension marketplace configuration](#extension-marketplace-configuration)
+    - [Devfile registry](#devfile-registry)
+    - [Proxy configuration](#proxy-configuration)
+  - [MTA Plugin Setup](#mta-plugin-setup)
+    - [Create the LLM credentials Secret](#create-the-llm-credentials-secret)
+    - [Create the clone-config Secret](#create-the-clone-config-secret)
+    - [Create the hub-config Secret](#create-the-hub-config-secret)
+    - [Git Authentication with SSH Keys](#git-authentication-with-ssh-keys)
+  - [Local Installation (Desktop VS Code Without Dev Spaces)](#local-installation-desktop-vs-code-without-dev-spaces)
+- [Appendix](#appendix)
+  - [Create your own skills](#create-your-own-skills)
+  - [Create your own rules](#create-your-own-rules)
+  - [Suggested design: Agentic run observability and a persistent event log](#suggested-design-agentic-run-observability-and-a-persistent-event-log)
+
 ## Architecture Overview
 
 How the components of this PoC relate:
@@ -680,6 +739,7 @@ MTA 8.3 automates analysis, assessment, and refactoring for application moderniz
     ```
 
     Full failure mode and manual fix: [the troubleshooting section](troubleshooting/README.md#mta-analyses-and-discovery-tasks-fail-or-never-start).
+<a id="create-a-konveyor-gateway"></a>
 - **Create a Konveyor Gateway**: abstracts access to the LLM.
     ```bash
     cat mta-ui/llm-gateway.yaml | envsubst | oc apply -f -
@@ -1064,7 +1124,7 @@ How Agentic Workflows resolve their push credentials:
 - First: an identity **linked to the application** with role `source`; fallback: the global **default** `source` identity (`git-credentials` above).
 - `git-credentials` is the default, so no linking is needed.
 - A `source` identity that is neither linked nor default resolves to nothing — the run pushes anonymously.
-- Only link an identity to an application to override the default with per-application credentials (see [Start the Workflow Run](#start-the-workflow-run)).
+- Only link an identity to an application to override the default with per-application credentials (see [Start an Agent Workflow Run](#start-an-agent-workflow-run)).
 - `git-ssh-credentials` serves the analyzer's and workstation's SSH flow only.
 - The harness clones over HTTPS basic auth and does not use SSH-key identities (see the warning in [Bulk Uploading Applications](#bulk-uploading-applications)).
 
@@ -1427,6 +1487,7 @@ For Agentic Migrations, MTA composes agent workloads from **Skills**:
     oc get networkpolicy allow-egress-to-image-registry -n openshift-mta
     ```
 
+<a id="allow-egress-on-port-22-for-ssh-based-git"></a>
 - **Allow egress on port 22 for SSH-based git**: the same default-deny posture blocks port 22, which Agent Sandbox pods need when their git operations run over SSH remotes — the in-cluster Gitea SSH service (`gitea-ssh.gitea.svc:22`, see [SSH Keys](#ssh-keys)) or external git hosts on the standard SSH port. This NetworkPolicy is scoped to the Agent Sandbox pods (`app.kubernetes.io/managed-by: agentic-controller`):
 
     ```bash
@@ -1581,7 +1642,7 @@ Maven settings are **not** resolved from the Hub:
 - The sandbox image sets `HOME=/home/harness`, so a Secret at `/home/harness/.m2` would place `settings.xml` at Maven's default user-settings location.
 - But the deployed Hub's REST binding predates the feature and rejects the field with `{"error":"json: unknown field \"fileMounts\""}`.
 - The run CR's admission would accept the field, but a CR-only run has no Hub token — it fails under Hub authentication (see above).
-- Agentic runs therefore carry Maven settings via the `MAVEN_SETTINGS_XML` env variable (see [Start the Workflow Run](#start-the-workflow-run)).
+- Agentic runs therefore carry Maven settings via the `MAVEN_SETTINGS_XML` env variable (see [Start an Agent Workflow Run](#start-an-agent-workflow-run)).
 - Analyses consume them via the `maven`-kind identity (see [Configure Maven settings](#configure-maven-settings)).
 
 - **Start the Workflow Run**: the migration is triggered by creating an `AgentWorkflowRun`, in the MTA UI (agentic migrations) or via the Hub API as in [Start an Agent Workflow Run](#start-an-agent-workflow-run) above. No credential linking is needed: the run's spec carries no credentials — the harness resolves the push credential from the Hub at runtime, preferring an identity linked to the application over the global default. The `git-credentials` identity above is the default, so it resolves for every application. To override it per application (e.g. per-repo credentials), link a basic-auth identity with the role `source`. The update is a full-object `PUT` (fetch, modify, write back) — the `jq` removes any existing link for the same identity first, since the Hub enforces a unique constraint on `(ApplicationID, IdentityID, Role)` and a plain append fails if the identity is already linked.
@@ -2321,7 +2382,7 @@ The hub connection lives in VS Code secret storage — it cannot go into `settin
 
 - Overrides: `HUB_URL`, `HUB_USERNAME`, `HUB_PASSWORD`, `FORCE_HUB_ENABLED`, `HUB_INSECURE`, `HUB_SOLUTION_SERVER_ENABLED`, `HUB_PROFILE_SYNC_ENABLED`.
 - A ready-to-use template ships at `devspaces/hub-connection-secret.yaml`; it provides these to every workspace container.
-- Result: the workspace connects to the Hub out of the box, with [analysis profiles](#analysis-profiles) synced and the Solution Server (the Developer Lightspeed LLM proxy) reachable:
+- Result: the workspace connects to the Hub out of the box, with [analysis profiles](#define-an-analysis-profile) synced and the Solution Server (the Developer Lightspeed LLM proxy) reachable:
 
 ```bash
 export HUB_URL="https://mta-openshift-mta.${OPENSHIFT_APPS_DOMAIN}"
@@ -2628,6 +2689,7 @@ cat devspaces/hub-connection-secret.yaml | sed "s/<workspace-namespace>/${WORKSP
     >
     > In a disconnected environment, Dev Spaces cannot reach the public Open VSX registry. Either route the workspace traffic through a proxy (see [Proxy configuration](#proxy-configuration)) or mirror the extension into your own Open VSX registry and point the `CheCluster` at it via `spec.components.pluginRegistry.openVSXURL`.
 
+<a id="configure-the-connection-to-the-mta-hub"></a>
 - **Configure the connection to the MTA Hub**: To reuse the MTA Hub deployed as part of the [automated migration](#automated-migration-using-the-mta-ui) part, open the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`), run the `MTA: Konveyor Analysis View` command, click the settings icon and select **Configure Hub Settings**:
     - Toggle on **Enable connection to MTA Hub**.
     - Enter the MTA Hub URL (the `${MTA_URL}` from the [automated migration](#automated-migration-using-the-mta-ui) part) in the **Hub URL** field.
