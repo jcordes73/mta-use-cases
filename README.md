@@ -36,6 +36,7 @@ This PoC has two parts:
   - [Clone the application repositories](#clone-the-application-repositories)
   - [Migrating SSH-key-authenticated source repositories](#migrating-ssh-key-authenticated-source-repositories)
   - [Proxy settings (disconnected environments)](#proxy-settings-disconnected-environments)
+  - [Cloning via a Bastion Host](#cloning-via-a-bastion-host)
   - [OIDC SSO login via Keycloak](#oidc-sso-login-via-keycloak)
   - [SSH Keys](#ssh-keys)
 - [Automated Migration Using the MTA UI](#automated-migration-using-the-mta-ui)
@@ -414,6 +415,8 @@ curl -k --request DELETE https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/users/gitea
 
 ### Clone the application repositories
 
+#### Cloning using the Gitea REST API
+
 Clone the [JBoss EAP Quickstarts](https://github.com/jboss-developer/jboss-eap-quickstarts) repository into Gitea via the REST API. This also creates the organization `jboss`.
 
 ```bash
@@ -467,7 +470,37 @@ curl -k -s -X POST "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/repos/migrate" \
 }'
 ```
 
-Set `mirror: false` deliberately: the Gitea copy is frozen (it is MTA's migration source), so Gitea should not re-fetch from the original. If the source serves HTTPS **without** token auth (SSH only), the migrate API can't be used at all — clone locally with the SSH key and push the mirror into Gitea over HTTPS with the `gitea-admin` token. After migrating, verify as above and reference the repo by its **HTTPS web URL** (`https://git.${OPENSHIFT_APPS_DOMAIN}/...`) in the application records — the analyzer and agentic harness clone with HTTP basic auth only (see [Bulk Uploading Applications](#bulk-uploading-applications)).
+Set `mirror: false` deliberately: the Gitea copy is frozen (it is MTA's migration source), so Gitea should not re-fetch from the original. If the source serves HTTPS **without** token auth (SSH only), the migrate API can't be used at all — clone locally with the SSH key and push the mirror into Gitea over HTTPS with the `gitea-admin` token (see [Cloning via a Bastion Host](#cloning-via-a-bastion-host) for the full walk-through). After migrating, verify as above and reference the repo by its **HTTPS web URL** (`https://git.${OPENSHIFT_APPS_DOMAIN}/...`) in the application records — the analyzer and agentic harness clone with HTTP basic auth only (see [Bulk Uploading Applications](#bulk-uploading-applications)).
+
+#### Cloning via a Bastion Host
+
+In case cloning via REST API not possible (f.e. the repository to be cloned uses ssh-key based authentication) follow these steps. The steps below use the JBoss EAP Quickstarts as the example — normally Gitea migrates it from GitHub via the REST API (see [Clone the application repositories](#clone-the-application-repositories)), but in a disconnected environment Gitea cannot reach GitHub, so the source comes in through the bastion instead. For any other repository, replace the names and branch accordingly.
+
+Create the target repository in Gitea via the REST API, owned by the `jboss` org like the other migration sources:
+
+```bash
+curl -k -s -X POST "https://git.${OPENSHIFT_APPS_DOMAIN}/api/v1/orgs/jboss/repos" \
+  -H "Authorization: token ${GITEA_ADMIN_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+      "name": "jboss-quickstarts",
+      "auto_init": false
+  }'
+```
+
+Clone the source repository as a **bare** repository on the bastion host — this fetches all branches and tags with their complete history:
+
+```bash
+git clone --bare https://github.com/jboss-developer/jboss-eap-quickstarts.git
+cd jboss-eap-quickstarts.git
+```
+
+Push everything into Gitea over HTTPS. The Gitea route presents the cluster's self-signed certificate, so either import the cluster CA into the bastion's trust store or pass `-c http.sslVerify=false`; the push prompts for credentials — use the git account `jboss-dev` (or `gitea-admin` with the admin token as password):
+
+```bash
+git -c http.sslVerify=false push --mirror "https://git.${OPENSHIFT_APPS_DOMAIN}/jboss/jboss-quickstarts.git"
+```
+
 ### Proxy settings (disconnected environments)
 
 Gitea needs outbound access to GitHub for the migration. In a disconnected environment, route this through a proxy: define the `MTA_`-prefixed proxy variables (see [Proxy configuration](#proxy-configuration)) and install with the extra values file `gitea/values-proxy.yaml`. Both values files go through `envsubst`, so the `MTA_`-prefixed shell variables resolve automatically while the Gitea container receives standard `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY`:
