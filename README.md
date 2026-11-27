@@ -75,6 +75,7 @@ This PoC has two parts:
   - [Additional Agentic Workflows](#additional-agentic-workflows)
     - [Spring Boot to Quarkus](#spring-boot-to-quarkus)
     - [Apache Ant to Apache Maven](#apache-ant-to-apache-maven)
+    - [JDK 8 to 17](#jdk-8-to-17)
     - [MigIQ](#migiq)
     - [RHDA (dependency CVE/license scanner with Hub reporting)](#rhda-dependency-cvelicense-scanner-with-hub-reporting)
     - [Application dependency map (portfolio interdependencies)](#application-dependency-map-portfolio-interdependencies)
@@ -1841,6 +1842,28 @@ oc apply -f mta-ui/agentic-workflow/ant-to-maven/agents/ant-to-maven-execute-age
 oc apply -f mta-ui/agentic-workflow/ant-to-maven/agents/ant-to-maven-verify-agent.yaml
 
 oc apply -f mta-ui/agentic-workflow/ant-to-maven/ant-to-maven-agent-workflow.yaml
+```
+
+#### JDK 8 to 17
+
+A plan/execute/verify workflow for migrating plain Maven Java applications from JDK 8 to JDK 17. The skill's six phases cover the compiler switch to `maven.compiler.release=17`, the JEP 320 removals (JAXB, JAX-WS, EE annotations, CORBA), strong encapsulation (JEP 396/403) and the `--add-opens` fallout, removed JVM flags (CMS, PermGen, biased locking), JDK 17 version floors for bytecode-sensitive libraries (ASM, ByteBuddy, Mockito, JaCoCo, Lombok), and the test-toolchain migration. Its scope lines up with the repo's own [openjdk17 custom ruleset](custom-rulesets/stable/java/openjdk17-custom/ruleset.yaml), so a Kantra analysis with that ruleset feeds the plan stage directly. Unlike the [first workflow](#your-first-agentic-workflow), all three agents stay on the stock image — the `plan`/`execute`/`verify` stage skills come from the shared rule-card image, and `commit-when-done` is already on the cluster.
+
+> As with [Spring Boot to Quarkus](#spring-boot-to-quarkus), the auto-triggered first build fails and is superseded by the `oc start-build` build.
+
+```bash
+oc new-build --name mta-java-8-to-17-skills -n openshift-mta \
+  --dockerfile="-" < mta-ui/agentic-workflow/java-8-to-17/agents/skills/java-8-to-17/Containerfile
+
+oc start-build mta-java-8-to-17-skills -n openshift-mta \
+  --from-dir=mta-ui/agentic-workflow/java-8-to-17/agents/skills/java-8-to-17 --follow
+
+oc apply -f mta-ui/agentic-workflow/java-8-to-17/agents/skills/java-8-to-17/java-8-to-17-skillcard.yaml
+
+oc apply -f mta-ui/agentic-workflow/java-8-to-17/agents/java-8-to-17-plan-agent.yaml
+oc apply -f mta-ui/agentic-workflow/java-8-to-17/agents/java-8-to-17-execute-agent.yaml
+oc apply -f mta-ui/agentic-workflow/java-8-to-17/agents/java-8-to-17-verify-agent.yaml
+
+oc apply -f mta-ui/agentic-workflow/java-8-to-17/java-8-to-17-agent-workflow.yaml
 ```
 
 #### MigIQ

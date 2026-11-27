@@ -1,0 +1,16 @@
+apiVersion: konveyor.io/v1alpha1
+kind: SkillCard
+metadata:
+  name: java-8-to-17
+  namespace: openshift-mta
+spec:
+  image: image-registry.openshift-image-registry.svc:5000/openshift-mta/mta-java-8-to-17-skills:latest
+  displayName: JDK 8 to 17 Migration Skill
+  version: "0.1.0"
+  description: Migrates Java applications from JDK 8 to JDK 17.
+  type: skill
+  subPath: skill
+  tags:
+    - java
+    - jdk
+    - migration

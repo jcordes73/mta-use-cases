@@ -1,0 +1,18 @@
+apiVersion: konveyor.io/v1alpha1
+kind: Agent
+metadata:
+  name: java-8-to-17-execute-agent
+  namespace: openshift-mta
+  labels:
+    konveyor.io/managed: "true"
+spec:
+  image: registry.redhat.io/mta/mta-agent-java-rhel9:8.3.1
+  skillCards:
+    # commit-when-done: a type: rule card (see mta-ui/agentic-rules/) - always-loaded
+    # commit instruction; without it a stage can end with uncommitted output
+    # and push nothing (the harness pushes committed work only).
+    - ref: commit-when-done
+    - ref: execute
+    - ref: java-8-to-17
+  execution:
+    maxTurns: 200

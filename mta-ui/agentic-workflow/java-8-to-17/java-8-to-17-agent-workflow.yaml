@@ -1,0 +1,33 @@
+apiVersion: konveyor.io/v1alpha1
+kind: AgentWorkflow
+metadata:
+  name: java-8-to-17
+  namespace: openshift-mta
+  labels:
+    konveyor.io/managed: "true"
+spec:
+  guide: "Migrate a Java application from JDK 8 to JDK 17."
+  stages:
+    - name: plan
+      agentRef: java-8-to-17-plan-agent
+      instructions: >-
+        Load the plan skill and follow its SKILL.md exactly.
+        Build the migration plan from the Kantra analysis results in .konveyor/analysis.json, reading the build manifest, layout, and source for context.
+        Use the output structure defined in the plan SKILL.md as the exact structure for docs/plan.md — reproduce every required section and field.
+        Do not invent your own document structure.
+        Load the java-8-to-17 skill and inform the plan about migration mappings needed.
+        If the MAVEN_SETTINGS_XML environment variable is set, write its value to /home/harness/.m2/settings.xml so Maven uses the custom settings for any build this stage runs.
+    - name: execute
+      agentRef: java-8-to-17-execute-agent
+      instructions: >-
+        Load the execute skill and follow its SKILL.md exactly.
+        Execute each step in docs/plan.md to migrate the application from JDK 8 to JDK 17.
+        Create .konveyor/handoff.md and write your results as an ## Execute section in it, as defined in SKILL.md.
+        If the MAVEN_SETTINGS_XML environment variable is set, write its value to /home/harness/.m2/settings.xml so Maven uses the custom settings for any build this stage runs.
+    - name: verify
+      agentRef: java-8-to-17-verify-agent
+      instructions: >-
+        Load the verify skill and follow its SKILL.md exactly.
+        Run the build from docs/plan.md, fix build errors until it compiles on JDK 17, then run tests and runtime verification — grounded in .konveyor/analysis.json and the ## Execute section of .konveyor/handoff.md.
+        Append your results as a ## Verify section in .konveyor/handoff.md as defined in SKILL.md.
+        If the MAVEN_SETTINGS_XML environment variable is set, write its value to /home/harness/.m2/settings.xml so Maven uses the custom settings for any build this stage runs.
